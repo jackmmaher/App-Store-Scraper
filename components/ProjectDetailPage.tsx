@@ -45,18 +45,33 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
 
   const fetchProject = async () => {
     setLoading(true);
+    setError(null);
     try {
-      // Use query param instead of dynamic route (workaround for Vercel routing issue)
+      console.log('[ProjectDetailPage] Fetching project:', projectId);
       const res = await fetch(`/api/projects/${projectId}`);
+      console.log('[ProjectDetailPage] Response status:', res.status);
+
       const data = await res.json();
+      console.log('[ProjectDetailPage] Response data:', data);
+
       if (!res.ok) {
-        setError(data.error || 'Failed to load project');
+        const errorMsg = data.error || `HTTP ${res.status}: Failed to load project`;
+        console.error('[ProjectDetailPage] Error:', errorMsg);
+        setError(errorMsg);
         return;
       }
+
+      if (!data.project) {
+        console.error('[ProjectDetailPage] No project in response');
+        setError('Project data missing from response');
+        return;
+      }
+
       setProject(data.project);
       setNotes(data.project.notes || '');
     } catch (err) {
-      setError('Failed to load project');
+      console.error('[ProjectDetailPage] Fetch exception:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load project');
     } finally {
       setLoading(false);
     }
@@ -181,12 +196,28 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
         <Header />
         <div className="max-w-4xl mx-auto px-4 py-20 text-center">
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
-            {error || 'Project not found'}
-          </h1>
-          <Link href="/projects" className="text-blue-600 hover:underline">
-            Back to Projects
-          </Link>
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6 mb-6">
+            <h1 className="text-xl font-bold text-red-600 dark:text-red-400 mb-2">
+              Failed to Load Project
+            </h1>
+            <p className="text-gray-700 dark:text-gray-300 mb-4">
+              {error || 'Project not found'}
+            </p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Project ID: <code className="bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">{projectId}</code>
+            </p>
+          </div>
+          <div className="flex justify-center gap-4">
+            <button
+              onClick={() => fetchProject()}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
+            >
+              Retry
+            </button>
+            <Link href="/projects" className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800">
+              Back to Projects
+            </Link>
+          </div>
         </div>
       </div>
     );

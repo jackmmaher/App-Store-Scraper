@@ -17,6 +17,16 @@ export async function GET(
   try {
     console.log('[GET /api/projects/[id]] Fetching project with id:', id);
 
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(id)) {
+      console.error('[GET /api/projects/[id]] Invalid UUID format:', id);
+      return NextResponse.json(
+        { error: `Invalid project ID format: ${id}` },
+        { status: 400 }
+      );
+    }
+
     const { data, error } = await supabase
       .from('app_projects')
       .select('*')
@@ -31,9 +41,15 @@ export async function GET(
         hint: error.hint,
       });
       if (error.code === 'PGRST116') {
-        return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+        return NextResponse.json(
+          { error: 'Project not found', code: error.code },
+          { status: 404 }
+        );
       }
-      return NextResponse.json({ error: `Database error: ${error.message}` }, { status: 500 });
+      return NextResponse.json(
+        { error: `Database error: ${error.message}`, code: error.code },
+        { status: 500 }
+      );
     }
 
     if (!data) {
@@ -45,7 +61,11 @@ export async function GET(
     return NextResponse.json({ project: data });
   } catch (err) {
     console.error('[GET /api/projects/[id]] Exception:', err);
-    return NextResponse.json({ error: 'Failed to fetch project' }, { status: 500 });
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return NextResponse.json(
+      { error: `Failed to fetch project: ${message}` },
+      { status: 500 }
+    );
   }
 }
 
