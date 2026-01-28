@@ -181,10 +181,10 @@ export default function ProjectsPage() {
           /* Grid View - Grouped by Category */
           <div className="space-y-8">
             {(searchQuery
-              ? [['Search Results', filteredProjects]]
+              ? [['Search Results', filteredProjects] as [string, AppProject[]]]
               : Object.entries(projects).sort(([a], [b]) => a.localeCompare(b))
             ).map(([category, categoryProjects]) => (
-              <div key={category}>
+              <div key={category as string}>
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
                   {category}
                   <span className="text-sm font-normal text-gray-500 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
