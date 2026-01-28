@@ -1,0 +1,132 @@
+'use client';
+
+import { useState } from 'react';
+import Header from './Header';
+import SearchForm from './SearchForm';
+import ResultsTable from './ResultsTable';
+import ExportBar from './ExportBar';
+import type { AppResult, SearchParams } from '@/lib/supabase';
+
+export default function SearchPage() {
+  const [results, setResults] = useState<AppResult[]>([]);
+  const [params, setParams] = useState<SearchParams | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  const handleSearch = async (searchParams: SearchParams) => {
+    setLoading(true);
+    setError(null);
+    setSaved(false);
+    setParams(searchParams);
+
+    try {
+      const res = await fetch('/api/scrape', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(searchParams),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to fetch results');
+      }
+
+      const data = await res.json();
+      setResults(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+      setResults([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaved = () => {
+    setSaved(true);
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <Header />
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
+          New Search
+        </h1>
+
+        <div className="space-y-6">
+          <SearchForm onSearch={handleSearch} loading={loading} />
+
+          {loading && (
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8">
+              <div className="flex flex-col items-center justify-center">
+                <svg
+                  className="animate-spin h-10 w-10 text-blue-600 mb-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
+                </svg>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Fetching apps from the App Store...
+                </p>
+                <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">
+                  This may take 10-30 seconds
+                </p>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+              <div className="flex items-center">
+                <svg className="w-5 h-5 text-red-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+                <span className="text-red-700 dark:text-red-400">{error}</span>
+              </div>
+            </div>
+          )}
+
+          {!loading && results.length > 0 && params && (
+            <>
+              {saved && (
+                <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+                  <div className="flex items-center">
+                    <svg className="w-5 h-5 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                    </svg>
+                    <span className="text-green-700 dark:text-green-400">Search saved successfully!</span>
+                  </div>
+                </div>
+              )}
+              <ExportBar results={results} params={params} onSave={handleSaved} />
+              <ResultsTable data={results} />
+            </>
+          )}
+
+          {!loading && !error && results.length === 0 && params && (
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center">
+              <p className="text-gray-600 dark:text-gray-400">
+                No apps found matching your criteria.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
