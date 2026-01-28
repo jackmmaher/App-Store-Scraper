@@ -13,6 +13,28 @@ interface Props {
 
 const POPULAR_COUNTRIES = ['us', 'gb', 'ca', 'au', 'de', 'fr', 'jp', 'in', 'br', 'mx'];
 
+interface KeywordRank {
+  keyword: string;
+  ranking: number | null;
+  found: boolean;
+  topApps: Array<{
+    rank: number;
+    id: string;
+    name: string;
+    developer: string;
+    rating: number;
+    reviews: number;
+    icon: string;
+    isTarget: boolean;
+  }>;
+}
+
+interface ExtractedKeyword {
+  keyword: string;
+  count: number;
+  type: 'word' | 'phrase';
+}
+
 export default function AppDetailModal({ app, country, onClose, onProjectSaved }: Props) {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [stats, setStats] = useState<ReviewStats | null>(null);
@@ -20,12 +42,19 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
   const [error, setError] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'reviews' | 'analysis' | 'settings'>('settings');
+  const [activeTab, setActiveTab] = useState<'reviews' | 'analysis' | 'settings' | 'keywords'>('settings');
 
   // Scraping settings
   const [useMultipleSorts, setUseMultipleSorts] = useState(true);
   const [additionalCountries, setAdditionalCountries] = useState<string[]>([]);
   const [hasScraped, setHasScraped] = useState(false);
+
+  // Keywords
+  const [keywordInput, setKeywordInput] = useState('');
+  const [keywordRanks, setKeywordRanks] = useState<KeywordRank[]>([]);
+  const [checkingKeyword, setCheckingKeyword] = useState(false);
+  const [extractedKeywords, setExtractedKeywords] = useState<ExtractedKeyword[]>([]);
+  const [extractingKeywords, setExtractingKeywords] = useState(false);
 
   // Project saving
   const [savingProject, setSavingProject] = useState(false);
@@ -137,6 +166,86 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
     } finally {
       setSavingProject(false);
     }
+  };
+
+  const checkKeywordRank = async () => {
+    if (!keywordInput.trim()) return;
+
+    setCheckingKeyword(true);
+
+    try {
+      const res = await fetch('/api/keywords/rank', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          keyword: keywordInput.trim(),
+          appId: app.id,
+          country,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to check keyword');
+      }
+
+      const data = await res.json();
+
+      // Add to results (avoid duplicates)
+      setKeywordRanks((prev) => {
+        const filtered = prev.filter((k) => k.keyword.toLowerCase() !== data.keyword.toLowerCase());
+        return [
+          {
+            keyword: data.keyword,
+            ranking: data.ranking,
+            found: data.found,
+            topApps: data.topApps,
+          },
+          ...filtered,
+        ].slice(0, 20); // Keep last 20 searches
+      });
+
+      setKeywordInput('');
+    } catch (err) {
+      console.error('Error checking keyword:', err);
+      alert('Failed to check keyword ranking');
+    } finally {
+      setCheckingKeyword(false);
+    }
+  };
+
+  const extractKeywordsFromReviews = async () => {
+    if (reviews.length === 0) return;
+
+    setExtractingKeywords(true);
+
+    try {
+      const res = await fetch('/api/keywords/extract', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reviews,
+          appName: app.name,
+          appDescription: app.description,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to extract keywords');
+      }
+
+      const data = await res.json();
+      setExtractedKeywords(data.allKeywords || []);
+    } catch (err) {
+      console.error('Error extracting keywords:', err);
+      alert('Failed to extract keywords from reviews');
+    } finally {
+      setExtractingKeywords(false);
+    }
+  };
+
+  const checkExtractedKeyword = (keyword: string) => {
+    setKeywordInput(keyword);
+    setActiveTab('keywords');
   };
 
   const exportReviewsCSV = () => {
@@ -375,6 +484,16 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
           >
             AI Analysis
           </button>
+          <button
+            onClick={() => setActiveTab('keywords')}
+            className={`px-6 py-3 text-sm font-medium transition-colors ${
+              activeTab === 'keywords'
+                ? 'text-blue-600 border-b-2 border-blue-600'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Keywords
+          </button>
         </div>
 
         {/* Content */}
@@ -599,6 +718,170 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
                   )}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Keywords Tab */}
+          {activeTab === 'keywords' && (
+            <div className="space-y-6">
+              {/* Keyword Rank Checker */}
+              <div>
+                <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                  Keyword Rank Checker
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                  Check where this app ranks for specific keywords in the App Store
+                </p>
+
+                <div className="flex gap-2 mb-4">
+                  <input
+                    type="text"
+                    value={keywordInput}
+                    onChange={(e) => setKeywordInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && checkKeywordRank()}
+                    placeholder="Enter a keyword (e.g., fitness tracker, meditation)"
+                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+                  />
+                  <button
+                    onClick={checkKeywordRank}
+                    disabled={checkingKeyword || !keywordInput.trim()}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {checkingKeyword ? (
+                      <>
+                        <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        Checking...
+                      </>
+                    ) : (
+                      'Check Rank'
+                    )}
+                  </button>
+                </div>
+
+                {/* Keyword Results */}
+                {keywordRanks.length > 0 && (
+                  <div className="space-y-3">
+                    {keywordRanks.map((result, idx) => (
+                      <div
+                        key={`${result.keyword}-${idx}`}
+                        className={`p-4 rounded-lg border ${
+                          result.found
+                            ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                            : 'bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-600'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-medium text-gray-900 dark:text-white">
+                            "{result.keyword}"
+                          </span>
+                          {result.found ? (
+                            <span className="px-3 py-1 bg-green-600 text-white text-sm font-bold rounded-full">
+                              #{result.ranking}
+                            </span>
+                          ) : (
+                            <span className="px-3 py-1 bg-gray-400 text-white text-sm rounded-full">
+                              Not in Top 200
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Top competitors for this keyword */}
+                        {result.topApps && result.topApps.length > 0 && (
+                          <div className="mt-3">
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Top 5 for this keyword:</p>
+                            <div className="space-y-1">
+                              {result.topApps.slice(0, 5).map((topApp) => (
+                                <div
+                                  key={topApp.id}
+                                  className={`flex items-center gap-2 text-sm p-1 rounded ${
+                                    topApp.isTarget ? 'bg-blue-100 dark:bg-blue-900/30' : ''
+                                  }`}
+                                >
+                                  <span className="w-6 text-center font-medium text-gray-500">
+                                    #{topApp.rank}
+                                  </span>
+                                  {topApp.icon && (
+                                    <img src={topApp.icon} alt="" className="w-6 h-6 rounded" />
+                                  )}
+                                  <span className={`flex-1 truncate ${topApp.isTarget ? 'font-medium text-blue-600 dark:text-blue-400' : 'text-gray-700 dark:text-gray-300'}`}>
+                                    {topApp.name}
+                                  </span>
+                                  <span className="text-xs text-gray-500">
+                                    {topApp.rating?.toFixed(1)}★
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Extracted Keywords from Reviews */}
+              <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">
+                      Keywords from Reviews
+                    </h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      Common terms users mention in reviews
+                    </p>
+                  </div>
+                  <button
+                    onClick={extractKeywordsFromReviews}
+                    disabled={extractingKeywords || reviews.length === 0}
+                    className="px-3 py-1.5 text-sm bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors disabled:opacity-50"
+                  >
+                    {extractingKeywords ? 'Extracting...' : hasScraped ? 'Extract Keywords' : 'Scrape Reviews First'}
+                  </button>
+                </div>
+
+                {extractedKeywords.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {extractedKeywords.map((kw, idx) => (
+                      <button
+                        key={`${kw.keyword}-${idx}`}
+                        onClick={() => {
+                          setKeywordInput(kw.keyword);
+                          checkKeywordRank();
+                        }}
+                        className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
+                          kw.type === 'phrase'
+                            ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 hover:bg-purple-200'
+                            : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-200'
+                        }`}
+                        title={`Click to check ranking - mentioned ${kw.count} times`}
+                      >
+                        {kw.keyword}
+                        <span className="ml-1 text-xs opacity-60">({kw.count})</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : !hasScraped ? (
+                  <div className="text-center py-8">
+                    <p className="text-gray-500 dark:text-gray-400 mb-4">
+                      Scrape reviews first to extract keywords
+                    </p>
+                    <button
+                      onClick={() => setActiveTab('settings')}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                    >
+                      Go to Settings
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-gray-500 dark:text-gray-400 text-center py-4">
+                    Click "Extract Keywords" to analyze review content
+                  </p>
+                )}
+              </div>
             </div>
           )}
         </div>
