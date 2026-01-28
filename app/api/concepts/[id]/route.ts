@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { isAuthenticated } from '@/lib/auth';
 import { getConcept, updateConcept, deleteConcept, WireframeData, ExportHistoryItem } from '@/lib/supabase';
 
+// Force rebuild - dynamic route for single concept operations
+
 // GET /api/concepts/[id] - Get a single concept
 export async function GET(
   request: NextRequest,
