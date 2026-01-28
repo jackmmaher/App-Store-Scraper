@@ -415,7 +415,7 @@ export default function ConceptsPage() {
 
               <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
                 <p className="text-xs text-gray-400">
-                  Updated {formatDate(concept.updated_at)}
+                  {concept.updated_at ? `Updated ${formatDate(concept.updated_at)}` : ''}
                 </p>
               </div>
             </div>

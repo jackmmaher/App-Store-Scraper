@@ -693,8 +693,8 @@ export interface AppConcept {
   linked_project_ids: string[];
   wireframe_data: WireframeData;
   export_history: ExportHistoryItem[];
-  created_at: string;
-  updated_at: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface CreateConceptInput {
@@ -753,6 +753,8 @@ export async function getConcepts(): Promise<AppConcept[]> {
 
 // Get a single concept
 export async function getConcept(id: string): Promise<AppConcept | null> {
+  console.log('getConcept called with id:', id);
+
   const { data, error } = await supabase
     .from('app_concepts')
     .select('*')
@@ -760,12 +762,11 @@ export async function getConcept(id: string): Promise<AppConcept | null> {
     .single();
 
   if (error) {
-    if (error.code !== 'PGRST116') {
-      console.error('Error fetching concept:', error.message);
-    }
+    console.error('Error fetching concept:', error.code, error.message, error.details);
     return null;
   }
 
+  console.log('getConcept returned data:', data ? 'found' : 'null');
   return data;
 }
 

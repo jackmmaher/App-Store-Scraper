@@ -250,7 +250,7 @@ export default function ConceptDetailPage({ conceptId }: ConceptDetailPageProps)
                     {concept.name}
                   </h1>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
-                    {linkedProjects.length} projects linked • {screenCount} screens • Updated {formatDate(concept.updated_at)}
+                    {linkedProjects.length} projects linked • {screenCount} screens{concept.updated_at ? ` • Updated ${formatDate(concept.updated_at)}` : ''}
                   </p>
                 </div>
               )}
