@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Header from './Header';
 import SearchForm from './SearchForm';
+import AppLookup from './AppLookup';
 import ResultsTable from './ResultsTable';
 import ExportBar from './ExportBar';
 import type { AppResult, SearchParams } from '@/lib/supabase';
@@ -83,6 +84,9 @@ export default function SearchPage() {
 
         <div className="space-y-6">
           <SearchForm onSearch={handleSearch} loading={loading} />
+
+          {/* App Lookup Section */}
+          <AppLookup />
 
           {loading && (
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8">

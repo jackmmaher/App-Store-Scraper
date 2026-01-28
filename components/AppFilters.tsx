@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { AppFilters as AppFiltersType } from '@/lib/supabase';
-import { COUNTRIES, CATEGORIES } from '@/lib/constants';
+import { COUNTRY_CODES, CATEGORY_NAMES } from '@/lib/constants';
 
 interface AppFiltersProps {
   filters: AppFiltersType;
@@ -105,13 +105,11 @@ export default function AppFilters({
   };
 
   const getCategoryLabel = (slug: string) => {
-    const cat = CATEGORIES.find(c => c.id === slug);
-    return cat?.name || slug;
+    return CATEGORY_NAMES[slug] || slug;
   };
 
   const getCountryLabel = (code: string) => {
-    const country = COUNTRIES.find(c => c.code === code);
-    return country?.name || code.toUpperCase();
+    return COUNTRY_CODES[code] || code.toUpperCase();
   };
 
   const hasActiveFilters =
