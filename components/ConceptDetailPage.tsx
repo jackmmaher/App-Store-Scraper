@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { clsx } from 'clsx';
+import Header from './Header';
 import { AppConcept, AppProject, WireframeData } from '@/lib/supabase';
 import { formatDate } from '@/lib/formatting';
 import WireframeEditor from './wireframe/WireframeEditor';
@@ -149,27 +150,30 @@ export default function ConceptDetailPage({ conceptId }: ConceptDetailPageProps)
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <svg
-          className="animate-spin h-8 w-8 text-blue-600"
-          fill="none"
-          viewBox="0 0 24 24"
-        >
-          <circle
-            className="opacity-25"
-            cx="12"
-            cy="12"
-            r="10"
-            stroke="currentColor"
-            strokeWidth="4"
-          />
-          <path
-            className="opacity-75"
-            fill="currentColor"
-            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-          />
-        </svg>
-      </div>
+      <>
+        <Header />
+        <div className="min-h-screen flex items-center justify-center">
+          <svg
+            className="animate-spin h-8 w-8 text-blue-600"
+            fill="none"
+            viewBox="0 0 24 24"
+          >
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+            />
+          </svg>
+        </div>
+      </>
     );
   }
 
@@ -180,9 +184,11 @@ export default function ConceptDetailPage({ conceptId }: ConceptDetailPageProps)
   const screenCount = Object.keys(concept.wireframe_data?.screens || {}).length;
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
-      {/* Header */}
-      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
+    <>
+      <Header />
+      <div className="h-[calc(100vh-64px)] flex flex-col bg-gray-50 dark:bg-gray-900">
+        {/* Concept Header */}
+        <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
         <div className="max-w-full flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <button
@@ -322,16 +328,17 @@ export default function ConceptDetailPage({ conceptId }: ConceptDetailPageProps)
         )}
       </div>
 
-      {/* Link Projects Modal */}
-      {showLinkModal && (
-        <LinkProjectsModal
-          allProjects={allProjects}
-          linkedProjectIds={concept.linked_project_ids}
-          onSave={handleUpdateLinkedProjects}
-          onClose={() => setShowLinkModal(false)}
-        />
-      )}
-    </div>
+        {/* Link Projects Modal */}
+        {showLinkModal && (
+          <LinkProjectsModal
+            allProjects={allProjects}
+            linkedProjectIds={concept.linked_project_ids}
+            onSave={handleUpdateLinkedProjects}
+            onClose={() => setShowLinkModal(false)}
+          />
+        )}
+      </div>
+    </>
   );
 }
 

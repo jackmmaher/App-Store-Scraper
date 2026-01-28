@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Header from './Header';
 import { AppConcept, AppProject } from '@/lib/supabase';
 import { formatDate } from '@/lib/formatting';
 
@@ -231,34 +232,39 @@ export default function ConceptsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <svg
-          className="animate-spin h-8 w-8 text-blue-600"
-          fill="none"
-          viewBox="0 0 24 24"
-        >
-          <circle
-            className="opacity-25"
-            cx="12"
-            cy="12"
-            r="10"
-            stroke="currentColor"
-            strokeWidth="4"
-          />
-          <path
-            className="opacity-75"
-            fill="currentColor"
-            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-          />
-        </svg>
-      </div>
+      <>
+        <Header />
+        <div className="min-h-screen flex items-center justify-center">
+          <svg
+            className="animate-spin h-8 w-8 text-blue-600"
+            fill="none"
+            viewBox="0 0 24 24"
+          >
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+            />
+          </svg>
+        </div>
+      </>
     );
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Header */}
-      <div className="flex justify-between items-center mb-8">
+    <>
+      <Header />
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Page Header */}
+        <div className="flex justify-between items-center mb-8">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
             App Concepts
@@ -417,12 +423,13 @@ export default function ConceptsPage() {
         </div>
       )}
 
-      <NewConceptModal
-        isOpen={showModal}
-        onClose={() => setShowModal(false)}
-        onSubmit={handleCreateConcept}
-        projects={projects}
-      />
-    </div>
+        <NewConceptModal
+          isOpen={showModal}
+          onClose={() => setShowModal(false)}
+          onSubmit={handleCreateConcept}
+          projects={projects}
+        />
+      </div>
+    </>
   );
 }
