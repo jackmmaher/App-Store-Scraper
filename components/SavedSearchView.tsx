@@ -184,7 +184,7 @@ export default function SavedSearchView({ searchId }: Props) {
 
         <div className="space-y-6">
           <ExportBar results={search.results} params={search.params} showSave={false} />
-          <ResultsTable data={search.results} />
+          <ResultsTable data={search.results} country={search.params.country} />
         </div>
       </div>
     </div>

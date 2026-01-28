@@ -2,6 +2,9 @@
   "functions": {
     "api/scrape.py": {
       "maxDuration": 60
+    },
+    "api/reviews.py": {
+      "maxDuration": 30
     }
   }
 }

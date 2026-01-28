@@ -114,7 +114,7 @@ export default function SearchPage() {
                 </div>
               )}
               <ExportBar results={results} params={params} onSave={handleSaved} />
-              <ResultsTable data={results} />
+              <ResultsTable data={results} country={params.country} />
             </>
           )}
 
