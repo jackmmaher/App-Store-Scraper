@@ -51,7 +51,22 @@ export async function GET(request: NextRequest) {
   results.singleMatch = singleData;
   results.singleError = singleError;
 
-  // Test 5: Manual comparison
+  // Test 5: Try selecting ALL fields (like getProject does)
+  const { data: fullData, error: fullError } = await supabase
+    .from('app_projects')
+    .select('*')
+    .eq('id', id)
+    .single();
+  results.fullMatch = fullData ? {
+    id: fullData.id,
+    app_name: fullData.app_name,
+    review_count: fullData.review_count,
+    reviews_length: Array.isArray(fullData.reviews) ? fullData.reviews.length : 'not array',
+    reviews_size_kb: fullData.reviews ? Math.round(JSON.stringify(fullData.reviews).length / 1024) : 0,
+  } : null;
+  results.fullError = fullError;
+
+  // Test 6: Manual comparison
   if (allIds && allIds.length > 0) {
     const firstId = allIds[0].id;
     results.firstDbId = firstId;
