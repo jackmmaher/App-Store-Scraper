@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { isAuthenticated } from '@/lib/auth';
 import { supabase, updateProject, deleteProject } from '@/lib/supabase';
 
-// GET /api/projects/[id] - Fetch a single project
+// GET /api/projects/[id] - Fetch a single project by UUID
+// Updated: force redeploy
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

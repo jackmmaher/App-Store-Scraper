@@ -43,7 +43,8 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
   const fetchProject = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/projects/${projectId}`);
+      // Use query param instead of dynamic route (workaround for Vercel routing issue)
+      const res = await fetch(`/api/projects?id=${projectId}`);
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || 'Failed to load project');
@@ -62,7 +63,7 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
     if (!confirm('Delete this project? This cannot be undone.')) return;
 
     try {
-      const res = await fetch(`/api/projects/${projectId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/projects?id=${projectId}`, { method: 'DELETE' });
       if (res.ok) {
         router.push('/projects');
       }
@@ -74,7 +75,7 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
   const saveNotes = async () => {
     setSavingNotes(true);
     try {
-      const res = await fetch(`/api/projects/${projectId}`, {
+      const res = await fetch(`/api/projects?id=${projectId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ notes }),
@@ -108,7 +109,7 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
       const data = await res.json();
 
       // Save the new analysis
-      const updateRes = await fetch(`/api/projects/${projectId}`, {
+      const updateRes = await fetch(`/api/projects?id=${projectId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ai_analysis: data.analysis }),
