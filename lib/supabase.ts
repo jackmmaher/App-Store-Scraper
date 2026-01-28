@@ -162,7 +162,7 @@ export interface AppFilters {
   categories?: string[];
   countries?: string[];
   search?: string;
-  sortBy?: 'reviews' | 'rating' | 'newest' | 'updated' | 'name';
+  sortBy?: 'reviews' | 'rating' | 'newest' | 'updated' | 'name' | 'developer' | 'price' | 'category' | 'scrapes';
   sortOrder?: 'asc' | 'desc';
   limit?: number;
   offset?: number;
@@ -323,6 +323,10 @@ export async function getAppsWithFilters(filters: AppFilters): Promise<AppsRespo
     newest: 'first_seen_at',
     updated: 'last_updated_at',
     name: 'name',
+    developer: 'developer',
+    price: 'price',
+    category: 'primary_genre',
+    scrapes: 'scrape_count',
   }[sortBy] || 'review_count';
 
   query = query.order(sortColumn, { ascending: sortOrder === 'asc' });

@@ -13,14 +13,6 @@ interface AppFiltersProps {
   filteredCount: number;
 }
 
-const REVIEW_PRESETS = [
-  { label: 'Any', value: undefined },
-  { label: '1K+', value: 1000 },
-  { label: '5K+', value: 5000 },
-  { label: '10K+', value: 10000 },
-  { label: '50K+', value: 50000 },
-  { label: '100K+', value: 100000 },
-];
 
 export default function AppFilters({
   filters,
@@ -140,15 +132,14 @@ export default function AppFilters({
         {/* Min Reviews */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Min Reviews</label>
-          <select
+          <input
+            type="number"
+            min="0"
+            placeholder="0"
             value={filters.minReviews || ''}
             onChange={(e) => updateFilter('minReviews', e.target.value ? parseInt(e.target.value) : undefined)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-          >
-            {REVIEW_PRESETS.map(p => (
-              <option key={p.label} value={p.value || ''}>{p.label}</option>
-            ))}
-          </select>
+          />
         </div>
 
         {/* Max Reviews */}

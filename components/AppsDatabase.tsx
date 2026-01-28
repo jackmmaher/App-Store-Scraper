@@ -116,6 +116,20 @@ export default function AppsDatabase() {
   const currentPage = Math.floor((filters.offset || 0) / (filters.limit || 50)) + 1;
   const totalPages = Math.ceil(filteredCount / (filters.limit || 50));
 
+  // Handle column sort click
+  const handleSort = (column: string) => {
+    const newOrder = filters.sortBy === column && filters.sortOrder === 'desc' ? 'asc' : 'desc';
+    setFilters({ ...filters, sortBy: column as typeof filters.sortBy, sortOrder: newOrder, offset: 0 });
+  };
+
+  // Render sort indicator
+  const SortIndicator = ({ column }: { column: string }) => {
+    if (filters.sortBy !== column) {
+      return <span className="text-gray-300 ml-1">↕</span>;
+    }
+    return <span className="text-blue-600 ml-1">{filters.sortOrder === 'asc' ? '↑' : '↓'}</span>;
+  };
+
   return (
     <div className="space-y-4">
       {/* Stats Cards */}
@@ -186,29 +200,50 @@ export default function AppsDatabase() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    App
+                  <th
+                    onClick={() => handleSort('name')}
+                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                  >
+                    App<SortIndicator column="name" />
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Developer
+                  <th
+                    onClick={() => handleSort('developer')}
+                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                  >
+                    Developer<SortIndicator column="developer" />
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Reviews
+                  <th
+                    onClick={() => handleSort('reviews')}
+                    className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                  >
+                    Reviews<SortIndicator column="reviews" />
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Rating
+                  <th
+                    onClick={() => handleSort('rating')}
+                    className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                  >
+                    Rating<SortIndicator column="rating" />
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Price
+                  <th
+                    onClick={() => handleSort('price')}
+                    className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                  >
+                    Price<SortIndicator column="price" />
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Category
+                  <th
+                    onClick={() => handleSort('category')}
+                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                  >
+                    Category<SortIndicator column="category" />
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Countries
                   </th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Scrapes
+                  <th
+                    onClick={() => handleSort('scrapes')}
+                    className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                  >
+                    Scrapes<SortIndicator column="scrapes" />
                   </th>
                 </tr>
               </thead>
