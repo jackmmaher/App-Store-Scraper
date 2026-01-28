@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isAuthenticated } from '@/lib/auth';
-import { getProject, updateProject, deleteProject } from '@/lib/supabase';
+import { supabase, updateProject, deleteProject } from '@/lib/supabase';
 
 // GET /api/projects/[id] - Fetch a single project
 export async function GET(
@@ -17,23 +17,39 @@ export async function GET(
   console.log('[API] GET /api/projects/[id] called with id:', id);
 
   try {
-    const result = await getProject(id);
+    // Query directly instead of using getProject function
+    const { data, error } = await supabase
+      .from('app_projects')
+      .select('*')
+      .eq('id', id)
+      .single();
 
-    if (result.error) {
-      console.error('[API] Supabase error:', result.error);
-      return NextResponse.json({ error: `Database error: ${result.error}` }, { status: 500 });
+    console.log('[API] Direct query result - error:', error, 'hasData:', !!data);
+
+    if (error) {
+      console.error('[API] Supabase error:', error);
+      return NextResponse.json({
+        error: `Database error: ${error.code}: ${error.message}`,
+        debug: { id, errorCode: error.code, errorMessage: error.message }
+      }, { status: 500 });
     }
 
-    if (!result.data) {
+    if (!data) {
       console.log('[API] No data returned, returning 404');
-      return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+      return NextResponse.json({
+        error: 'Project not found',
+        debug: { id, hasError: !!error, hasData: false }
+      }, { status: 404 });
     }
 
-    console.log('[API] Returning project:', result.data.app_name);
-    return NextResponse.json({ project: result.data });
+    console.log('[API] Returning project:', data.app_name);
+    return NextResponse.json({ project: data });
   } catch (error) {
     console.error('[API] Unexpected error:', error);
-    return NextResponse.json({ error: `Failed to fetch project: ${error instanceof Error ? error.message : 'Unknown error'}` }, { status: 500 });
+    return NextResponse.json({
+      error: `Failed to fetch project: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      debug: { id, errorType: error instanceof Error ? error.name : typeof error }
+    }, { status: 500 });
   }
 }
 
