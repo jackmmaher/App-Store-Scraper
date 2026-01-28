@@ -590,6 +590,8 @@ export async function getProjectsByCategory(): Promise<Record<string, AppProject
 
 // Get a single project
 export async function getProject(id: string): Promise<{ data: AppProject | null; error: string | null }> {
+  console.log('[getProject] Fetching project with ID:', id);
+
   const { data, error } = await supabase
     .from('app_projects')
     .select('*')
@@ -597,10 +599,16 @@ export async function getProject(id: string): Promise<{ data: AppProject | null;
     .single();
 
   if (error) {
-    console.error('Error fetching project:', error);
-    return { data: null, error: `${error.code}: ${error.message}` };
+    console.error('[getProject] Supabase error:', {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+    });
+    return { data: null, error: `${error.code}: ${error.message}${error.hint ? ` (${error.hint})` : ''}` };
   }
 
+  console.log('[getProject] Found project:', data?.app_name);
   return { data, error: null };
 }
 

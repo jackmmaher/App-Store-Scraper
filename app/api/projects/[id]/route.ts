@@ -14,22 +14,26 @@ export async function GET(
 
   const { id } = await params;
 
+  console.log('[API] GET /api/projects/[id] called with id:', id);
+
   try {
     const result = await getProject(id);
 
     if (result.error) {
-      console.error('Supabase error:', result.error);
+      console.error('[API] Supabase error:', result.error);
       return NextResponse.json({ error: `Database error: ${result.error}` }, { status: 500 });
     }
 
     if (!result.data) {
+      console.log('[API] No data returned, returning 404');
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
 
+    console.log('[API] Returning project:', result.data.app_name);
     return NextResponse.json({ project: result.data });
   } catch (error) {
-    console.error('Error fetching project:', error);
-    return NextResponse.json({ error: 'Failed to fetch project' }, { status: 500 });
+    console.error('[API] Unexpected error:', error);
+    return NextResponse.json({ error: `Failed to fetch project: ${error instanceof Error ? error.message : 'Unknown error'}` }, { status: 500 });
   }
 }
 
