@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { isAuthenticated } from '@/lib/auth';
 import { supabase, updateProject, deleteProject } from '@/lib/supabase';
 
+// Force rebuild - Vercel cache issue
+
 // GET /api/projects/[id] - Fetch a single project
 export async function GET(
   request: NextRequest,
