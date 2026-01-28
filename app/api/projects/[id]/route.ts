@@ -15,13 +15,18 @@ export async function GET(
   const { id } = await params;
 
   try {
-    const project = await getProject(id);
+    const result = await getProject(id);
 
-    if (!project) {
+    if (result.error) {
+      console.error('Supabase error:', result.error);
+      return NextResponse.json({ error: `Database error: ${result.error}` }, { status: 500 });
+    }
+
+    if (!result.data) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
 
-    return NextResponse.json({ project });
+    return NextResponse.json({ project: result.data });
   } catch (error) {
     console.error('Error fetching project:', error);
     return NextResponse.json({ error: 'Failed to fetch project' }, { status: 500 });

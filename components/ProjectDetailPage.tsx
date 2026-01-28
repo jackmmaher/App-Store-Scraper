@@ -44,15 +44,11 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
     setLoading(true);
     try {
       const res = await fetch(`/api/projects/${projectId}`);
+      const data = await res.json();
       if (!res.ok) {
-        if (res.status === 404) {
-          setError('Project not found');
-        } else {
-          setError('Failed to load project');
-        }
+        setError(data.error || 'Failed to load project');
         return;
       }
-      const data = await res.json();
       setProject(data.project);
       setNotes(data.project.notes || '');
     } catch (err) {

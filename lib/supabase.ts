@@ -589,7 +589,7 @@ export async function getProjectsByCategory(): Promise<Record<string, AppProject
 }
 
 // Get a single project
-export async function getProject(id: string): Promise<AppProject | null> {
+export async function getProject(id: string): Promise<{ data: AppProject | null; error: string | null }> {
   const { data, error } = await supabase
     .from('app_projects')
     .select('*')
@@ -598,10 +598,10 @@ export async function getProject(id: string): Promise<AppProject | null> {
 
   if (error) {
     console.error('Error fetching project:', error);
-    return null;
+    return { data: null, error: `${error.code}: ${error.message}` };
   }
 
-  return data;
+  return { data, error: null };
 }
 
 // Delete a project
