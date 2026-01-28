@@ -414,3 +414,224 @@ export async function getAppsStats(): Promise<{
     avgReviews: Math.round(avgReviews),
   };
 }
+
+// ============================================
+// App Projects Types & Operations
+// ============================================
+
+export interface Review {
+  id: string;
+  title: string;
+  content: string;
+  rating: number;
+  author: string;
+  version: string;
+  vote_count: number;
+  vote_sum: number;
+  country?: string;
+  sort_source?: string;
+}
+
+export interface ReviewStats {
+  total: number;
+  average_rating: number;
+  rating_distribution: Record<string, number>;
+  countries_scraped?: string[];
+  scrape_settings?: {
+    max_pages: number;
+    multiple_sorts: boolean;
+    countries: string[];
+  };
+}
+
+export interface AppProject {
+  id: string;
+  app_store_id: string;
+  app_name: string;
+  app_icon_url: string | null;
+  app_developer: string | null;
+  app_rating: number | null;
+  app_review_count: number | null;
+  app_url: string | null;
+  app_bundle_id: string | null;
+  app_primary_genre: string | null;
+  app_price: number;
+  app_currency: string;
+  reviews: Review[];
+  review_count: number;
+  review_stats: ReviewStats | null;
+  scrape_settings: Record<string, unknown> | null;
+  ai_analysis: string | null;
+  analysis_date: string | null;
+  notes: string | null;
+  country: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateProjectInput {
+  app: AppResult;
+  reviews: Review[];
+  reviewStats: ReviewStats | null;
+  scrapeSettings?: Record<string, unknown>;
+  aiAnalysis?: string;
+  country: string;
+  notes?: string;
+}
+
+// Create a new project
+export async function createProject(input: CreateProjectInput): Promise<AppProject | null> {
+  const { app, reviews, reviewStats, scrapeSettings, aiAnalysis, country, notes } = input;
+
+  const { data, error } = await supabase
+    .from('app_projects')
+    .insert({
+      app_store_id: app.id,
+      app_name: app.name,
+      app_icon_url: app.icon_url,
+      app_developer: app.developer,
+      app_rating: app.rating,
+      app_review_count: app.review_count,
+      app_url: app.url,
+      app_bundle_id: app.bundle_id,
+      app_primary_genre: app.primary_genre,
+      app_price: app.price,
+      app_currency: app.currency,
+      reviews: reviews,
+      review_count: reviews.length,
+      review_stats: reviewStats,
+      scrape_settings: scrapeSettings,
+      ai_analysis: aiAnalysis,
+      analysis_date: aiAnalysis ? new Date().toISOString() : null,
+      notes: notes,
+      country: country,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error creating project:', error);
+    return null;
+  }
+
+  return data;
+}
+
+// Update an existing project
+export async function updateProject(
+  id: string,
+  updates: Partial<{
+    reviews: Review[];
+    review_stats: ReviewStats;
+    ai_analysis: string;
+    notes: string;
+  }>
+): Promise<AppProject | null> {
+  const updateData: Record<string, unknown> = { ...updates };
+
+  if (updates.reviews) {
+    updateData.review_count = updates.reviews.length;
+  }
+
+  if (updates.ai_analysis) {
+    updateData.analysis_date = new Date().toISOString();
+  }
+
+  const { data, error } = await supabase
+    .from('app_projects')
+    .update(updateData)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error updating project:', error);
+    return null;
+  }
+
+  return data;
+}
+
+// Get all projects
+export async function getProjects(): Promise<AppProject[]> {
+  const { data, error } = await supabase
+    .from('app_projects')
+    .select('*')
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching projects:', error);
+    return [];
+  }
+
+  return data || [];
+}
+
+// Get projects grouped by category
+export async function getProjectsByCategory(): Promise<Record<string, AppProject[]>> {
+  const projects = await getProjects();
+
+  const grouped: Record<string, AppProject[]> = {};
+
+  projects.forEach((project) => {
+    const category = project.app_primary_genre || 'Uncategorized';
+    if (!grouped[category]) {
+      grouped[category] = [];
+    }
+    grouped[category].push(project);
+  });
+
+  return grouped;
+}
+
+// Get a single project
+export async function getProject(id: string): Promise<AppProject | null> {
+  const { data, error } = await supabase
+    .from('app_projects')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (error) {
+    console.error('Error fetching project:', error);
+    return null;
+  }
+
+  return data;
+}
+
+// Delete a project
+export async function deleteProject(id: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('app_projects')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    console.error('Error deleting project:', error);
+    return false;
+  }
+
+  return true;
+}
+
+// Check if project exists for an app
+export async function getProjectByAppId(appStoreId: string): Promise<AppProject | null> {
+  const { data, error } = await supabase
+    .from('app_projects')
+    .select('*')
+    .eq('app_store_id', appStoreId)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (error) {
+    // Not found is expected sometimes
+    if (error.code !== 'PGRST116') {
+      console.error('Error checking project:', error);
+    }
+    return null;
+  }
+
+  return data;
+}

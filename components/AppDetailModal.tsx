@@ -1,43 +1,19 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import type { AppResult } from '@/lib/supabase';
+import { useState } from 'react';
+import type { AppResult, Review, ReviewStats } from '@/lib/supabase';
 import { COUNTRY_CODES } from '@/lib/constants';
-
-interface Review {
-  id: string;
-  title: string;
-  content: string;
-  rating: number;
-  author: string;
-  version: string;
-  vote_count: number;
-  vote_sum: number;
-  country?: string;
-  sort_source?: string;
-}
-
-interface ReviewStats {
-  total: number;
-  average_rating: number;
-  rating_distribution: Record<string, number>;
-  countries_scraped?: string[];
-  scrape_settings?: {
-    max_pages: number;
-    multiple_sorts: boolean;
-    countries: string[];
-  };
-}
 
 interface Props {
   app: AppResult;
   country: string;
   onClose: () => void;
+  onProjectSaved?: (projectId: string) => void;
 }
 
 const POPULAR_COUNTRIES = ['us', 'gb', 'ca', 'au', 'de', 'fr', 'jp', 'in', 'br', 'mx'];
 
-export default function AppDetailModal({ app, country, onClose }: Props) {
+export default function AppDetailModal({ app, country, onClose, onProjectSaved }: Props) {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [stats, setStats] = useState<ReviewStats | null>(null);
   const [loading, setLoading] = useState(false);
@@ -50,6 +26,11 @@ export default function AppDetailModal({ app, country, onClose }: Props) {
   const [useMultipleSorts, setUseMultipleSorts] = useState(true);
   const [additionalCountries, setAdditionalCountries] = useState<string[]>([]);
   const [hasScraped, setHasScraped] = useState(false);
+
+  // Project saving
+  const [savingProject, setSavingProject] = useState(false);
+  const [projectSaved, setProjectSaved] = useState(false);
+  const [savedProjectId, setSavedProjectId] = useState<string | null>(null);
 
   const toggleCountry = (code: string) => {
     if (code === country) return; // Can't toggle primary country
@@ -116,6 +97,45 @@ export default function AppDetailModal({ app, country, onClose }: Props) {
       setAnalysis(`Error: ${err instanceof Error ? err.message : 'Analysis failed'}`);
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  const saveAsProject = async () => {
+    if (reviews.length === 0) return;
+
+    setSavingProject(true);
+
+    try {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          app,
+          reviews,
+          reviewStats: stats,
+          scrapeSettings: {
+            useMultipleSorts,
+            additionalCountries,
+            primaryCountry: country,
+          },
+          aiAnalysis: analysis,
+          country,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to save project');
+      }
+
+      const data = await res.json();
+      setProjectSaved(true);
+      setSavedProjectId(data.project.id);
+      onProjectSaved?.(data.project.id);
+    } catch (err) {
+      console.error('Error saving project:', err);
+      alert('Failed to save project. Please try again.');
+    } finally {
+      setSavingProject(false);
     }
   };
 
@@ -266,6 +286,40 @@ export default function AppDetailModal({ app, country, onClose }: Props) {
                 >
                   {analyzing ? 'Analyzing...' : 'AI Analysis'}
                 </button>
+                {projectSaved ? (
+                  <a
+                    href={`/projects/${savedProjectId}`}
+                    className="px-3 py-1.5 text-xs bg-green-600 hover:bg-green-700 text-white rounded transition-colors flex items-center gap-1"
+                  >
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                    Saved - View Project
+                  </a>
+                ) : (
+                  <button
+                    onClick={saveAsProject}
+                    disabled={savingProject || reviews.length === 0}
+                    className="px-3 py-1.5 text-xs bg-amber-600 hover:bg-amber-700 text-white rounded transition-colors disabled:opacity-50 flex items-center gap-1"
+                  >
+                    {savingProject ? (
+                      <>
+                        <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                        </svg>
+                        Save as Project
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
             </div>
           </div>
