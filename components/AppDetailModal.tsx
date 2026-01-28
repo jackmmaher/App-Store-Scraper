@@ -63,7 +63,7 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
     setActiveTab('reviews');
 
     try {
-      const res = await fetch('/api/reviews', {
+      const res = await fetch('/py-api/reviews', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

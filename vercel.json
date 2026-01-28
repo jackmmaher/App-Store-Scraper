@@ -1,10 +1,13 @@
 {
   "functions": {
-    "api/scrape.py": {
+    "py-api/scrape.py": {
       "maxDuration": 60
     },
-    "api/reviews.py": {
+    "py-api/reviews.py": {
       "maxDuration": 30
     }
-  }
+  },
+  "rewrites": [
+    { "source": "/py-api/:path*", "destination": "/py-api/:path*" }
+  ]
 }
