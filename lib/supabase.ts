@@ -759,15 +759,21 @@ export async function getConcept(id: string): Promise<AppConcept | null> {
     .from('app_concepts')
     .select('*')
     .eq('id', id)
-    .single();
+    .limit(1);
 
   if (error) {
     console.error('Error fetching concept:', error.code, error.message, error.details);
     return null;
   }
 
-  console.log('getConcept returned data:', data ? 'found' : 'null');
-  return data;
+  console.log('getConcept returned data:', data?.length, 'rows');
+
+  if (!data || data.length === 0) {
+    console.log('No concept found with id:', id);
+    return null;
+  }
+
+  return data[0];
 }
 
 // Update a concept

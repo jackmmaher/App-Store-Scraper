@@ -13,16 +13,25 @@ export async function GET(
   }
 
   const { id } = await params;
-  const concept = await getConcept(id);
 
-  if (!concept) {
+  try {
+    const concept = await getConcept(id);
+
+    if (!concept) {
+      return NextResponse.json(
+        { error: 'Concept not found', id, debug: 'getConcept returned null' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ concept });
+  } catch (error) {
+    console.error('Error in GET /api/concepts/[id]:', error);
     return NextResponse.json(
-      { error: 'Concept not found' },
-      { status: 404 }
+      { error: 'Internal server error', message: String(error) },
+      { status: 500 }
     );
   }
-
-  return NextResponse.json({ concept });
 }
 
 // PUT /api/concepts/[id] - Update a concept
