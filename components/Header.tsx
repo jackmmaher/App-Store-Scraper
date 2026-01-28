@@ -98,17 +98,6 @@ export default function Header() {
               >
                 My Projects
               </Link>
-              <Link
-                href="/concepts"
-                className={clsx(
-                  'px-3 py-2 rounded-md text-sm font-medium transition-colors',
-                  pathname?.startsWith('/concepts')
-                    ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
-                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
-                )}
-              >
-                Concepts
-              </Link>
             </nav>
           </div>
 
