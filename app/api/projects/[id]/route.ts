@@ -15,6 +15,8 @@ export async function GET(
   const { id } = await params;
 
   try {
+    console.log('[GET /api/projects/[id]] Fetching project with id:', id);
+
     const { data, error } = await supabase
       .from('app_projects')
       .select('*')
@@ -22,18 +24,27 @@ export async function GET(
       .single();
 
     if (error) {
+      console.error('[GET /api/projects/[id]] Supabase error:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      });
       if (error.code === 'PGRST116') {
         return NextResponse.json({ error: 'Project not found' }, { status: 404 });
       }
-      return NextResponse.json({ error: 'Database error' }, { status: 500 });
+      return NextResponse.json({ error: `Database error: ${error.message}` }, { status: 500 });
     }
 
     if (!data) {
+      console.log('[GET /api/projects/[id]] No data returned for id:', id);
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
 
+    console.log('[GET /api/projects/[id]] Successfully fetched project:', data.app_name);
     return NextResponse.json({ project: data });
-  } catch {
+  } catch (err) {
+    console.error('[GET /api/projects/[id]] Exception:', err);
     return NextResponse.json({ error: 'Failed to fetch project' }, { status: 500 });
   }
 }
