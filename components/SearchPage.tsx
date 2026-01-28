@@ -43,7 +43,7 @@ export default function SearchPage() {
     setParams(searchParams);
 
     try {
-      const res = await fetch('/py-api/scrape', {
+      const res = await fetch('/api/py-scrape', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(searchParams),
