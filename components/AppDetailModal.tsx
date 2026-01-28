@@ -3,6 +3,9 @@
 import { useState } from 'react';
 import type { AppResult, Review, ReviewStats } from '@/lib/supabase';
 import { COUNTRY_CODES } from '@/lib/constants';
+import { useKeywordRanking } from '@/hooks/useKeywordRanking';
+import { useKeywordExtraction } from '@/hooks/useKeywordExtraction';
+import StarRating from './StarRating';
 
 interface Props {
   app: AppResult;
@@ -12,28 +15,6 @@ interface Props {
 }
 
 const POPULAR_COUNTRIES = ['us', 'gb', 'ca', 'au', 'de', 'fr', 'jp', 'in', 'br', 'mx'];
-
-interface KeywordRank {
-  keyword: string;
-  ranking: number | null;
-  found: boolean;
-  topApps: Array<{
-    rank: number;
-    id: string;
-    name: string;
-    developer: string;
-    rating: number;
-    reviews: number;
-    icon: string;
-    isTarget: boolean;
-  }>;
-}
-
-interface ExtractedKeyword {
-  keyword: string;
-  count: number;
-  type: 'word' | 'phrase';
-}
 
 export default function AppDetailModal({ app, country, onClose, onProjectSaved }: Props) {
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -49,12 +30,20 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
   const [additionalCountries, setAdditionalCountries] = useState<string[]>([]);
   const [hasScraped, setHasScraped] = useState(false);
 
-  // Keywords
-  const [keywordInput, setKeywordInput] = useState('');
-  const [keywordRanks, setKeywordRanks] = useState<KeywordRank[]>([]);
-  const [checkingKeyword, setCheckingKeyword] = useState(false);
-  const [extractedKeywords, setExtractedKeywords] = useState<ExtractedKeyword[]>([]);
-  const [extractingKeywords, setExtractingKeywords] = useState(false);
+  // Keywords - use shared hooks
+  const {
+    keywordInput,
+    setKeywordInput,
+    keywordRanks,
+    checking: checkingKeyword,
+    checkKeywordRank,
+  } = useKeywordRanking({ appId: app.id, country });
+
+  const {
+    extractedKeywords,
+    extracting: extractingKeywords,
+    extractKeywords,
+  } = useKeywordExtraction({ appName: app.name, appDescription: app.description });
 
   // Project saving
   const [savingProject, setSavingProject] = useState(false);
@@ -168,80 +157,7 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
     }
   };
 
-  const checkKeywordRank = async () => {
-    if (!keywordInput.trim()) return;
-
-    setCheckingKeyword(true);
-
-    try {
-      const res = await fetch('/api/keywords/rank', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          keyword: keywordInput.trim(),
-          appId: app.id,
-          country,
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error('Failed to check keyword');
-      }
-
-      const data = await res.json();
-
-      // Add to results (avoid duplicates)
-      setKeywordRanks((prev) => {
-        const filtered = prev.filter((k) => k.keyword.toLowerCase() !== data.keyword.toLowerCase());
-        return [
-          {
-            keyword: data.keyword,
-            ranking: data.ranking,
-            found: data.found,
-            topApps: data.topApps,
-          },
-          ...filtered,
-        ].slice(0, 20); // Keep last 20 searches
-      });
-
-      setKeywordInput('');
-    } catch (err) {
-      console.error('Error checking keyword:', err);
-      alert('Failed to check keyword ranking');
-    } finally {
-      setCheckingKeyword(false);
-    }
-  };
-
-  const extractKeywordsFromReviews = async () => {
-    if (reviews.length === 0) return;
-
-    setExtractingKeywords(true);
-
-    try {
-      const res = await fetch('/api/keywords/extract', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          reviews,
-          appName: app.name,
-          appDescription: app.description,
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error('Failed to extract keywords');
-      }
-
-      const data = await res.json();
-      setExtractedKeywords(data.allKeywords || []);
-    } catch (err) {
-      console.error('Error extracting keywords:', err);
-      alert('Failed to extract keywords from reviews');
-    } finally {
-      setExtractingKeywords(false);
-    }
-  };
+  const extractKeywordsFromReviews = () => extractKeywords(reviews);
 
   const checkExtractedKeyword = (keyword: string) => {
     setKeywordInput(keyword);
@@ -299,23 +215,6 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
     URL.revokeObjectURL(url);
   };
 
-  const renderStars = (rating: number) => {
-    return (
-      <div className="flex gap-0.5">
-        {[1, 2, 3, 4, 5].map((star) => (
-          <svg
-            key={star}
-            className={`w-4 h-4 ${star <= rating ? 'text-yellow-400' : 'text-gray-300'}`}
-            fill="currentColor"
-            viewBox="0 0 20 20"
-          >
-            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-          </svg>
-        ))}
-      </div>
-    );
-  };
-
   const estimatedReviews = (useMultipleSorts ? 2 : 1) * (1 + additionalCountries.length) * 500;
 
   return (
@@ -351,7 +250,7 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
             </div>
             <div className="flex items-center gap-4 mt-2">
               <div className="flex items-center gap-1">
-                {renderStars(Math.round(app.rating))}
+                <StarRating rating={Math.round(app.rating)} />
                 <span className="text-sm text-gray-600 dark:text-gray-300 ml-1">
                   {app.rating?.toFixed(1)}
                 </span>
@@ -645,7 +544,7 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
                         <div className="flex items-start justify-between mb-2">
                           <div>
                             <div className="flex items-center gap-2">
-                              {renderStars(review.rating)}
+                              <StarRating rating={review.rating} />
                               <span className="font-medium text-gray-900 dark:text-white">
                                 {review.title}
                               </span>
@@ -743,7 +642,7 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
                     className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                   />
                   <button
-                    onClick={checkKeywordRank}
+                    onClick={() => checkKeywordRank()}
                     disabled={checkingKeyword || !keywordInput.trim()}
                     className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
                   >
@@ -848,10 +747,7 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
                     {extractedKeywords.map((kw, idx) => (
                       <button
                         key={`${kw.keyword}-${idx}`}
-                        onClick={() => {
-                          setKeywordInput(kw.keyword);
-                          checkKeywordRank();
-                        }}
+                        onClick={() => checkKeywordRank(kw.keyword)}
                         className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
                           kw.type === 'phrase'
                             ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 hover:bg-purple-200'

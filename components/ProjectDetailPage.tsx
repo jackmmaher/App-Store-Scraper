@@ -4,48 +4,14 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Header from './Header';
+import StarRating from './StarRating';
 import type { AppProject, Review } from '@/lib/supabase';
+import { useKeywordRanking } from '@/hooks/useKeywordRanking';
+import { useKeywordExtraction } from '@/hooks/useKeywordExtraction';
+import { formatDateTime, formatNumber } from '@/lib/formatting';
 
 interface ProjectDetailPageProps {
   projectId: string;
-}
-
-interface KeywordRank {
-  keyword: string;
-  ranking: number | null;
-  found: boolean;
-  topApps: Array<{
-    rank: number;
-    id: string;
-    name: string;
-    developer: string;
-    rating: number;
-    reviews: number;
-    icon: string;
-    isTarget: boolean;
-  }>;
-}
-
-interface ExtractedKeyword {
-  keyword: string;
-  count: number;
-  type: 'word' | 'phrase';
-}
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
-
-function formatNumber(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toString();
 }
 
 export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps) {
@@ -58,12 +24,20 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
   const [savingNotes, setSavingNotes] = useState(false);
   const [reAnalyzing, setReAnalyzing] = useState(false);
 
-  // Keywords state
-  const [keywordInput, setKeywordInput] = useState('');
-  const [keywordRanks, setKeywordRanks] = useState<KeywordRank[]>([]);
-  const [checkingKeyword, setCheckingKeyword] = useState(false);
-  const [extractedKeywords, setExtractedKeywords] = useState<ExtractedKeyword[]>([]);
-  const [extractingKeywords, setExtractingKeywords] = useState(false);
+  // Keywords - use shared hooks (with fallback values until project loads)
+  const {
+    keywordInput,
+    setKeywordInput,
+    keywordRanks,
+    checking: checkingKeyword,
+    checkKeywordRank,
+  } = useKeywordRanking({ appId: project?.app_store_id || '', country: project?.country || 'us' });
+
+  const {
+    extractedKeywords,
+    extracting: extractingKeywords,
+    extractKeywords,
+  } = useKeywordExtraction({ appName: project?.app_name || '' });
 
   useEffect(() => {
     fetchProject();
@@ -73,7 +47,7 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
     setLoading(true);
     try {
       // Use query param instead of dynamic route (workaround for Vercel routing issue)
-      const res = await fetch(`/api/projects?id=${projectId}`);
+      const res = await fetch(`/api/projects/${projectId}`);
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || 'Failed to load project');
@@ -92,7 +66,7 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
     if (!confirm('Delete this project? This cannot be undone.')) return;
 
     try {
-      const res = await fetch(`/api/projects?id=${projectId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/projects/${projectId}`, { method: 'DELETE' });
       if (res.ok) {
         router.push('/projects');
       }
@@ -104,7 +78,7 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
   const saveNotes = async () => {
     setSavingNotes(true);
     try {
-      const res = await fetch(`/api/projects?id=${projectId}`, {
+      const res = await fetch(`/api/projects/${projectId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ notes }),
@@ -138,7 +112,7 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
       const data = await res.json();
 
       // Save the new analysis
-      const updateRes = await fetch(`/api/projects?id=${projectId}`, {
+      const updateRes = await fetch(`/api/projects/${projectId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ai_analysis: data.analysis }),
@@ -156,77 +130,8 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
     }
   };
 
-  const checkKeywordRank = async () => {
-    if (!keywordInput.trim() || !project) return;
-
-    setCheckingKeyword(true);
-
-    try {
-      const res = await fetch('/api/keywords/rank', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          keyword: keywordInput.trim(),
-          appId: project.app_store_id,
-          country: project.country,
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error('Failed to check keyword');
-      }
-
-      const data = await res.json();
-
-      setKeywordRanks((prev) => {
-        const filtered = prev.filter((k) => k.keyword.toLowerCase() !== data.keyword.toLowerCase());
-        return [
-          {
-            keyword: data.keyword,
-            ranking: data.ranking,
-            found: data.found,
-            topApps: data.topApps,
-          },
-          ...filtered,
-        ].slice(0, 20);
-      });
-
-      setKeywordInput('');
-    } catch (err) {
-      console.error('Error checking keyword:', err);
-      alert('Failed to check keyword ranking');
-    } finally {
-      setCheckingKeyword(false);
-    }
-  };
-
-  const extractKeywordsFromReviews = async () => {
-    if (!project || project.reviews.length === 0) return;
-
-    setExtractingKeywords(true);
-
-    try {
-      const res = await fetch('/api/keywords/extract', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          reviews: project.reviews,
-          appName: project.app_name,
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error('Failed to extract keywords');
-      }
-
-      const data = await res.json();
-      setExtractedKeywords(data.allKeywords || []);
-    } catch (err) {
-      console.error('Error extracting keywords:', err);
-      alert('Failed to extract keywords from reviews');
-    } finally {
-      setExtractingKeywords(false);
-    }
+  const extractKeywordsFromReviews = () => {
+    if (project) extractKeywords(project.reviews);
   };
 
   const exportReviewsCSV = () => {
@@ -255,23 +160,6 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
     link.download = `${project.app_name.replace(/[^a-z0-9]/gi, '-')}-reviews.csv`;
     link.click();
     URL.revokeObjectURL(url);
-  };
-
-  const renderStars = (rating: number) => {
-    return (
-      <div className="flex gap-0.5">
-        {[1, 2, 3, 4, 5].map((star) => (
-          <svg
-            key={star}
-            className={`w-4 h-4 ${star <= rating ? 'text-yellow-400' : 'text-gray-300'}`}
-            fill="currentColor"
-            viewBox="0 0 20 20"
-          >
-            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-          </svg>
-        ))}
-      </div>
-    );
   };
 
   if (loading) {
@@ -339,7 +227,7 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
               <p className="text-gray-500 dark:text-gray-400">{project.app_developer}</p>
               <div className="flex items-center gap-4 mt-2 flex-wrap">
                 <div className="flex items-center gap-1">
-                  {renderStars(Math.round(project.app_rating || 0))}
+                  <StarRating rating={Math.round(project.app_rating || 0)} />
                   <span className="text-sm text-gray-600 dark:text-gray-300 ml-1">
                     {project.app_rating?.toFixed(1)}
                   </span>
@@ -395,13 +283,13 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Created</p>
               <p className="text-sm text-gray-900 dark:text-white">
-                {formatDate(project.created_at)}
+                {formatDateTime(project.created_at)}
               </p>
             </div>
             <div>
               <p className="text-sm text-gray-500 dark:text-gray-400">Last Updated</p>
               <p className="text-sm text-gray-900 dark:text-white">
-                {formatDate(project.updated_at)}
+                {formatDateTime(project.updated_at)}
               </p>
             </div>
           </div>
@@ -491,7 +379,7 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
                     </div>
                     {project.analysis_date && (
                       <p className="text-xs text-gray-400 mt-4">
-                        Analysis generated on {formatDate(project.analysis_date)}
+                        Analysis generated on {formatDateTime(project.analysis_date)}
                       </p>
                     )}
                   </div>
@@ -551,7 +439,7 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
                         <div className="flex items-start justify-between mb-2">
                           <div>
                             <div className="flex items-center gap-2">
-                              {renderStars(review.rating)}
+                              <StarRating rating={review.rating} />
                               <span className="font-medium text-gray-900 dark:text-white">
                                 {review.title}
                               </span>
@@ -619,7 +507,7 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
                       className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                     />
                     <button
-                      onClick={checkKeywordRank}
+                      onClick={() => checkKeywordRank()}
                       disabled={checkingKeyword || !keywordInput.trim()}
                       className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
                     >
@@ -723,9 +611,7 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
                       {extractedKeywords.map((kw, idx) => (
                         <button
                           key={`${kw.keyword}-${idx}`}
-                          onClick={() => {
-                            setKeywordInput(kw.keyword);
-                          }}
+                          onClick={() => checkKeywordRank(kw.keyword)}
                           className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
                             kw.type === 'phrase'
                               ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 hover:bg-purple-200'

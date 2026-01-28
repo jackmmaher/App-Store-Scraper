@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { isAuthenticated } from '@/lib/auth';
 import { supabase, updateProject, deleteProject } from '@/lib/supabase';
 
-// GET /api/projects/[id] - Fetch a single project by UUID
-// Updated: force redeploy
+// GET /api/projects/[id] - Fetch a single project
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -15,42 +14,27 @@ export async function GET(
 
   const { id } = await params;
 
-  console.log('[API] GET /api/projects/[id] called with id:', id);
-
   try {
-    // Query directly instead of using getProject function
     const { data, error } = await supabase
       .from('app_projects')
       .select('*')
       .eq('id', id)
       .single();
 
-    console.log('[API] Direct query result - error:', error, 'hasData:', !!data);
-
     if (error) {
-      console.error('[API] Supabase error:', error);
-      return NextResponse.json({
-        error: `Database error: ${error.code}: ${error.message}`,
-        debug: { id, errorCode: error.code, errorMessage: error.message }
-      }, { status: 500 });
+      if (error.code === 'PGRST116') {
+        return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+      }
+      return NextResponse.json({ error: 'Database error' }, { status: 500 });
     }
 
     if (!data) {
-      console.log('[API] No data returned, returning 404');
-      return NextResponse.json({
-        error: 'Project not found',
-        debug: { id, hasError: !!error, hasData: false }
-      }, { status: 404 });
+      return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
 
-    console.log('[API] Returning project:', data.app_name);
     return NextResponse.json({ project: data });
-  } catch (error) {
-    console.error('[API] Unexpected error:', error);
-    return NextResponse.json({
-      error: `Failed to fetch project: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      debug: { id, errorType: error instanceof Error ? error.name : typeof error }
-    }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: 'Failed to fetch project' }, { status: 500 });
   }
 }
 
@@ -90,8 +74,7 @@ export async function PUT(
     }
 
     return NextResponse.json({ project, success: true });
-  } catch (error) {
-    console.error('Error updating project:', error);
+  } catch {
     return NextResponse.json({ error: 'Failed to update project' }, { status: 500 });
   }
 }
@@ -116,8 +99,7 @@ export async function DELETE(
     }
 
     return NextResponse.json({ success: true });
-  } catch (error) {
-    console.error('Error deleting project:', error);
+  } catch {
     return NextResponse.json({ error: 'Failed to delete project' }, { status: 500 });
   }
 }
