@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm';
 import type { BlueprintSection as BlueprintSectionType, BlueprintSectionStatus, BlueprintAttachment } from '@/lib/supabase';
 import BlueprintGenerateButton from './BlueprintGenerateButton';
 import BlueprintImageUpload from './BlueprintImageUpload';
+import BlueprintProgressTracker from './BlueprintProgressTracker';
 
 interface SectionMeta {
   title: string;
@@ -77,8 +78,8 @@ export default function BlueprintSection({
     disabledReason = `Generate ${depNames} first`;
   }
 
-  // Display content (either saved or streaming)
-  const displayContent = isGenerating ? streamedContent : content;
+  // Only show saved content (not streaming content - we show progress tracker instead)
+  const displayContent = content;
 
   // Section-specific attachments
   const sectionAttachments = attachments.filter((a) => a.section === section);
@@ -130,17 +131,19 @@ export default function BlueprintSection({
 
       {/* Content Area */}
       <div className="relative">
-        {displayContent ? (
+        {isGenerating ? (
+          /* Progress Tracker - shown while generating */
+          <div className="bg-gray-50 dark:bg-gray-900 rounded-lg">
+            <BlueprintProgressTracker section={section} isGenerating={isGenerating} />
+          </div>
+        ) : displayContent ? (
           <div className="prose dark:prose-invert max-w-none">
             <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-6 max-h-[600px] overflow-y-auto">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                 {displayContent}
               </ReactMarkdown>
-              {isGenerating && (
-                <span className="inline-block w-2 h-5 bg-blue-500 animate-pulse ml-1 align-middle" />
-              )}
             </div>
-            {generatedAt && !isGenerating && (
+            {generatedAt && (
               <p className="text-xs text-gray-400 mt-2">
                 Generated on {new Date(generatedAt).toLocaleString()}
               </p>
