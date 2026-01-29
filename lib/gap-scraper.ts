@@ -266,10 +266,10 @@ export interface GapScrapeFullResult {
 }
 
 export interface ScrapeProgressCallback {
-  onCountryStart: (country: string, index: number, total: number) => void;
+  onCountryStart: (country: string, index: number, total: number) => void | Promise<void>;
   onCountryProgress: (country: string, appsFound: number) => void;
   onCountryComplete: (country: string, appsFound: number, uniqueNew: number, totalUnique: number) => void;
-  onComplete: (results: GapScrapeResult[], countriesScraped: string[], fullAppDetails?: AppDetails[]) => void;
+  onComplete: (results: GapScrapeResult[], countriesScraped: string[], fullAppDetails?: AppDetails[]) => void | Promise<void>;
   onError: (error: string) => void;
 }
 
@@ -369,7 +369,8 @@ export async function scrapeMultipleCountries(
   // Collect full app details for saving to main apps table
   const fullAppDetails: AppDetails[] = Object.values(allApps).map((data) => data.app);
 
-  callbacks.onComplete(results, countries, fullAppDetails);
+  // Await onComplete to ensure DB saves finish before stream closes
+  await callbacks.onComplete(results, countries, fullAppDetails);
 
   return results;
 }

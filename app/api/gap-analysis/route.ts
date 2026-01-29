@@ -244,8 +244,21 @@ async function handleScrape(sessionId: string) {
                   console.error('Failed to bulk insert apps');
                 }
 
-                // Also save to main apps database to avoid wasting API costs
-                // Must await this to prevent Vercel from terminating the function early
+                // Update session status FIRST so UI shows results even if master DB save is slow
+                await updateGapSessionStatus(sessionId, 'completed', {
+                  countries_completed: countriesScraped,
+                  total_apps_found: totalAppsFound,
+                  unique_apps: results.length,
+                });
+
+                // Send complete event immediately so client knows scrape is done
+                sendEvent('complete', {
+                  total_apps: totalAppsFound,
+                  unique_apps: results.length,
+                  countries_scraped: countriesScraped,
+                });
+
+                // Save to main apps database AFTER marking complete (non-blocking for UI)
                 if (fullAppDetails && fullAppDetails.length > 0) {
                   console.log(`[Gap Analysis] Preparing to save ${fullAppDetails.length} apps to main DB`);
 
@@ -261,22 +274,11 @@ async function handleScrape(sessionId: string) {
                     console.log(`[Gap Analysis] Saved to main apps DB: ${masterResult.inserted} inserted, ${masterResult.updated} updated, ${masterResult.errors} errors`);
                   } catch (err) {
                     console.error('[Gap Analysis] Failed to save apps to main database:', err);
-                    // Don't throw - let the scrape complete successfully even if master DB save fails
+                    // Don't throw - scrape already marked complete
                   }
                 } else {
                   console.log(`[Gap Analysis] No fullAppDetails to save (length: ${fullAppDetails?.length || 0})`);
                 }
-
-                await updateGapSessionStatus(sessionId, 'completed', {
-                  countries_completed: countriesScraped,
-                  total_apps_found: totalAppsFound,
-                  unique_apps: results.length,
-                });
-                sendEvent('complete', {
-                  total_apps: totalAppsFound,
-                  unique_apps: results.length,
-                  countries_scraped: countriesScraped,
-                });
               },
               onError: (error: string) => {
                 throw new Error(error);
