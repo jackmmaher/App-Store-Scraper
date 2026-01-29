@@ -460,7 +460,7 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
                           </svg>
                         )}
                       </button>
-                      <div className="text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-900 rounded-lg p-4 pr-12 prose prose-sm dark:prose-invert max-w-none prose-table:w-full prose-table:border-collapse prose-th:border prose-th:border-gray-300 prose-th:dark:border-gray-600 prose-th:bg-gray-100 prose-th:dark:bg-gray-800 prose-th:px-3 prose-th:py-2 prose-th:text-left prose-th:font-semibold prose-td:border prose-td:border-gray-300 prose-td:dark:border-gray-600 prose-td:px-3 prose-td:py-2 prose-td:align-top">
+                      <div className="analysis-report bg-gray-50 dark:bg-gray-900 rounded-lg p-6 pr-14">
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>
                           {project.ai_analysis}
                         </ReactMarkdown>

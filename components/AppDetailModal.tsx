@@ -1227,7 +1227,7 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
                   <p className="text-gray-600 dark:text-gray-400">Analyzing {reviews.length} reviews with Claude AI...</p>
                 </div>
               ) : analysis ? (
-                <div className="prose prose-sm dark:prose-invert max-w-none text-sm text-gray-700 dark:text-gray-300 prose-table:w-full prose-table:border-collapse prose-th:border prose-th:border-gray-300 prose-th:dark:border-gray-600 prose-th:bg-gray-100 prose-th:dark:bg-gray-800 prose-th:px-3 prose-th:py-2 prose-th:text-left prose-th:font-semibold prose-td:border prose-td:border-gray-300 prose-td:dark:border-gray-600 prose-td:px-3 prose-td:py-2 prose-td:align-top">
+                <div className="analysis-report">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>
                     {analysis}
                   </ReactMarkdown>
