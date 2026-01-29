@@ -4,8 +4,7 @@ import { useState } from 'react';
 import {
   CATEGORY_NAMES,
   COUNTRY_CODES,
-  MAIN_CATEGORIES,
-  GAME_SUBCATEGORIES,
+  CATEGORY_GROUPS,
 } from '@/lib/constants';
 
 interface Props {
@@ -60,6 +59,15 @@ export default function GapSetupForm({ onSubmit, loading }: Props) {
   const [category, setCategory] = useState('health-fitness');
   const [selectedCountries, setSelectedCountries] = useState<string[]>(['us', 'gb', 'de']);
   const [appsPerCountry, setAppsPerCountry] = useState(50);
+  const [expandedGroups, setExpandedGroups] = useState<string[]>(['health-lifestyle']);
+
+  const toggleGroup = (groupId: string) => {
+    setExpandedGroups((prev) =>
+      prev.includes(groupId)
+        ? prev.filter((g) => g !== groupId)
+        : [...prev, groupId]
+    );
+  };
 
   const toggleCountry = (code: string) => {
     setSelectedCountries((prev) => {
@@ -120,29 +128,66 @@ export default function GapSetupForm({ onSubmit, loading }: Props) {
 
         {/* Category */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
             Category
           </label>
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            className="w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <optgroup label="Main Categories">
-              {MAIN_CATEGORIES.map((cat) => (
-                <option key={cat} value={cat}>
-                  {CATEGORY_NAMES[cat]}
-                </option>
-              ))}
-            </optgroup>
-            <optgroup label="Game Subcategories">
-              {GAME_SUBCATEGORIES.map((cat) => (
-                <option key={cat} value={cat}>
-                  {CATEGORY_NAMES[cat]}
-                </option>
-              ))}
-            </optgroup>
-          </select>
+          <div className="border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden max-h-64 overflow-y-auto">
+            {Object.entries(CATEGORY_GROUPS).map(([groupId, group]) => (
+              <div key={groupId} className="border-b border-gray-200 dark:border-gray-700 last:border-b-0">
+                {/* Group Header */}
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(groupId)}
+                  className="w-full flex items-center justify-between px-3 py-2 bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <span>{group.icon}</span>
+                    <span className="font-medium text-sm text-gray-700 dark:text-gray-300">
+                      {group.label}
+                    </span>
+                    {group.categories.includes(category) && (
+                      <span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded">
+                        Selected
+                      </span>
+                    )}
+                  </div>
+                  <svg
+                    className={`w-4 h-4 text-gray-500 transition-transform ${
+                      expandedGroups.includes(groupId) ? 'rotate-180' : ''
+                    }`}
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+
+                {/* Group Categories */}
+                {expandedGroups.includes(groupId) && (
+                  <div className="bg-white dark:bg-gray-800 py-1">
+                    {group.categories.map((cat) => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setCategory(cat)}
+                        className={`w-full text-left px-4 py-1.5 text-sm transition-colors ${
+                          category === cat
+                            ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-medium'
+                            : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                        }`}
+                      >
+                        {cat === 'games' ? '🎮 All Games' : CATEGORY_NAMES[cat]}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Selected: {CATEGORY_NAMES[category]}
+          </p>
         </div>
 
         {/* Country Selection */}

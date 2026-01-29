@@ -143,3 +143,68 @@ export const MAIN_CATEGORIES = Object.keys(CATEGORIES).filter(
 export const GAME_SUBCATEGORIES = Object.keys(CATEGORIES).filter(
   key => key.includes('games') && key !== 'games'
 );
+
+// Organized category groups for collapsible UI
+export const CATEGORY_GROUPS: Record<string, { label: string; icon: string; categories: string[] }> = {
+  'entertainment-media': {
+    label: 'Entertainment & Media',
+    icon: '🎬',
+    categories: ['entertainment', 'music', 'photo-video', 'magazines-newspapers', 'news', 'books'],
+  },
+  'games': {
+    label: 'Games',
+    icon: '🎮',
+    categories: [
+      'games',
+      'action-games',
+      'adventure-games',
+      'arcade-games',
+      'board-games',
+      'card-games',
+      'casino-games',
+      'casual-games',
+      'dice-games',
+      'educational-games',
+      'family-games',
+      'music-games',
+      'puzzle-games',
+      'racing-games',
+      'role-playing-games',
+      'simulation-games',
+      'sports-games',
+      'strategy-games',
+      'trivia-games',
+      'word-games',
+    ],
+  },
+  'business-productivity': {
+    label: 'Business & Productivity',
+    icon: '💼',
+    categories: ['business', 'productivity', 'finance', 'developer-tools'],
+  },
+  'health-lifestyle': {
+    label: 'Health & Lifestyle',
+    icon: '🏃',
+    categories: ['health-fitness', 'medical', 'food-drink', 'lifestyle', 'sports'],
+  },
+  'social-communication': {
+    label: 'Social & Communication',
+    icon: '💬',
+    categories: ['social-networking', 'reference'],
+  },
+  'education-reference': {
+    label: 'Education & Reference',
+    icon: '📚',
+    categories: ['education', 'reference'],
+  },
+  'utilities-tools': {
+    label: 'Utilities & Tools',
+    icon: '🔧',
+    categories: ['utilities', 'weather', 'navigation', 'graphics-design'],
+  },
+  'shopping-travel': {
+    label: 'Shopping & Travel',
+    icon: '🛒',
+    categories: ['shopping', 'travel'],
+  },
+};
