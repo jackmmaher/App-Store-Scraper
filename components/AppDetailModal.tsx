@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import type { AppResult, Review, ReviewStats } from '@/lib/supabase';
 import { COUNTRY_CODES } from '@/lib/constants';
 import { useKeywordRanking } from '@/hooks/useKeywordRanking';
@@ -14,6 +14,59 @@ interface Props {
   onProjectSaved?: (projectId: string) => void;
 }
 
+// Filter configuration types
+interface FilterConfig {
+  sort: 'mostRecent' | 'mostHelpful' | 'mostFavorable' | 'mostCritical';
+  enabled: boolean;
+  target: number;
+}
+
+interface StealthConfig {
+  baseDelay: number;
+  randomization: number;
+  filterCooldown: number;
+  autoThrottle: boolean;
+}
+
+interface FilterStatus {
+  filter: string;
+  status: 'pending' | 'active' | 'complete' | 'skipped';
+  count: number;
+}
+
+interface ScrapeProgress {
+  currentFilter: string;
+  currentFilterIndex: number;
+  currentPage: number;
+  maxPages: number;
+  reviewsCollected: number;
+  uniqueReviews: number;
+  filterStatuses: FilterStatus[];
+  nextRequestIn: number;
+  isThrottled: boolean;
+  throttleMessage?: string;
+}
+
+// Filter descriptions
+const FILTER_INFO: Record<string, { label: string; description: string }> = {
+  mostRecent: {
+    label: 'Most Recent',
+    description: 'Newest reviews first - good for tracking trends',
+  },
+  mostHelpful: {
+    label: 'Most Helpful',
+    description: 'Highly upvoted reviews - quality insights',
+  },
+  mostFavorable: {
+    label: 'Most Favorable',
+    description: '5-star reviews prioritized - what users love',
+  },
+  mostCritical: {
+    label: 'Most Critical',
+    description: '1-star reviews prioritized - pain points & bugs',
+  },
+};
+
 const POPULAR_COUNTRIES = ['us', 'gb', 'ca', 'au', 'de', 'fr', 'jp', 'in', 'br', 'mx'];
 
 export default function AppDetailModal({ app, country, onClose, onProjectSaved }: Props) {
@@ -24,11 +77,32 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [activeTab, setActiveTab] = useState<'reviews' | 'analysis' | 'settings' | 'keywords'>('settings');
-
-  // Scraping settings
-  const [useMultipleSorts, setUseMultipleSorts] = useState(true);
-  const [additionalCountries, setAdditionalCountries] = useState<string[]>([]);
   const [hasScraped, setHasScraped] = useState(false);
+
+  // Enhanced filter settings
+  const [filters, setFilters] = useState<FilterConfig[]>([
+    { sort: 'mostRecent', enabled: true, target: 500 },
+    { sort: 'mostHelpful', enabled: true, target: 500 },
+    { sort: 'mostFavorable', enabled: false, target: 500 },
+    { sort: 'mostCritical', enabled: true, target: 1000 },
+  ]);
+
+  // Stealth settings
+  const [stealthConfig, setStealthConfig] = useState<StealthConfig>({
+    baseDelay: 2.0,
+    randomization: 50,
+    filterCooldown: 5.0,
+    autoThrottle: true,
+  });
+
+  // Accordion state
+  const [filterSectionOpen, setFilterSectionOpen] = useState(true);
+  const [stealthSectionOpen, setStealthSectionOpen] = useState(false);
+
+  // Progress state for SSE streaming
+  const [progress, setProgress] = useState<ScrapeProgress | null>(null);
+  const [isScraping, setIsScraping] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Keywords - use shared hooks
   const {
@@ -50,46 +124,204 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
   const [projectSaved, setProjectSaved] = useState(false);
   const [savedProjectId, setSavedProjectId] = useState<string | null>(null);
 
-  const toggleCountry = (code: string) => {
-    if (code === country) return; // Can't toggle primary country
-    setAdditionalCountries((prev) =>
-      prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code].slice(0, 3)
+  // Toggle filter enabled state
+  const toggleFilter = (sort: FilterConfig['sort']) => {
+    setFilters(prev =>
+      prev.map(f => (f.sort === sort ? { ...f, enabled: !f.enabled } : f))
     );
   };
 
-  const fetchReviews = async () => {
+  // Update filter target
+  const updateFilterTarget = (sort: FilterConfig['sort'], target: number) => {
+    setFilters(prev =>
+      prev.map(f => (f.sort === sort ? { ...f, target: Math.min(Math.max(target, 100), 2000) } : f))
+    );
+  };
+
+  // Calculate estimated reviews
+  const estimatedReviews = filters
+    .filter(f => f.enabled)
+    .reduce((sum, f) => sum + f.target, 0);
+
+  // Start streaming scrape
+  const startScrape = useCallback(async () => {
+    const enabledFilters = filters.filter(f => f.enabled);
+    if (enabledFilters.length === 0) {
+      setError('Please enable at least one filter');
+      return;
+    }
+
+    setIsScraping(true);
     setLoading(true);
     setError(null);
     setActiveTab('reviews');
 
+    // Initialize progress
+    const initialStatuses: FilterStatus[] = enabledFilters.map(f => ({
+      filter: f.sort,
+      status: 'pending',
+      count: 0,
+    }));
+    setProgress({
+      currentFilter: enabledFilters[0].sort,
+      currentFilterIndex: 0,
+      currentPage: 0,
+      maxPages: 0,
+      reviewsCollected: 0,
+      uniqueReviews: 0,
+      filterStatuses: initialStatuses,
+      nextRequestIn: 0,
+      isThrottled: false,
+    });
+
+    abortControllerRef.current = new AbortController();
+
     try {
-      const res = await fetch('/api/py-reviews', {
+      const response = await fetch('/api/py-reviews', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           appId: app.id,
           country,
-          maxPages: 10,
-          useMultipleSorts,
-          additionalCountries,
-          delay: 0.5,
+          streaming: true,
+          filters: enabledFilters.map(f => ({ sort: f.sort, target: f.target })),
+          stealth: stealthConfig,
         }),
+        signal: abortControllerRef.current.signal,
       });
 
-      if (!res.ok) {
-        throw new Error('Failed to fetch reviews');
+      if (!response.ok) {
+        throw new Error('Failed to start scraping');
       }
 
-      const data = await res.json();
-      setReviews(data.reviews);
-      setStats(data.stats);
-      setHasScraped(true);
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No response body');
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const event = JSON.parse(line.slice(6));
+              handleSSEEvent(event, enabledFilters);
+            } catch {
+              // Ignore parse errors
+            }
+          }
+        }
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      if (err instanceof Error && err.name === 'AbortError') {
+        // User cancelled - keep partial results
+      } else {
+        setError(err instanceof Error ? err.message : 'An error occurred');
+      }
     } finally {
+      setIsScraping(false);
       setLoading(false);
+      setHasScraped(true);
     }
-  };
+  }, [app.id, country, filters, stealthConfig]);
+
+  // Handle SSE events
+  const handleSSEEvent = useCallback((event: Record<string, unknown>, enabledFilters: FilterConfig[]) => {
+    switch (event.type) {
+      case 'start':
+        // Already initialized
+        break;
+
+      case 'progress':
+        setProgress(prev => {
+          if (!prev) return prev;
+          const updatedStatuses = prev.filterStatuses.map(s =>
+            s.filter === event.filter
+              ? { ...s, status: 'active' as const, count: event.filterReviewsTotal as number }
+              : s
+          );
+          return {
+            ...prev,
+            currentFilter: event.filter as string,
+            currentFilterIndex: event.filterIndex as number,
+            currentPage: event.page as number,
+            maxPages: event.maxPages as number,
+            reviewsCollected: prev.reviewsCollected + (event.reviewsThisPage as number),
+            uniqueReviews: event.totalUnique as number,
+            filterStatuses: updatedStatuses,
+            nextRequestIn: event.nextDelayMs as number,
+          };
+        });
+        break;
+
+      case 'throttle':
+        setProgress(prev =>
+          prev
+            ? {
+                ...prev,
+                isThrottled: true,
+                throttleMessage: event.message as string,
+              }
+            : prev
+        );
+        break;
+
+      case 'filterComplete':
+        setProgress(prev => {
+          if (!prev) return prev;
+          const updatedStatuses = prev.filterStatuses.map(s =>
+            s.filter === event.filter
+              ? { ...s, status: 'complete' as const, count: event.reviewsCollected as number }
+              : s
+          );
+          return { ...prev, filterStatuses: updatedStatuses, isThrottled: false };
+        });
+        break;
+
+      case 'filterSkipped':
+        setProgress(prev => {
+          if (!prev) return prev;
+          const updatedStatuses = prev.filterStatuses.map(s =>
+            s.filter === event.filter ? { ...s, status: 'skipped' as const } : s
+          );
+          return { ...prev, filterStatuses: updatedStatuses };
+        });
+        break;
+
+      case 'filterCooldown':
+        setProgress(prev =>
+          prev ? { ...prev, nextRequestIn: event.cooldownMs as number } : prev
+        );
+        break;
+
+      case 'complete':
+        setReviews(event.reviews as Review[]);
+        setStats(event.stats as ReviewStats);
+        setProgress(null);
+        break;
+    }
+  }, []);
+
+  // Cancel scrape
+  const cancelScrape = useCallback(() => {
+    abortControllerRef.current?.abort();
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
 
   const analyzeReviews = async () => {
     if (reviews.length === 0) return;
@@ -132,8 +364,8 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
           reviews,
           reviewStats: stats,
           scrapeSettings: {
-            useMultipleSorts,
-            additionalCountries,
+            filters: filters.filter(f => f.enabled),
+            stealth: stealthConfig,
             primaryCountry: country,
           },
           aiAnalysis: analysis,
@@ -158,11 +390,6 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
   };
 
   const extractKeywordsFromReviews = () => extractKeywords(reviews);
-
-  const checkExtractedKeyword = (keyword: string) => {
-    setKeywordInput(keyword);
-    setActiveTab('keywords');
-  };
 
   const exportReviewsCSV = () => {
     const headers = ['Rating', 'Title', 'Content', 'Author', 'Version', 'Country', 'Votes'];
@@ -215,7 +442,15 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
     URL.revokeObjectURL(url);
   };
 
-  const estimatedReviews = (useMultipleSorts ? 2 : 1) * (1 + additionalCountries.length) * 500;
+  // Calculate overall progress percentage
+  const getProgressPercentage = () => {
+    if (!progress) return 0;
+    const completedFilters = progress.filterStatuses.filter(s => s.status === 'complete' || s.status === 'skipped').length;
+    const totalFilters = progress.filterStatuses.length;
+    const filterProgress = completedFilters / totalFilters;
+    const pageProgress = progress.maxPages > 0 ? progress.currentPage / progress.maxPages : 0;
+    return Math.round((filterProgress + pageProgress / totalFilters) * 100);
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -399,81 +634,214 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
         <div className="flex-1 overflow-y-auto p-6">
           {/* Settings Tab */}
           {activeTab === 'settings' && (
-            <div className="space-y-6">
+            <div className="space-y-4">
               <div>
-                <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+                <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
                   Smart Scraping Settings
                 </h3>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                  Configure how many reviews to scrape. Apple limits to ~500 reviews per country per sort order.
+                  Configure filters and stealth settings for deep review scraping. Country: {COUNTRY_CODES[country] || country.toUpperCase()}
                 </p>
 
-                {/* Multiple Sorts Toggle */}
-                <label className="flex items-center gap-3 mb-4">
-                  <input
-                    type="checkbox"
-                    checked={useMultipleSorts}
-                    onChange={(e) => setUseMultipleSorts(e.target.checked)}
-                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  />
-                  <div>
-                    <span className="text-sm font-medium text-gray-900 dark:text-white">
-                      Use multiple sort orders
-                    </span>
-                    <p className="text-xs text-gray-500">
-                      Scrape both "Most Recent" and "Most Helpful" to get more unique reviews (~2x)
-                    </p>
-                  </div>
-                </label>
-
-                {/* Country Selection */}
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-900 dark:text-white mb-2">
-                    Additional Countries (up to 3)
-                  </label>
-                  <p className="text-xs text-gray-500 mb-3">
-                    Primary: {COUNTRY_CODES[country] || country.toUpperCase()}. Select more countries to scrape their reviews too.
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {POPULAR_COUNTRIES.filter(c => c !== country).map((code) => (
-                      <button
-                        key={code}
-                        onClick={() => toggleCountry(code)}
-                        disabled={additionalCountries.length >= 3 && !additionalCountries.includes(code)}
-                        className={`px-3 py-1.5 text-xs rounded-full transition-colors ${
-                          additionalCountries.includes(code)
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                        } disabled:opacity-50 disabled:cursor-not-allowed`}
-                      >
-                        {COUNTRY_CODES[code]} ({code.toUpperCase()})
-                      </button>
-                    ))}
-                  </div>
+                {/* Filter Selection Accordion */}
+                <div className="border border-gray-200 dark:border-gray-700 rounded-lg mb-4">
+                  <button
+                    onClick={() => setFilterSectionOpen(!filterSectionOpen)}
+                    className="w-full px-4 py-3 flex items-center justify-between bg-gray-50 dark:bg-gray-700/50 rounded-t-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    <span className="font-medium text-gray-900 dark:text-white">Filter Selection</span>
+                    <svg
+                      className={`w-5 h-5 text-gray-500 transition-transform ${filterSectionOpen ? 'rotate-180' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {filterSectionOpen && (
+                    <div className="p-4 space-y-4">
+                      {filters.map((filter) => (
+                        <div
+                          key={filter.sort}
+                          className={`flex items-start gap-4 p-3 rounded-lg border transition-colors ${
+                            filter.enabled
+                              ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
+                              : 'bg-gray-50 dark:bg-gray-700/30 border-gray-200 dark:border-gray-700'
+                          }`}
+                        >
+                          <label className="flex items-center gap-3 cursor-pointer flex-1">
+                            <input
+                              type="checkbox"
+                              checked={filter.enabled}
+                              onChange={() => toggleFilter(filter.sort)}
+                              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <div className="flex-1">
+                              <span className={`font-medium ${filter.enabled ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>
+                                {FILTER_INFO[filter.sort].label}
+                              </span>
+                              <p className={`text-xs ${filter.enabled ? 'text-gray-600 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500'}`}>
+                                {FILTER_INFO[filter.sort].description}
+                              </p>
+                            </div>
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              value={filter.target}
+                              onChange={(e) => updateFilterTarget(filter.sort, parseInt(e.target.value) || 500)}
+                              disabled={!filter.enabled}
+                              min={100}
+                              max={2000}
+                              step={100}
+                              className={`w-24 px-2 py-1 text-sm border rounded ${
+                                filter.enabled
+                                  ? 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white'
+                                  : 'border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500'
+                              }`}
+                            />
+                            <span className={`text-xs ${filter.enabled ? 'text-gray-500' : 'text-gray-400'}`}>
+                              reviews
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
-                {/* Estimate */}
-                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 mb-6">
+                {/* Stealth Settings Accordion */}
+                <div className="border border-gray-200 dark:border-gray-700 rounded-lg mb-4">
+                  <button
+                    onClick={() => setStealthSectionOpen(!stealthSectionOpen)}
+                    className="w-full px-4 py-3 flex items-center justify-between bg-gray-50 dark:bg-gray-700/50 rounded-t-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    <span className="font-medium text-gray-900 dark:text-white">Stealth Settings</span>
+                    <svg
+                      className={`w-5 h-5 text-gray-500 transition-transform ${stealthSectionOpen ? 'rotate-180' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {stealthSectionOpen && (
+                    <div className="p-4 space-y-4">
+                      {/* Base Delay Slider */}
+                      <div>
+                        <div className="flex justify-between items-center mb-2">
+                          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Base Delay
+                          </label>
+                          <span className="text-sm text-blue-600 dark:text-blue-400 font-medium">
+                            {stealthConfig.baseDelay.toFixed(1)}s
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.5"
+                          max="5"
+                          step="0.5"
+                          value={stealthConfig.baseDelay}
+                          onChange={(e) => setStealthConfig(prev => ({ ...prev, baseDelay: parseFloat(e.target.value) }))}
+                          className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Delay between each page request</p>
+                      </div>
+
+                      {/* Randomization Slider */}
+                      <div>
+                        <div className="flex justify-between items-center mb-2">
+                          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Randomization
+                          </label>
+                          <span className="text-sm text-blue-600 dark:text-blue-400 font-medium">
+                            ±{stealthConfig.randomization}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          step="10"
+                          value={stealthConfig.randomization}
+                          onChange={(e) => setStealthConfig(prev => ({ ...prev, randomization: parseInt(e.target.value) }))}
+                          className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Random variance applied to delays</p>
+                      </div>
+
+                      {/* Filter Cooldown */}
+                      <div>
+                        <div className="flex justify-between items-center mb-2">
+                          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Filter Cooldown
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              value={stealthConfig.filterCooldown}
+                              onChange={(e) => setStealthConfig(prev => ({
+                                ...prev,
+                                filterCooldown: Math.min(Math.max(parseFloat(e.target.value) || 1, 1), 30)
+                              }))}
+                              min={1}
+                              max={30}
+                              step={1}
+                              className="w-16 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            />
+                            <span className="text-sm text-gray-500">seconds</span>
+                          </div>
+                        </div>
+                        <p className="text-xs text-gray-500">Pause between different filter types</p>
+                      </div>
+
+                      {/* Auto-throttle Toggle */}
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={stealthConfig.autoThrottle}
+                          onChange={(e) => setStealthConfig(prev => ({ ...prev, autoThrottle: e.target.checked }))}
+                          className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <div>
+                          <span className="text-sm font-medium text-gray-900 dark:text-white">
+                            Auto-throttle on errors
+                          </span>
+                          <p className="text-xs text-gray-500">
+                            Automatically increase delays if rate limited
+                          </p>
+                        </div>
+                      </label>
+                    </div>
+                  )}
+                </div>
+
+                {/* Summary */}
+                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 mb-4">
                   <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300">
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <span className="font-medium">
-                      Estimated: up to {estimatedReviews.toLocaleString()} reviews
+                      Target: up to {estimatedReviews.toLocaleString()} reviews
                     </span>
                   </div>
                   <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                    {useMultipleSorts ? '2 sort orders' : '1 sort order'} × {1 + additionalCountries.length} {1 + additionalCountries.length === 1 ? 'country' : 'countries'} × 500 max per combination
+                    {filters.filter(f => f.enabled).length} filter{filters.filter(f => f.enabled).length !== 1 ? 's' : ''} enabled
+                    {' '}({filters.filter(f => f.enabled).map(f => FILTER_INFO[f.sort].label).join(', ')})
                   </p>
                 </div>
 
                 {/* Scrape Button */}
                 <button
-                  onClick={fetchReviews}
-                  disabled={loading}
+                  onClick={startScrape}
+                  disabled={isScraping || filters.filter(f => f.enabled).length === 0}
                   className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  {loading ? (
+                  {isScraping ? (
                     <>
                       <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -497,7 +865,113 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
           {/* Reviews Tab */}
           {activeTab === 'reviews' && (
             <div>
-              {loading && (
+              {/* Progress Display */}
+              {isScraping && progress && (
+                <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-700">
+                  <h4 className="font-medium text-gray-900 dark:text-white mb-3">Scraping Progress</h4>
+
+                  {/* Progress Bar */}
+                  <div className="mb-4">
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-gray-600 dark:text-gray-400">Overall Progress</span>
+                      <span className="text-blue-600 dark:text-blue-400 font-medium">{getProgressPercentage()}%</span>
+                    </div>
+                    <div className="w-full h-2 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-blue-600 transition-all duration-300"
+                        style={{ width: `${getProgressPercentage()}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Current Status */}
+                  <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
+                    <div>
+                      <span className="text-gray-500 dark:text-gray-400">Current Filter:</span>
+                      <span className="ml-2 text-gray-900 dark:text-white font-medium">
+                        {FILTER_INFO[progress.currentFilter]?.label || progress.currentFilter}
+                      </span>
+                      <span className="ml-1 text-gray-400">
+                        ({progress.currentFilterIndex + 1} of {progress.filterStatuses.length})
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 dark:text-gray-400">Page:</span>
+                      <span className="ml-2 text-gray-900 dark:text-white font-medium">
+                        {progress.currentPage} of ~{progress.maxPages}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 dark:text-gray-400">Reviews:</span>
+                      <span className="ml-2 text-gray-900 dark:text-white font-medium">
+                        {progress.uniqueReviews.toLocaleString()} unique
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 dark:text-gray-400">Next request:</span>
+                      <span className="ml-2 text-gray-900 dark:text-white font-medium">
+                        {(progress.nextRequestIn / 1000).toFixed(1)}s
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Filter Status List */}
+                  <div className="space-y-2 mb-4">
+                    {progress.filterStatuses.map((filterStatus) => (
+                      <div
+                        key={filterStatus.filter}
+                        className="flex items-center gap-2 text-sm"
+                      >
+                        <span className="w-5 text-center">
+                          {filterStatus.status === 'complete' && (
+                            <svg className="w-4 h-4 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                          )}
+                          {filterStatus.status === 'active' && (
+                            <svg className="w-4 h-4 text-blue-500 animate-spin" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                            </svg>
+                          )}
+                          {filterStatus.status === 'pending' && (
+                            <span className="w-2 h-2 bg-gray-300 dark:bg-gray-600 rounded-full inline-block" />
+                          )}
+                          {filterStatus.status === 'skipped' && (
+                            <svg className="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                            </svg>
+                          )}
+                        </span>
+                        <span className={`flex-1 ${filterStatus.status === 'active' ? 'text-blue-600 dark:text-blue-400 font-medium' : 'text-gray-700 dark:text-gray-300'}`}>
+                          {FILTER_INFO[filterStatus.filter]?.label || filterStatus.filter}
+                        </span>
+                        <span className="text-gray-500">
+                          {filterStatus.count > 0 ? `${filterStatus.count} reviews` : filterStatus.status === 'pending' ? 'pending' : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Throttle Warning */}
+                  {progress.isThrottled && (
+                    <div className="mb-4 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded text-sm text-yellow-700 dark:text-yellow-300">
+                      {progress.throttleMessage || 'Rate limited - adjusting delays...'}
+                    </div>
+                  )}
+
+                  {/* Cancel Button */}
+                  <button
+                    onClick={cancelScrape}
+                    className="w-full py-2 bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 font-medium rounded-lg transition-colors"
+                  >
+                    Cancel Scrape
+                  </button>
+                </div>
+              )}
+
+              {/* Loading without progress (fallback) */}
+              {loading && !progress && (
                 <div className="flex flex-col items-center justify-center py-12">
                   <svg className="animate-spin h-8 w-8 text-blue-600 mb-4" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
