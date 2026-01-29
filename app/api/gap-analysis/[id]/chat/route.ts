@@ -9,6 +9,9 @@ import {
 } from '@/lib/supabase';
 import { COUNTRY_CODES, CATEGORY_NAMES } from '@/lib/constants';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 interface RouteParams {
   params: Promise<{ id: string }>;
 }

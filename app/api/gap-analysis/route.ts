@@ -6,6 +6,9 @@ import {
   deleteGapSession,
 } from '@/lib/supabase';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 // GET /api/gap-analysis - Fetch all gap analysis sessions
 export async function GET() {
   const authed = await isAuthenticated();

@@ -7,6 +7,10 @@ import {
 } from '@/lib/supabase';
 import { scrapeMultipleCountries, type GapScrapeResult } from '@/lib/gap-scraper';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const maxDuration = 300; // 5 minutes for scraping
+
 interface RouteParams {
   params: Promise<{ id: string }>;
 }

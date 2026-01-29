@@ -3,6 +3,9 @@ import { isAuthenticated } from '@/lib/auth';
 import { getGapSession, type GapAnalysisApp } from '@/lib/supabase';
 import { COUNTRY_CODES } from '@/lib/constants';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 interface RouteParams {
   params: Promise<{ id: string }>;
 }

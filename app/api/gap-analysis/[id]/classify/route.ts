@@ -6,6 +6,9 @@ import {
   type GapAnalysisApp,
 } from '@/lib/supabase';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
