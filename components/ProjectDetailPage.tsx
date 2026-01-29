@@ -253,9 +253,9 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <Header />
 
-      <div className="flex">
+      <div className="flex overflow-x-hidden">
         {/* Main content */}
-        <div className={`flex-1 ${chatOpen ? '' : 'max-w-5xl mx-auto'} px-4 sm:px-6 lg:px-8 py-8`}>
+        <div className={`flex-1 min-w-0 ${chatOpen ? '' : 'max-w-5xl mx-auto'} px-4 sm:px-6 lg:px-8 py-8`}>
         {/* Breadcrumb */}
         <div className="mb-4">
           <Link

@@ -97,10 +97,10 @@ export default function GapSessionDetailPage({ sessionId }: Props) {
   const hasClassifications = apps.some((a) => a.classification);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 overflow-x-hidden">
       {/* Header */}
       <header className="bg-white dark:bg-gray-800 shadow-sm sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 overflow-x-hidden">
           <div className="flex items-center justify-between">
             <div>
               <div className="flex items-center gap-3">

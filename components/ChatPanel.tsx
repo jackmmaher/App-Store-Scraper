@@ -107,8 +107,8 @@ export default function ChatPanel({ project, projectId, onClose }: ChatPanelProp
   return (
     <div
       ref={panelRef}
-      className="flex-shrink-0 border-l border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col h-[calc(100vh-64px)] sticky top-16 relative"
-      style={{ width: `${panelWidth}px` }}
+      className="flex-shrink-0 border-l border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col h-[calc(100vh-64px)] sticky top-16 relative max-w-full"
+      style={{ width: `min(${panelWidth}px, 100vw)` }}
     >
       {/* Resize handle */}
       <div

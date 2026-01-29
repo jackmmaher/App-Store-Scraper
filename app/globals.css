@@ -13,6 +13,22 @@
   }
 }
 
+/* Prevent prose/markdown content from causing horizontal overflow */
+.prose table {
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.prose pre {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.prose code {
+  word-break: break-word;
+}
+
 /* Analysis Report Styles */
 @layer components {
   .analysis-report {
@@ -35,7 +51,7 @@
 
   /* Tables */
   .analysis-report table {
-    @apply w-full my-6 text-sm border-collapse;
+    @apply w-full my-6 text-sm border-collapse block overflow-x-auto;
   }
 
   .analysis-report thead {
@@ -104,6 +120,10 @@
   }
 }
 
+html {
+  overflow-x: hidden;
+}
+
 body {
   color: rgb(var(--foreground-rgb));
   background: linear-gradient(
@@ -113,6 +133,8 @@ body {
     )
     rgb(var(--background-start-rgb));
   min-height: 100vh;
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 /* Custom scrollbar */
