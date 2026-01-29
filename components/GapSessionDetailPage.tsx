@@ -62,12 +62,11 @@ export default function GapSessionDetailPage({ sessionId }: Props) {
 
   const handleAnalyzeApp = async (appStoreId: string) => {
     setAnalyzingAppId(appStoreId);
-    const app = apps.find((a) => a.app_store_id === appStoreId);
-    if (app) {
-      setSelectedApp(null); // Close modal if open
-    }
+    // Keep modal open so user sees analysis is running, close after completion
     await analyzeApp(sessionId, appStoreId);
     setAnalyzingAppId(null);
+    // Close modal after analysis completes so user can see results panel
+    setSelectedApp(null);
   };
 
   if (loading && !currentSession) {

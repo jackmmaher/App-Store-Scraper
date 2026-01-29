@@ -1039,6 +1039,125 @@ export async function bulkInsertGapApps(
   return true;
 }
 
+// Upsert gap analysis apps to the main apps table
+// This ensures discovered apps are saved for future use and avoids wasting API costs
+export async function upsertGapAppsToMaster(
+  apps: Array<{
+    id: string;
+    name: string;
+    bundle_id: string;
+    developer: string;
+    developer_id: string;
+    price: number;
+    currency: string;
+    rating: number;
+    rating_current_version: number;
+    review_count: number;
+    review_count_current_version: number;
+    version: string;
+    release_date: string;
+    current_version_release_date: string;
+    min_os_version: string;
+    file_size_bytes: string;
+    content_rating: string;
+    genres: string[];
+    primary_genre: string;
+    primary_genre_id: string;
+    url: string;
+    icon_url: string;
+    description: string;
+  }>,
+  countries: string[],
+  category: string
+): Promise<{ inserted: number; updated: number }> {
+  let inserted = 0;
+  let updated = 0;
+
+  for (const app of apps) {
+    // Check if app exists
+    const { data: existing } = await supabase
+      .from('apps')
+      .select('id, countries_found, categories_found, scrape_count')
+      .eq('app_store_id', app.id)
+      .single();
+
+    if (existing) {
+      // Update existing app - merge all gap analysis countries
+      const countriesFound = [...new Set([...(existing.countries_found || []), ...countries])];
+      const categoriesFound = [...new Set([...(existing.categories_found || []), category])];
+
+      const { error } = await supabase
+        .from('apps')
+        .update({
+          name: app.name,
+          bundle_id: app.bundle_id,
+          developer: app.developer,
+          developer_id: app.developer_id,
+          price: app.price,
+          currency: app.currency,
+          rating: app.rating,
+          rating_current_version: app.rating_current_version,
+          review_count: app.review_count,
+          review_count_current_version: app.review_count_current_version,
+          version: app.version,
+          release_date: app.release_date || null,
+          current_version_release_date: app.current_version_release_date || null,
+          min_os_version: app.min_os_version,
+          file_size_bytes: parseInt(app.file_size_bytes) || null,
+          content_rating: app.content_rating,
+          genres: app.genres,
+          primary_genre: app.primary_genre,
+          primary_genre_id: app.primary_genre_id,
+          url: app.url,
+          icon_url: app.icon_url,
+          description: app.description,
+          countries_found: countriesFound,
+          categories_found: categoriesFound,
+          last_updated_at: new Date().toISOString(),
+          scrape_count: (existing.scrape_count || 1) + 1,
+        })
+        .eq('id', existing.id);
+
+      if (!error) updated++;
+    } else {
+      // Insert new app
+      const { error } = await supabase
+        .from('apps')
+        .insert({
+          app_store_id: app.id,
+          name: app.name,
+          bundle_id: app.bundle_id,
+          developer: app.developer,
+          developer_id: app.developer_id,
+          price: app.price,
+          currency: app.currency,
+          rating: app.rating,
+          rating_current_version: app.rating_current_version,
+          review_count: app.review_count,
+          review_count_current_version: app.review_count_current_version,
+          version: app.version,
+          release_date: app.release_date || null,
+          current_version_release_date: app.current_version_release_date || null,
+          min_os_version: app.min_os_version,
+          file_size_bytes: parseInt(app.file_size_bytes) || null,
+          content_rating: app.content_rating,
+          genres: app.genres,
+          primary_genre: app.primary_genre,
+          primary_genre_id: app.primary_genre_id,
+          url: app.url,
+          icon_url: app.icon_url,
+          description: app.description,
+          countries_found: countries,
+          categories_found: [category],
+        });
+
+      if (!error) inserted++;
+    }
+  }
+
+  return { inserted, updated };
+}
+
 // Bulk update app classifications
 export async function updateGapAppClassifications(
   sessionId: string,

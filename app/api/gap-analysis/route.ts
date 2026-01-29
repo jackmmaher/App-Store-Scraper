@@ -11,9 +11,10 @@ import {
   getGapChatMessages,
   saveGapChatMessage,
   clearGapChatMessages,
+  upsertGapAppsToMaster,
   type GapAnalysisApp,
 } from '@/lib/supabase';
-import { scrapeMultipleCountries, type GapScrapeResult } from '@/lib/gap-scraper';
+import { scrapeMultipleCountries, type GapScrapeResult, type AppDetails } from '@/lib/gap-scraper';
 import { COUNTRY_CODES, CATEGORY_NAMES } from '@/lib/constants';
 
 export const runtime = 'nodejs';
@@ -221,7 +222,7 @@ async function handleScrape(sessionId: string) {
                   total_unique: totalUnique,
                 });
               },
-              onComplete: async (results: GapScrapeResult[], countriesScraped: string[]) => {
+              onComplete: async (results: GapScrapeResult[], countriesScraped: string[], fullAppDetails?: AppDetails[]) => {
                 // Bulk insert all apps at once (much faster than individual upserts)
                 const appsToInsert = results.map((app) => ({
                   app_store_id: app.app_store_id,
@@ -241,6 +242,21 @@ async function handleScrape(sessionId: string) {
                 const inserted = await bulkInsertGapApps(sessionId, appsToInsert);
                 if (!inserted) {
                   console.error('Failed to bulk insert apps');
+                }
+
+                // Also save to main apps database to avoid wasting API costs
+                if (fullAppDetails && fullAppDetails.length > 0) {
+                  try {
+                    const masterResult = await upsertGapAppsToMaster(
+                      fullAppDetails,
+                      countriesScraped,
+                      session.category
+                    );
+                    console.log(`[Gap Analysis] Saved to main apps DB: ${masterResult.inserted} inserted, ${masterResult.updated} updated`);
+                  } catch (err) {
+                    console.error('Failed to save apps to main database:', err);
+                    // Don't fail the scrape if master DB save fails
+                  }
                 }
 
                 await updateGapSessionStatus(sessionId, 'completed', {

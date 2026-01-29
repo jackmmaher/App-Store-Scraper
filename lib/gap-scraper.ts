@@ -54,7 +54,7 @@ interface RSSApp {
   category: string;
 }
 
-interface AppDetails {
+export interface AppDetails {
   id: string;
   name: string;
   bundle_id: string;
@@ -260,11 +260,16 @@ export function resolveCategoryId(category: string): number | null {
   return isNaN(parsed) ? null : parsed;
 }
 
+export interface GapScrapeFullResult {
+  gapResults: GapScrapeResult[];
+  fullAppDetails: AppDetails[];
+}
+
 export interface ScrapeProgressCallback {
   onCountryStart: (country: string, index: number, total: number) => void;
   onCountryProgress: (country: string, appsFound: number) => void;
   onCountryComplete: (country: string, appsFound: number, uniqueNew: number, totalUnique: number) => void;
-  onComplete: (results: GapScrapeResult[], countriesScraped: string[]) => void;
+  onComplete: (results: GapScrapeResult[], countriesScraped: string[], fullAppDetails?: AppDetails[]) => void;
   onError: (error: string) => void;
 }
 
@@ -361,7 +366,10 @@ export async function scrapeMultipleCountries(
     return (a.average_rank || 999) - (b.average_rank || 999);
   });
 
-  callbacks.onComplete(results, countries);
+  // Collect full app details for saving to main apps table
+  const fullAppDetails: AppDetails[] = Object.values(allApps).map((data) => data.app);
+
+  callbacks.onComplete(results, countries, fullAppDetails);
 
   return results;
 }
