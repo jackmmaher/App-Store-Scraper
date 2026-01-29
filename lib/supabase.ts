@@ -1320,3 +1320,296 @@ export async function clearGapChatMessages(sessionId: string): Promise<boolean> 
   return true;
 }
 
+// ============================================
+// Project Blueprints Types & Operations
+// ============================================
+
+export type BlueprintSectionStatus = 'pending' | 'generating' | 'completed' | 'error';
+export type BlueprintSection = 'pareto' | 'wireframes' | 'tech_stack' | 'prd';
+
+export interface ProjectBlueprint {
+  id: string;
+  project_id: string;
+
+  // Section 1: Pareto Strategy
+  pareto_strategy: string | null;
+  pareto_status: BlueprintSectionStatus;
+  pareto_generated_at: string | null;
+
+  // Section 2: UI Wireframes
+  ui_wireframes: string | null;
+  ui_wireframes_status: BlueprintSectionStatus;
+  ui_wireframes_generated_at: string | null;
+
+  // Section 3: Tech Stack
+  tech_stack: string | null;
+  tech_stack_status: BlueprintSectionStatus;
+  tech_stack_generated_at: string | null;
+
+  // Section 4: PRD
+  prd_content: string | null;
+  prd_status: BlueprintSectionStatus;
+  prd_generated_at: string | null;
+
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BlueprintAttachment {
+  id: string;
+  blueprint_id: string;
+  section: BlueprintSection;
+  screen_label: string | null;
+  file_name: string;
+  storage_path: string;
+  file_size: number | null;
+  mime_type: string | null;
+  created_at: string;
+}
+
+// Get or create blueprint for a project
+export async function getOrCreateBlueprint(projectId: string): Promise<ProjectBlueprint | null> {
+  // First try to get existing
+  const { data: existing, error: fetchError } = await supabase
+    .from('project_blueprints')
+    .select('*')
+    .eq('project_id', projectId)
+    .single();
+
+  if (existing) {
+    return existing;
+  }
+
+  // If not found (PGRST116), create new
+  if (fetchError && fetchError.code !== 'PGRST116') {
+    console.error('Error fetching blueprint:', fetchError);
+    return null;
+  }
+
+  // Create new blueprint
+  const { data, error } = await supabase
+    .from('project_blueprints')
+    .insert({
+      project_id: projectId,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error creating blueprint:', error);
+    return null;
+  }
+
+  return data;
+}
+
+// Get blueprint by ID
+export async function getBlueprint(id: string): Promise<ProjectBlueprint | null> {
+  const { data, error } = await supabase
+    .from('project_blueprints')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (error) {
+    if (error.code !== 'PGRST116') {
+      console.error('Error fetching blueprint:', error);
+    }
+    return null;
+  }
+
+  return data;
+}
+
+// Update blueprint section content and status
+export async function updateBlueprintSection(
+  id: string,
+  section: BlueprintSection,
+  content: string,
+  status: BlueprintSectionStatus = 'completed'
+): Promise<ProjectBlueprint | null> {
+  const columnMap: Record<BlueprintSection, { content: string; status: string; timestamp: string }> = {
+    pareto: { content: 'pareto_strategy', status: 'pareto_status', timestamp: 'pareto_generated_at' },
+    wireframes: { content: 'ui_wireframes', status: 'ui_wireframes_status', timestamp: 'ui_wireframes_generated_at' },
+    tech_stack: { content: 'tech_stack', status: 'tech_stack_status', timestamp: 'tech_stack_generated_at' },
+    prd: { content: 'prd_content', status: 'prd_status', timestamp: 'prd_generated_at' },
+  };
+
+  const columns = columnMap[section];
+  const updateData: Record<string, unknown> = {
+    [columns.content]: content,
+    [columns.status]: status,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (status === 'completed') {
+    updateData[columns.timestamp] = new Date().toISOString();
+  }
+
+  const { data, error } = await supabase
+    .from('project_blueprints')
+    .update(updateData)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error updating blueprint section:', error);
+    return null;
+  }
+
+  return data;
+}
+
+// Update blueprint section status only
+export async function updateBlueprintSectionStatus(
+  id: string,
+  section: BlueprintSection,
+  status: BlueprintSectionStatus
+): Promise<boolean> {
+  const statusColumn = {
+    pareto: 'pareto_status',
+    wireframes: 'ui_wireframes_status',
+    tech_stack: 'tech_stack_status',
+    prd: 'prd_status',
+  }[section];
+
+  const { error } = await supabase
+    .from('project_blueprints')
+    .update({
+      [statusColumn]: status,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id);
+
+  if (error) {
+    console.error('Error updating blueprint status:', error);
+    return false;
+  }
+
+  return true;
+}
+
+// Delete blueprint
+export async function deleteBlueprint(id: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('project_blueprints')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    console.error('Error deleting blueprint:', error);
+    return false;
+  }
+
+  return true;
+}
+
+// Get attachments for a blueprint
+export async function getBlueprintAttachments(blueprintId: string): Promise<BlueprintAttachment[]> {
+  const { data, error } = await supabase
+    .from('blueprint_attachments')
+    .select('*')
+    .eq('blueprint_id', blueprintId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching blueprint attachments:', error);
+    return [];
+  }
+
+  return data || [];
+}
+
+// Get attachments for a specific section
+export async function getBlueprintSectionAttachments(
+  blueprintId: string,
+  section: BlueprintSection
+): Promise<BlueprintAttachment[]> {
+  const { data, error } = await supabase
+    .from('blueprint_attachments')
+    .select('*')
+    .eq('blueprint_id', blueprintId)
+    .eq('section', section)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching section attachments:', error);
+    return [];
+  }
+
+  return data || [];
+}
+
+// Create attachment record
+export async function createBlueprintAttachment(
+  blueprintId: string,
+  section: BlueprintSection,
+  screenLabel: string | null,
+  fileName: string,
+  storagePath: string,
+  fileSize: number | null,
+  mimeType: string | null
+): Promise<BlueprintAttachment | null> {
+  const { data, error } = await supabase
+    .from('blueprint_attachments')
+    .insert({
+      blueprint_id: blueprintId,
+      section,
+      screen_label: screenLabel,
+      file_name: fileName,
+      storage_path: storagePath,
+      file_size: fileSize,
+      mime_type: mimeType,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error creating attachment:', error);
+    return null;
+  }
+
+  return data;
+}
+
+// Delete attachment
+export async function deleteBlueprintAttachment(id: string): Promise<boolean> {
+  // First get the attachment to know the storage path
+  const { data: attachment, error: fetchError } = await supabase
+    .from('blueprint_attachments')
+    .select('storage_path')
+    .eq('id', id)
+    .single();
+
+  if (fetchError) {
+    console.error('Error fetching attachment:', fetchError);
+    return false;
+  }
+
+  // Delete from storage
+  if (attachment?.storage_path) {
+    const { error: storageError } = await supabase.storage
+      .from('blueprint-attachments')
+      .remove([attachment.storage_path]);
+
+    if (storageError) {
+      console.error('Error deleting from storage:', storageError);
+      // Continue to delete record anyway
+    }
+  }
+
+  // Delete record
+  const { error } = await supabase
+    .from('blueprint_attachments')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    console.error('Error deleting attachment record:', error);
+    return false;
+  }
+
+  return true;
+}
+
