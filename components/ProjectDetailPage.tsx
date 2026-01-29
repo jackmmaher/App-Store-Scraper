@@ -269,34 +269,36 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
         </div>
 
         {/* App Header */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
-          <div className="flex items-start gap-4">
-            {project.app_icon_url ? (
-              <img src={project.app_icon_url} alt="" className="w-20 h-20 rounded-2xl" />
-            ) : (
-              <div className="w-20 h-20 rounded-2xl bg-gray-200 dark:bg-gray-600" />
-            )}
-            <div className="flex-1">
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                {project.app_name}
-              </h1>
-              <p className="text-gray-500 dark:text-gray-400">{project.app_developer}</p>
-              <div className="flex items-center gap-4 mt-2 flex-wrap">
-                <div className="flex items-center gap-1">
-                  <StarRating rating={Math.round(project.app_rating || 0)} />
-                  <span className="text-sm text-gray-600 dark:text-gray-300 ml-1">
-                    {project.app_rating?.toFixed(1)}
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 sm:p-6 mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-start gap-4">
+            <div className="flex items-start gap-4 flex-1 min-w-0">
+              {project.app_icon_url ? (
+                <img src={project.app_icon_url} alt="" className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl flex-shrink-0" />
+              ) : (
+                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gray-200 dark:bg-gray-600 flex-shrink-0" />
+              )}
+              <div className="flex-1 min-w-0">
+                <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white truncate">
+                  {project.app_name}
+                </h1>
+                <p className="text-gray-500 dark:text-gray-400 truncate">{project.app_developer}</p>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2">
+                  <div className="flex items-center gap-1">
+                    <StarRating rating={Math.round(project.app_rating || 0)} />
+                    <span className="text-sm text-gray-600 dark:text-gray-300 ml-1">
+                      {project.app_rating?.toFixed(1)}
+                    </span>
+                  </div>
+                  <span className="text-xs sm:text-sm text-gray-500">
+                    {formatNumber(project.app_review_count || 0)} reviews
+                  </span>
+                  <span className="hidden sm:inline text-sm text-gray-500">
+                    {project.app_primary_genre}
                   </span>
                 </div>
-                <span className="text-sm text-gray-500">
-                  {formatNumber(project.app_review_count || 0)} total reviews
-                </span>
-                <span className="text-sm text-gray-500">
-                  {project.app_primary_genre}
-                </span>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 self-start">
               {/* Chat toggle button */}
               <button
                 onClick={() => setChatOpen(!chatOpen)}
@@ -337,16 +339,16 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
           </div>
 
           {/* Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mt-4 sm:mt-6 pt-4 sm:pt-6 border-t border-gray-200 dark:border-gray-700">
             <div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Saved Reviews</p>
-              <p className="text-xl font-bold text-gray-900 dark:text-white">
+              <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Saved Reviews</p>
+              <p className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white">
                 {formatNumber(project.review_count)}
               </p>
             </div>
             <div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">AI Analysis</p>
-              <p className="text-xl font-bold text-gray-900 dark:text-white">
+              <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">AI Analysis</p>
+              <p className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white">
                 {project.ai_analysis ? 'Yes' : 'No'}
               </p>
             </div>

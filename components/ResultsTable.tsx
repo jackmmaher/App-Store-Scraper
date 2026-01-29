@@ -47,6 +47,7 @@ export default function ResultsTable({ data, country = 'us' }: Props) {
         header: '#',
         cell: ({ row }) => row.index + 1,
         size: 50,
+        meta: { className: '' },
       },
       {
         accessorKey: 'icon_url',
@@ -57,15 +58,16 @@ export default function ResultsTable({ data, country = 'us' }: Props) {
             <img
               src={url}
               alt=""
-              className="w-10 h-10 rounded-lg"
+              className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg"
               loading="lazy"
             />
           ) : (
-            <div className="w-10 h-10 rounded-lg bg-gray-200 dark:bg-gray-700" />
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-gray-200 dark:bg-gray-700" />
           );
         },
         size: 60,
         enableSorting: false,
+        meta: { className: '' },
       },
       {
         accessorKey: 'name',
@@ -77,16 +79,17 @@ export default function ResultsTable({ data, country = 'us' }: Props) {
                 e.stopPropagation();
                 setSelectedApp(row.original);
               }}
-              className="font-medium text-blue-600 dark:text-blue-400 hover:underline text-left"
+              className="font-medium text-blue-600 dark:text-blue-400 hover:underline text-left text-sm sm:text-base"
             >
               {getValue() as string}
             </button>
-            <div className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-xs">
+            <div className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[120px] sm:max-w-xs">
               {row.original.bundle_id}
             </div>
           </div>
         ),
         size: 250,
+        meta: { className: '' },
       },
       {
         accessorKey: 'review_count',
@@ -103,6 +106,7 @@ export default function ResultsTable({ data, country = 'us' }: Props) {
           </button>
         ),
         size: 100,
+        meta: { className: '' },
       },
       {
         accessorKey: 'rating',
@@ -112,6 +116,7 @@ export default function ResultsTable({ data, country = 'us' }: Props) {
           return rating ? rating.toFixed(1) : 'N/A';
         },
         size: 80,
+        meta: { className: '' },
       },
       {
         accessorKey: 'developer',
@@ -120,6 +125,7 @@ export default function ResultsTable({ data, country = 'us' }: Props) {
           <span className="truncate max-w-xs block">{getValue() as string}</span>
         ),
         size: 200,
+        meta: { className: 'hidden lg:table-cell' },
       },
       {
         accessorKey: 'price',
@@ -127,11 +133,13 @@ export default function ResultsTable({ data, country = 'us' }: Props) {
         cell: ({ row, getValue }) =>
           formatPrice(getValue() as number, row.original.currency),
         size: 80,
+        meta: { className: 'hidden md:table-cell' },
       },
       {
         accessorKey: 'version',
         header: 'Version',
         size: 80,
+        meta: { className: 'hidden lg:table-cell' },
       },
       {
         id: 'actions',
@@ -152,6 +160,7 @@ export default function ResultsTable({ data, country = 'us' }: Props) {
         ),
         size: 50,
         enableSorting: false,
+        meta: { className: '' },
       },
     ],
     []
@@ -174,22 +183,24 @@ export default function ResultsTable({ data, country = 'us' }: Props) {
   return (
     <>
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-        <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <input
-              type="text"
-              value={globalFilter}
-              onChange={(e) => setGlobalFilter(e.target.value)}
-              placeholder="Filter results..."
-              className="w-full max-w-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <span className="text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
-              {table.getFilteredRowModel().rows.length} of {data.length} apps
-            </span>
+        <div className="p-3 sm:p-4 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+              <input
+                type="text"
+                value={globalFilter}
+                onChange={(e) => setGlobalFilter(e.target.value)}
+                placeholder="Filter results..."
+                className="w-full sm:max-w-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <span className="text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                {table.getFilteredRowModel().rows.length} of {data.length} apps
+              </span>
+            </div>
+            <p className="hidden sm:block text-xs text-gray-400 dark:text-gray-500">
+              Click app to view details
+            </p>
           </div>
-          <p className="text-xs text-gray-400 dark:text-gray-500">
-            Click app name or reviews to scrape reviews
-          </p>
         </div>
 
         <div className="overflow-x-auto">
@@ -197,24 +208,27 @@ export default function ResultsTable({ data, country = 'us' }: Props) {
             <thead className="bg-gray-50 dark:bg-gray-900">
               {table.getHeaderGroups().map((headerGroup) => (
                 <tr key={headerGroup.id}>
-                  {headerGroup.headers.map((header) => (
-                    <th
-                      key={header.id}
-                      onClick={header.column.getToggleSortingHandler()}
-                      className={`px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider ${
-                        header.column.getCanSort() ? 'cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-800' : ''
-                      }`}
-                      style={{ width: header.getSize() }}
-                    >
-                      <div className="flex items-center gap-1">
-                        {flexRender(header.column.columnDef.header, header.getContext())}
-                        {{
-                          asc: ' ↑',
-                          desc: ' ↓',
-                        }[header.column.getIsSorted() as string] ?? null}
-                      </div>
-                    </th>
-                  ))}
+                  {headerGroup.headers.map((header) => {
+                    const meta = header.column.columnDef.meta as { className?: string } | undefined;
+                    return (
+                      <th
+                        key={header.id}
+                        onClick={header.column.getToggleSortingHandler()}
+                        className={`px-2 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider ${
+                          header.column.getCanSort() ? 'cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-800' : ''
+                        } ${meta?.className || ''}`}
+                        style={{ width: header.getSize() }}
+                      >
+                        <div className="flex items-center gap-1">
+                          {flexRender(header.column.columnDef.header, header.getContext())}
+                          {{
+                            asc: ' ↑',
+                            desc: ' ↓',
+                          }[header.column.getIsSorted() as string] ?? null}
+                        </div>
+                      </th>
+                    );
+                  })}
                 </tr>
               ))}
             </thead>
@@ -225,14 +239,17 @@ export default function ResultsTable({ data, country = 'us' }: Props) {
                   className="hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer"
                   onClick={() => setSelectedApp(row.original)}
                 >
-                  {row.getVisibleCells().map((cell) => (
-                    <td
-                      key={cell.id}
-                      className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100"
-                    >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </td>
-                  ))}
+                  {row.getVisibleCells().map((cell) => {
+                    const meta = cell.column.columnDef.meta as { className?: string } | undefined;
+                    return (
+                      <td
+                        key={cell.id}
+                        className={`px-2 sm:px-4 py-2 sm:py-3 text-sm text-gray-900 dark:text-gray-100 ${meta?.className || ''}`}
+                      >
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>

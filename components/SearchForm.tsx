@@ -44,8 +44,8 @@ export default function SearchForm({ onSearch, loading, initialParams }: Props) 
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+    <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 sm:p-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Country */}
         <div>
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
@@ -144,7 +144,7 @@ export default function SearchForm({ onSearch, loading, initialParams }: Props) 
       </div>
 
       {/* Toggles */}
-      <div className="mt-4 flex flex-wrap gap-4">
+      <div className="mt-4 flex flex-col sm:flex-row flex-wrap gap-3 sm:gap-4">
         <label className="flex items-center">
           <input
             type="checkbox"
@@ -163,14 +163,14 @@ export default function SearchForm({ onSearch, loading, initialParams }: Props) 
             className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
           />
           <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-            Deep Search (slower, more results)
+            Deep Search
           </span>
         </label>
 
         <button
           type="button"
           onClick={() => setShowFilters(!showFilters)}
-          className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
+          className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 text-left"
         >
           {showFilters ? 'Hide Filters' : 'Show Filters'}
         </button>

@@ -525,29 +525,30 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-0 sm:p-4">
+      <div className="bg-white dark:bg-gray-800 sm:rounded-xl shadow-2xl w-full sm:max-w-4xl h-full sm:h-auto sm:max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-start gap-4">
+        <div className="p-4 sm:p-6 border-b border-gray-200 dark:border-gray-700 flex items-start gap-3 sm:gap-4">
           {app.icon_url && (
-            <img src={app.icon_url} alt="" className="w-16 h-16 rounded-xl" />
+            <img src={app.icon_url} alt="" className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl flex-shrink-0" />
           )}
           <div className="flex-1 min-w-0">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white truncate">
+            <h2 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white truncate">
               {app.name}
             </h2>
-            <div className="flex items-center gap-2">
-              <p className="text-sm text-gray-500 dark:text-gray-400">{app.developer}</p>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{app.developer}</p>
               {app.url && (
                 <>
-                  <span className="text-gray-300 dark:text-gray-600">|</span>
+                  <span className="hidden sm:inline text-gray-300 dark:text-gray-600">|</span>
                   <a
                     href={app.url}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
                   >
-                    View in App Store
+                    <span className="hidden sm:inline">View in App Store</span>
+                    <span className="sm:hidden">Store</span>
                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                     </svg>
@@ -555,21 +556,21 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
                 </>
               )}
             </div>
-            <div className="flex items-center gap-4 mt-2">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2">
               <div className="flex items-center gap-1">
                 <StarRating rating={Math.round(app.rating)} />
                 <span className="text-sm text-gray-600 dark:text-gray-300 ml-1">
                   {app.rating?.toFixed(1)}
                 </span>
               </div>
-              <span className="text-sm text-gray-500">
-                {app.review_count?.toLocaleString()} total reviews
+              <span className="text-xs sm:text-sm text-gray-500">
+                {app.review_count?.toLocaleString()} reviews
               </span>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors flex-shrink-0"
           >
             <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -579,11 +580,11 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
 
         {/* Stats Bar - only show after scraping */}
         {hasScraped && stats && stats.total > 0 && (
-          <div className="px-6 py-3 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <div className="flex items-center gap-4 flex-wrap">
+          <div className="px-4 sm:px-6 py-3 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                 <span className="text-sm font-medium text-gray-900 dark:text-white">
-                  {stats.total.toLocaleString()} reviews scraped
+                  {stats.total.toLocaleString()} reviews
                 </span>
                 <div className="flex items-center gap-2 text-xs">
                   {[5, 4, 3, 2, 1].map((rating) => (
@@ -599,18 +600,18 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
                   </span>
                 )}
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button
                   onClick={exportReviewsCSV}
                   className="px-3 py-1.5 text-xs bg-green-600 hover:bg-green-700 text-white rounded transition-colors"
                 >
-                  Export CSV
+                  CSV
                 </button>
                 <button
                   onClick={exportReviewsJSON}
                   className="px-3 py-1.5 text-xs bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors"
                 >
-                  Export JSON
+                  JSON
                 </button>
                 <button
                   onClick={analyzeReviews}
@@ -627,7 +628,8 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
                     <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
-                    Saved - View Project
+                    <span className="hidden sm:inline">Saved - View</span>
+                    <span className="sm:hidden">View</span>
                   </a>
                 ) : (
                   <button
@@ -648,7 +650,7 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
                         </svg>
-                        Save as Project
+                        Save
                       </>
                     )}
                   </button>
@@ -659,20 +661,20 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
         )}
 
         {/* Tabs */}
-        <div className="flex border-b border-gray-200 dark:border-gray-700">
+        <div className="flex overflow-x-auto border-b border-gray-200 dark:border-gray-700 scrollbar-hide">
           <button
             onClick={() => setActiveTab('settings')}
-            className={`px-6 py-3 text-sm font-medium transition-colors ${
+            className={`px-4 sm:px-6 py-3 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
               activeTab === 'settings'
                 ? 'text-blue-600 border-b-2 border-blue-600'
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            Scrape Settings
+            Settings
           </button>
           <button
             onClick={() => setActiveTab('reviews')}
-            className={`px-6 py-3 text-sm font-medium transition-colors ${
+            className={`px-4 sm:px-6 py-3 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
               activeTab === 'reviews'
                 ? 'text-blue-600 border-b-2 border-blue-600'
                 : 'text-gray-500 hover:text-gray-700'
@@ -682,17 +684,17 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
           </button>
           <button
             onClick={() => setActiveTab('analysis')}
-            className={`px-6 py-3 text-sm font-medium transition-colors ${
+            className={`px-4 sm:px-6 py-3 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
               activeTab === 'analysis'
                 ? 'text-blue-600 border-b-2 border-blue-600'
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
-            AI Analysis
+            Analysis
           </button>
           <button
             onClick={() => setActiveTab('keywords')}
-            className={`px-6 py-3 text-sm font-medium transition-colors ${
+            className={`px-4 sm:px-6 py-3 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
               activeTab === 'keywords'
                 ? 'text-blue-600 border-b-2 border-blue-600'
                 : 'text-gray-500 hover:text-gray-700'
@@ -703,7 +705,7 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
           {/* Settings Tab */}
           {activeTab === 'settings' && (
             <div className="space-y-4">
@@ -998,7 +1000,7 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
                   </div>
 
                   {/* Current Status */}
-                  <div className="grid grid-cols-2 gap-4 mb-4 text-sm">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4 mb-4 text-sm">
                     <div>
                       <span className="text-gray-500 dark:text-gray-400">Current Filter:</span>
                       <span className="ml-2 text-gray-900 dark:text-white font-medium">

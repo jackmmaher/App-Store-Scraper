@@ -74,50 +74,48 @@ export default function ProjectsPage() {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <Header />
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-              My Projects
-            </h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              Saved app research with cached reviews and AI analysis
-            </p>
-          </div>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+        <div className="mb-6">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">
+            My Projects
+          </h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            Saved app research with cached reviews and AI analysis
+          </p>
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Total Projects</p>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">
+        <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-6">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-3 sm:p-4 shadow">
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Projects</p>
+            <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">
               {totalProjects}
             </p>
           </div>
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow">
-            <p className="text-sm text-gray-500 dark:text-gray-400">With AI Analysis</p>
-            <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-3 sm:p-4 shadow">
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Analyzed</p>
+            <p className="text-xl sm:text-2xl font-bold text-green-600 dark:text-green-400">
               {projectsWithAnalysis}
             </p>
           </div>
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Total Reviews Saved</p>
-            <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-3 sm:p-4 shadow">
+            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">Reviews</p>
+            <p className="text-xl sm:text-2xl font-bold text-blue-600 dark:text-blue-400">
               {formatNumber(totalReviews)}
             </p>
           </div>
         </div>
 
         {/* Search and View Toggle */}
-        <div className="flex items-center justify-between mb-6 gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-3 sm:gap-4">
           <input
             type="text"
             placeholder="Search projects..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="flex-1 max-w-md px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
+            className="w-full sm:flex-1 sm:max-w-md px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500"
           />
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 self-end sm:self-auto">
             <button
               onClick={() => setViewMode('grid')}
               className={`p-2 rounded-lg transition-colors ${
