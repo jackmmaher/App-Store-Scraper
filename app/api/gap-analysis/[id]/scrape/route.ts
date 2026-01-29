@@ -4,8 +4,8 @@ import {
   getGapSession,
   updateGapSessionStatus,
   upsertGapApp,
-  upsertApps,
 } from '@/lib/supabase';
+import { scrapeMultipleCountries, type GapScrapeResult } from '@/lib/gap-scraper';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -53,163 +53,80 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           controller.enqueue(encoder.encode(event));
         };
 
+        let countriesCompleted: string[] = [];
+        let totalAppsFound = 0;
+
         try {
-          // Call Python scraper
-          const scraperUrl = process.env.NODE_ENV === 'production'
-            ? `${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/py-gap-scrape`
-            : 'http://localhost:3000/api/py-gap-scrape';
+          await scrapeMultipleCountries(
+            session.category,
+            session.countries,
+            session.apps_per_country,
+            {
+              onCountryStart: async (country, index, total) => {
+                sendEvent('country_start', { country, index, total });
 
-          const response = await fetch(scraperUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              category: session.category,
-              countries: session.countries,
-              appsPerCountry: session.apps_per_country,
-            }),
-          });
+                await updateGapSessionStatus(sessionId, 'in_progress', {
+                  current_country: country,
+                  current_index: index,
+                  total_countries: total,
+                  countries_completed: countriesCompleted,
+                  total_apps_found: totalAppsFound,
+                  unique_apps: 0,
+                });
+              },
 
-          if (!response.ok) {
-            throw new Error(`Scraper returned ${response.status}`);
-          }
+              onCountryProgress: (country, appsFound) => {
+                sendEvent('country_progress', { country, apps_found: appsFound });
+              },
 
-          // Process SSE from Python scraper
-          const reader = response.body?.getReader();
-          if (!reader) throw new Error('No response body');
+              onCountryComplete: (country, appsFound, uniqueNew, totalUnique) => {
+                countriesCompleted.push(country);
+                totalAppsFound += appsFound;
 
-          const decoder = new TextDecoder();
-          let buffer = '';
-          let countriesCompleted: string[] = [];
-          let totalAppsFound = 0;
-          let uniqueApps = 0;
+                sendEvent('country_complete', {
+                  country,
+                  apps_found: appsFound,
+                  unique_new: uniqueNew,
+                  total_unique: totalUnique,
+                });
+              },
 
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                try {
-                  const eventData = JSON.parse(line.slice(6));
-
-                  // Forward progress events
-                  if (eventData.type === 'country_start') {
-                    sendEvent('country_start', {
-                      country: eventData.country,
-                      index: eventData.index,
-                      total: eventData.total,
-                    });
-
-                    // Update progress in DB
-                    await updateGapSessionStatus(sessionId, 'in_progress', {
-                      current_country: eventData.country,
-                      current_index: eventData.index,
-                      total_countries: eventData.total,
-                      countries_completed: countriesCompleted,
-                      total_apps_found: totalAppsFound,
-                      unique_apps: uniqueApps,
-                    });
+              onComplete: async (results: GapScrapeResult[], countriesScraped: string[]) => {
+                // Save all apps to database
+                for (const app of results) {
+                  for (const [country, rank] of Object.entries(app.country_ranks)) {
+                    await upsertGapApp(sessionId, {
+                      app_store_id: app.app_store_id,
+                      app_name: app.app_name,
+                      app_icon_url: app.app_icon_url || undefined,
+                      app_developer: app.app_developer || undefined,
+                      app_rating: app.app_rating || undefined,
+                      app_review_count: app.app_review_count,
+                      app_primary_genre: app.app_primary_genre || undefined,
+                      app_url: app.app_url || undefined,
+                    }, country, rank);
                   }
-
-                  if (eventData.type === 'country_progress') {
-                    sendEvent('country_progress', {
-                      country: eventData.country,
-                      apps_found: eventData.apps_found,
-                    });
-                  }
-
-                  if (eventData.type === 'country_complete') {
-                    countriesCompleted.push(eventData.country);
-                    totalAppsFound += eventData.apps_found;
-                    uniqueApps = eventData.total_unique;
-
-                    sendEvent('country_complete', {
-                      country: eventData.country,
-                      apps_found: eventData.apps_found,
-                      unique_new: eventData.unique_new,
-                      total_unique: eventData.total_unique,
-                    });
-                  }
-
-                  if (eventData.type === 'complete') {
-                    // Save all apps to database
-                    const apps = eventData.apps || [];
-
-                    for (const app of apps) {
-                      // Upsert to gap_analysis_apps
-                      for (const [country, rank] of Object.entries(app.country_ranks)) {
-                        await upsertGapApp(sessionId, {
-                          app_store_id: app.app_store_id,
-                          app_name: app.app_name,
-                          app_icon_url: app.app_icon_url,
-                          app_developer: app.app_developer,
-                          app_rating: app.app_rating,
-                          app_review_count: app.app_review_count,
-                          app_primary_genre: app.app_primary_genre,
-                          app_url: app.app_url,
-                        }, country, rank as number);
-                      }
-
-                      // Also upsert to master apps table
-                      const appResult = {
-                        id: app.app_store_id,
-                        name: app.app_name,
-                        bundle_id: '',
-                        developer: app.app_developer || '',
-                        developer_id: '',
-                        price: 0,
-                        currency: 'USD',
-                        rating: app.app_rating || 0,
-                        rating_current_version: 0,
-                        review_count: app.app_review_count || 0,
-                        review_count_current_version: 0,
-                        version: '',
-                        release_date: '',
-                        current_version_release_date: '',
-                        min_os_version: '',
-                        file_size_bytes: '',
-                        content_rating: '',
-                        genres: app.app_primary_genre ? [app.app_primary_genre] : [],
-                        primary_genre: app.app_primary_genre || '',
-                        primary_genre_id: '',
-                        url: app.app_url || '',
-                        icon_url: app.app_icon_url || '',
-                        description: '',
-                      };
-
-                      // Upsert for each country the app was found in
-                      for (const country of app.countries_present) {
-                        await upsertApps([appResult], country, session.category);
-                      }
-                    }
-
-                    // Update session status
-                    await updateGapSessionStatus(sessionId, 'completed', {
-                      countries_completed: eventData.countries_scraped,
-                      total_apps_found: eventData.total_apps,
-                      unique_apps: eventData.unique_apps,
-                    });
-
-                    sendEvent('complete', {
-                      total_apps: eventData.total_apps,
-                      unique_apps: eventData.unique_apps,
-                      countries_scraped: eventData.countries_scraped,
-                    });
-                  }
-
-                  if (eventData.type === 'error') {
-                    throw new Error(eventData.message);
-                  }
-                } catch (parseErr) {
-                  console.error('Error parsing SSE event:', parseErr);
                 }
-              }
+
+                // Update session status
+                await updateGapSessionStatus(sessionId, 'completed', {
+                  countries_completed: countriesScraped,
+                  total_apps_found: totalAppsFound,
+                  unique_apps: results.length,
+                });
+
+                sendEvent('complete', {
+                  total_apps: totalAppsFound,
+                  unique_apps: results.length,
+                  countries_scraped: countriesScraped,
+                });
+              },
+
+              onError: (error: string) => {
+                throw new Error(error);
+              },
             }
-          }
+          );
         } catch (error) {
           console.error('[Scrape] Error:', error);
 
