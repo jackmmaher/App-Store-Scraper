@@ -53,71 +53,78 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       classification_reason: string;
     }> = [];
 
-    // Step 1: Apply algorithmic classification rules
+    // Initialize all apps with null classification
     for (const app of apps) {
-      const presenceRatio = app.presence_count / totalCountries;
-      const avgRank = app.average_rank || 999;
-
-      let classification: GapAnalysisApp['classification'] = null;
-      let reason = '';
-
-      // Global Leader: avg rank <= 3 AND present in 80%+ of markets
-      if (avgRank <= 3 && presenceRatio >= 0.8) {
-        classification = 'global_leader';
-        reason = `Top 3 avg rank (${avgRank.toFixed(1)}) in ${(presenceRatio * 100).toFixed(0)}% of markets`;
-      }
-      // Local Champion: Top 10 in at least one market AND present in 20-70% of markets
-      else if (presenceRatio >= 0.2 && presenceRatio <= 0.7) {
-        const hasTop10 = Object.values(app.country_ranks).some(
-          (rank) => rank !== null && rank <= 10
-        );
-        if (hasTop10) {
-          const top10Countries = Object.entries(app.country_ranks)
-            .filter(([, rank]) => rank !== null && rank <= 10)
-            .map(([country]) => country.toUpperCase());
-          classification = 'local_champion';
-          reason = `Top 10 in ${top10Countries.join(', ')}, present in ${(presenceRatio * 100).toFixed(0)}% of markets`;
-        }
-      }
-
       classifications.push({
         app_store_id: app.app_store_id,
-        classification,
-        classification_reason: reason,
+        classification: null,
+        classification_reason: '',
       });
     }
 
-    // Step 2: AI brand detection for apps not yet classified
-    const unclassifiedApps = apps.filter((app) => {
-      const existing = classifications.find(
-        (c) => c.app_store_id === app.app_store_id
-      );
-      return !existing?.classification;
-    });
+    // Step 1: AI brand detection FIRST (brands are excluded from other classifications)
+    const brandAppIds = new Set<string>();
+    const apiKey = process.env.ANTHROPIC_API_KEY;
 
-    if (unclassifiedApps.length > 0) {
-      const apiKey = process.env.ANTHROPIC_API_KEY;
-      if (apiKey) {
-        try {
-          const brandResults = await detectBrands(unclassifiedApps, apiKey);
+    if (apiKey) {
+      try {
+        const brandResults = await detectBrands(apps, apiKey);
 
-          for (const result of brandResults) {
-            if (result.is_brand && result.confidence >= 0.7) {
-              const idx = classifications.findIndex(
-                (c) => c.app_store_id === result.app_store_id
-              );
-              if (idx !== -1) {
-                classifications[idx].classification = 'brand';
-                classifications[idx].classification_reason = result.brand_name
-                  ? `Recognized brand: ${result.brand_name} (${(result.confidence * 100).toFixed(0)}% confidence)`
-                  : `Recognized offline brand (${(result.confidence * 100).toFixed(0)}% confidence)`;
-              }
+        for (const result of brandResults) {
+          if (result.is_brand && result.confidence >= 0.7) {
+            brandAppIds.add(result.app_store_id);
+            const idx = classifications.findIndex(
+              (c) => c.app_store_id === result.app_store_id
+            );
+            if (idx !== -1) {
+              classifications[idx].classification = 'brand';
+              classifications[idx].classification_reason = result.brand_name
+                ? `Recognized brand: ${result.brand_name} (${(result.confidence * 100).toFixed(0)}% confidence)`
+                : `Recognized offline brand (${(result.confidence * 100).toFixed(0)}% confidence)`;
             }
           }
-        } catch (err) {
-          console.error('Brand detection error:', err);
-          // Continue without brand detection if it fails
         }
+      } catch (err) {
+        console.error('Brand detection error:', err);
+        // Continue without brand detection if it fails
+      }
+    }
+
+    // Step 2: Apply algorithmic classification rules (excluding brands)
+    for (const app of apps) {
+      // Skip if already classified as brand
+      if (brandAppIds.has(app.app_store_id)) {
+        continue;
+      }
+
+      const idx = classifications.findIndex(
+        (c) => c.app_store_id === app.app_store_id
+      );
+      if (idx === -1) continue;
+
+      // Get ranks for markets where the app is present
+      const presentRanks = Object.entries(app.country_ranks)
+        .filter(([, rank]) => rank !== null)
+        .map(([country, rank]) => ({ country: country.toUpperCase(), rank: rank as number }));
+
+      // Global Leader: Must be present in ALL markets AND rank 1-3 in ALL markets
+      // The app IS the business (like Flo period tracker, not a physical brand extension)
+      if (presentRanks.length === totalCountries) {
+        const allTop3 = presentRanks.every((r) => r.rank <= 3);
+        if (allTop3) {
+          classifications[idx].classification = 'global_leader';
+          classifications[idx].classification_reason = `Ranks #1-3 in all ${totalCountries} markets analyzed`;
+          continue;
+        }
+      }
+
+      // Local Champion: Ranks 1-10 in exactly ONE market only
+      // Must be a standalone app business, not a brand, not a global leader
+      const top10Markets = presentRanks.filter((r) => r.rank <= 10);
+      if (top10Markets.length === 1) {
+        const market = top10Markets[0];
+        classifications[idx].classification = 'local_champion';
+        classifications[idx].classification_reason = `Standalone app leading only in ${market.country} (rank #${market.rank})`;
       }
     }
 
@@ -172,10 +179,19 @@ async function detectBrands(
       developer: app.app_developer,
     }));
 
-    const prompt = `Analyze these app names and developers. Identify recognizable offline consumer brands - companies that exist primarily outside of mobile apps (Nike, Peloton, Starbucks, Disney, Weight Watchers, major banks, airlines, retail stores, etc.).
+    const prompt = `Analyze these app names and developers. Identify apps that are extensions of PHYSICAL businesses/brands - where the company exists primarily OUTSIDE of mobile apps.
 
-Do NOT flag:
-- Pure digital/app-native companies (Calm, Headspace, MyFitnessPal before acquisition)
+FLAG as brands:
+- Retail stores with apps (Walmart, Tesco, Netto Plus, IKEA)
+- Consumer product companies (Coca Cola, Nike, Nestlé)
+- Banks and financial institutions (Chase, HSBC, Barclays)
+- Airlines, hotels, restaurants (Delta, Marriott, Starbucks, McDonald's)
+- Entertainment companies with physical presence (Disney, Netflix retail)
+- Fitness brands with physical gyms/equipment (Peloton, Planet Fitness)
+
+Do NOT flag as brands:
+- App-native businesses where the app IS the core product (Flo, Calm, Headspace, Duolingo, Spotify)
+- Digital-first companies (even if successful) where the app is the main business
 - Generic app names that happen to match brand words
 - Small/unknown developers
 
