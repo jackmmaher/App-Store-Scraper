@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { AppResult, Review, ReviewStats } from '@/lib/supabase';
 import { COUNTRY_CODES } from '@/lib/constants';
 import { useKeywordRanking } from '@/hooks/useKeywordRanking';
@@ -358,7 +360,13 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
       const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reviews, appName: app.name }),
+        body: JSON.stringify({
+          reviews,
+          appName: app.name,
+          category: app.primary_genre,
+          rating: app.rating,
+          totalReviews: app.review_count,
+        }),
       });
 
       if (!res.ok) {
@@ -1174,10 +1182,10 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
                   <p className="text-gray-600 dark:text-gray-400">Analyzing {reviews.length} reviews with Claude AI...</p>
                 </div>
               ) : analysis ? (
-                <div className="prose dark:prose-invert max-w-none">
-                  <div className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">
+                <div className="prose prose-sm dark:prose-invert max-w-none text-sm text-gray-700 dark:text-gray-300 prose-table:w-full prose-table:border-collapse prose-th:border prose-th:border-gray-300 prose-th:dark:border-gray-600 prose-th:bg-gray-100 prose-th:dark:bg-gray-800 prose-th:px-3 prose-th:py-2 prose-th:text-left prose-th:font-semibold prose-td:border prose-td:border-gray-300 prose-td:dark:border-gray-600 prose-td:px-3 prose-td:py-2 prose-td:align-top">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
                     {analysis}
-                  </div>
+                  </ReactMarkdown>
                 </div>
               ) : (
                 <div className="text-center py-12">

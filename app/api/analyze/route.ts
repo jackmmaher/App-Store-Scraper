@@ -9,6 +9,14 @@ interface Review {
   version: string;
 }
 
+interface AnalyzeRequest {
+  reviews: Review[];
+  appName: string;
+  category?: string;
+  rating?: number;
+  totalReviews?: number;
+}
+
 export async function POST(request: NextRequest) {
   const authed = await isAuthenticated();
   if (!authed) {
@@ -25,7 +33,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { reviews, appName } = body as { reviews: Review[]; appName: string };
+    const { reviews, appName, category, rating, totalReviews } = body as AnalyzeRequest;
 
     if (!reviews || reviews.length === 0) {
       return NextResponse.json(
@@ -56,61 +64,115 @@ export async function POST(request: NextRequest) {
       formatReviews(sampledNeutral, '3 Star Reviews - MIXED FEELINGS') +
       formatReviews(sampledPositive, '4-5 Star Reviews - WHAT WORKS');
 
-    const prompt = `You are a product analyst. Analyze these ${reviews.length} App Store reviews for "${appName}" to extract actionable product insights.
+    const prompt = `You are a competitive intelligence analyst. Analyze these ${reviews.length} App Store reviews for "${appName}" to identify market opportunities for a competitor building an alternative.
+
+## CONTEXT
+- App: ${appName}
+- Category: ${category || 'Unknown'}
+- Current Rating: ${rating ? rating.toFixed(1) : 'N/A'}/5
+- Total Reviews: ${totalReviews ? totalReviews.toLocaleString() : 'N/A'}
+- Sample Size: ${reviews.length} reviews analyzed
 
 REVIEW DISTRIBUTION:
 - 1-2 stars (critical): ${negativeReviews.length} reviews
 - 3 stars (neutral): ${neutralReviews.length} reviews
 - 4-5 stars (positive): ${positiveReviews.length} reviews
 
-Focus heavily on the negative reviews - that's where the problems are. Be specific and quote users when possible.
-
 Provide analysis in this EXACT structure:
 
-## 🔴 CRITICAL ISSUES (Causing Users to Quit/Uninstall)
-List the most severe problems that make users abandon the app. These are dealbreakers.
-- Issue 1: [description] — mentioned by ~X users
-- Issue 2: [description] — mentioned by ~X users
+---
+
+## 1. Core Value Proposition Assessment
+
+What job is this app hired to do? Summarize in 2-3 sentences what users fundamentally want from this app, based on both praise and complaints.
+
+---
+
+## 2. Failed Jobs (What Users Can't Accomplish)
+
+| Job to be Done | Failure Mode | Frequency | Quote |
+|---------------|--------------|-----------|-------|
+| [What user wanted to do] | [How the app failed them] | ~X mentions | "[direct quote]" |
+
+List 5-10 failed jobs, prioritized by frequency and severity.
+
+---
+
+## 3. User Segment Analysis
+
+| Segment | Size Signal | Primary Need | Underserved? |
+|---------|-------------|--------------|--------------|
+| [e.g., "Power users", "Beginners", "Enterprise"] | [frequency indicators] | [their main job] | Yes/Partially/No |
+
+Identify 3-5 distinct user segments from the reviews.
+
+---
+
+## 4. Switching Triggers
+
+What specific moments cause users to actively seek alternatives? List the top 5 switching triggers:
+
+1. **[Trigger]**: [description] — "[quote if available]"
+2. **[Trigger]**: [description]
 (etc.)
 
-## 🟠 FRUSTRATIONS (Things That Annoy Users)
-Problems that don't break the app but create friction and dissatisfaction.
-- Frustration 1: [description]
-- Frustration 2: [description]
-(etc.)
+---
 
-## 🐛 BUGS & TECHNICAL ISSUES
-Specific technical problems users report (crashes, glitches, errors).
-- Bug 1: [description] — affects [which versions/devices if mentioned]
-- Bug 2: [description]
-(etc.)
+## 5. Competitor Intelligence
 
-## 🟢 WHAT'S WORKING (Users Love This)
-Features and aspects users praise. Important to know what NOT to break.
-- Strength 1: [description]
-- Strength 2: [description]
-(etc.)
+| Competitor Mentioned | Context | Sentiment | Opportunity Signal |
+|---------------------|---------|-----------|-------------------|
+| [App name] | [Why mentioned] | Positive/Negative/Neutral | [What this tells us] |
 
-## 💡 FEATURE REQUESTS
-What users wish the app had.
-- Request 1: [description] — requested by ~X users
-- Request 2: [description]
-(etc.)
+If no competitors mentioned, note "None mentioned in sample."
 
-## 🆚 COMPETITOR MENTIONS
-Any competing apps users mention (switching to/from, comparisons).
-- [Competitor name]: [what users say about it]
-(etc., or "None mentioned" if none)
+---
 
-## 📋 TOP 5 PRIORITIES FOR DEVELOPERS
-Based on frequency and severity, the top 5 things to fix/improve:
-1. [Most critical]
-2. [Second priority]
-3. [Third priority]
-4. [Fourth priority]
-5. [Fifth priority]
+## 6. Technical Debt Map
 
-Be direct and specific. Don't sugarcoat problems. Quote actual user phrases when impactful.
+Group technical issues by business impact:
+
+**Revenue-Impacting** (causes refunds/churn):
+- [Issue]: [description]
+
+**Retention-Impacting** (causes frustration but users stay):
+- [Issue]: [description]
+
+**Perception-Impacting** (makes app feel low-quality):
+- [Issue]: [description]
+
+---
+
+## 7. Opportunity Brief
+
+If you were building a competitor, what would you do differently? Provide:
+
+**Positioning Statement**: One sentence describing how a competitor should position against this app.
+
+**Must-Have Features** (table stakes):
+1. [Feature]
+2. [Feature]
+3. [Feature]
+
+**Differentiators** (opportunities to win):
+1. [Differentiator]: [why this matters based on reviews]
+2. [Differentiator]: [why this matters]
+3. [Differentiator]: [why this matters]
+
+**Who to Target First**: [Specific segment] because [reason from review data].
+
+---
+
+## 8. Raw Signal Log
+
+Notable quotes that don't fit above but reveal user psychology:
+- "[Quote]" — reveals [insight]
+- "[Quote]" — reveals [insight]
+(Include 5-10 insightful quotes)
+
+---
+
+Be direct and analytical. Focus on actionable competitive intelligence, not just problem identification.
 
 ${reviewsText}`;
 
@@ -123,7 +185,7 @@ ${reviewsText}`;
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 4000,
+        max_tokens: 6000,
         messages: [
           {
             role: 'user',
