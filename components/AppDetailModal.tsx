@@ -104,6 +104,11 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
   const [isScraping, setIsScraping] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  // Review display filters
+  const [ratingFilter, setRatingFilter] = useState<'all' | 1 | 2 | 3 | 4 | 5>('all');
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'mostRecent' | 'mostHelpful' | 'mostFavorable' | 'mostCritical'>('all');
+  const [sortBy, setSortBy] = useState<'default' | 'rating-high' | 'rating-low' | 'helpful'>('default');
+
   // Keywords - use shared hooks
   const {
     keywordInput,
@@ -142,6 +147,26 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
   const estimatedReviews = filters
     .filter(f => f.enabled)
     .reduce((sum, f) => sum + f.target, 0);
+
+  // Filter and sort displayed reviews
+  const filteredReviews = reviews
+    .filter(r => ratingFilter === 'all' || r.rating === ratingFilter)
+    .filter(r => sourceFilter === 'all' || r.sort_source === sourceFilter)
+    .sort((a, b) => {
+      switch (sortBy) {
+        case 'rating-high':
+          return b.rating - a.rating;
+        case 'rating-low':
+          return a.rating - b.rating;
+        case 'helpful':
+          return (b.vote_count || 0) - (a.vote_count || 0);
+        default:
+          return 0;
+      }
+    });
+
+  // Get unique sort sources from scraped reviews
+  const availableSources = [...new Set(reviews.map(r => r.sort_source).filter((s): s is string => Boolean(s)))];
 
   // Start streaming scrape
   const startScrape = useCallback(async () => {
@@ -1010,31 +1035,127 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
                   {reviews.length === 0 ? (
                     <p className="text-center text-gray-500 py-8">No reviews found for this app.</p>
                   ) : (
-                    reviews.map((review) => (
-                      <div
-                        key={review.id}
-                        className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg"
-                      >
-                        <div className="flex items-start justify-between mb-2">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <StarRating rating={review.rating} />
-                              <span className="font-medium text-gray-900 dark:text-white">
-                                {review.title}
-                              </span>
-                            </div>
-                            <p className="text-xs text-gray-500 mt-1">
-                              by {review.author} • v{review.version}
-                              {review.country && ` • ${review.country.toUpperCase()}`}
-                              {review.vote_count > 0 && ` • ${review.vote_count} found helpful`}
-                            </p>
+                    <>
+                      {/* Review Filters */}
+                      <div className="flex flex-wrap items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-700">
+                        {/* Rating Filter */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Rating:</span>
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => setRatingFilter('all')}
+                              className={`px-2 py-1 text-xs rounded transition-colors ${
+                                ratingFilter === 'all'
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500'
+                              }`}
+                            >
+                              All
+                            </button>
+                            {[5, 4, 3, 2, 1].map((rating) => (
+                              <button
+                                key={rating}
+                                onClick={() => setRatingFilter(rating as 1 | 2 | 3 | 4 | 5)}
+                                className={`px-2 py-1 text-xs rounded transition-colors ${
+                                  ratingFilter === rating
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500'
+                                }`}
+                              >
+                                {rating}★
+                              </button>
+                            ))}
                           </div>
                         </div>
-                        <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-                          {review.content}
-                        </p>
+
+                        {/* Source Filter */}
+                        {availableSources.length > 1 && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Source:</span>
+                            <select
+                              value={sourceFilter}
+                              onChange={(e) => setSourceFilter(e.target.value as typeof sourceFilter)}
+                              className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            >
+                              <option value="all">All Sources</option>
+                              {availableSources.map((source) => (
+                                <option key={source} value={source}>
+                                  {FILTER_INFO[source]?.label || source}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+
+                        {/* Sort By */}
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Sort:</span>
+                          <select
+                            value={sortBy}
+                            onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                            className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                          >
+                            <option value="default">Default</option>
+                            <option value="rating-high">Rating (High to Low)</option>
+                            <option value="rating-low">Rating (Low to High)</option>
+                            <option value="helpful">Most Helpful</option>
+                          </select>
+                        </div>
+
+                        {/* Results Count */}
+                        <div className="ml-auto text-xs text-gray-500 dark:text-gray-400">
+                          Showing {filteredReviews.length} of {reviews.length} reviews
+                        </div>
                       </div>
-                    ))
+
+                      {/* Review List */}
+                      {filteredReviews.length === 0 ? (
+                        <div className="text-center py-8">
+                          <p className="text-gray-500 dark:text-gray-400 mb-2">No reviews match your filters</p>
+                          <button
+                            onClick={() => {
+                              setRatingFilter('all');
+                              setSourceFilter('all');
+                              setSortBy('default');
+                            }}
+                            className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                          >
+                            Clear filters
+                          </button>
+                        </div>
+                      ) : (
+                        filteredReviews.map((review) => (
+                          <div
+                            key={review.id}
+                            className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg"
+                          >
+                            <div className="flex items-start justify-between mb-2">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <StarRating rating={review.rating} />
+                                  <span className="font-medium text-gray-900 dark:text-white">
+                                    {review.title}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  by {review.author} • v{review.version}
+                                  {review.country && ` • ${review.country.toUpperCase()}`}
+                                  {review.vote_count > 0 && ` • ${review.vote_count} found helpful`}
+                                  {review.sort_source && availableSources.length > 1 && (
+                                    <span className="ml-1 px-1.5 py-0.5 bg-gray-200 dark:bg-gray-600 rounded text-[10px]">
+                                      {FILTER_INFO[review.sort_source]?.label || review.sort_source}
+                                    </span>
+                                  )}
+                                </p>
+                              </div>
+                            </div>
+                            <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                              {review.content}
+                            </p>
+                          </div>
+                        ))
+                      )}
+                    </>
                   )}
                 </div>
               )}
