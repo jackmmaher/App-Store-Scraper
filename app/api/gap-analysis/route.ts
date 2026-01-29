@@ -245,24 +245,21 @@ async function handleScrape(sessionId: string) {
                 }
 
                 // Also save to main apps database to avoid wasting API costs
+                // Run in background (don't await) to prevent blocking the scrape completion
                 if (fullAppDetails && fullAppDetails.length > 0) {
-                  try {
-                    // Build map of app_store_id -> countries where each app was found
-                    const appCountriesMap: Record<string, string[]> = {};
-                    for (const result of results) {
-                      appCountriesMap[result.app_store_id] = result.countries_present;
-                    }
-
-                    const masterResult = await upsertGapAppsToMaster(
-                      fullAppDetails,
-                      appCountriesMap,
-                      session.category
-                    );
-                    console.log(`[Gap Analysis] Saved to main apps DB: ${masterResult.inserted} inserted, ${masterResult.updated} updated`);
-                  } catch (err) {
-                    console.error('Failed to save apps to main database:', err);
-                    // Don't fail the scrape if master DB save fails
+                  const appCountriesMap: Record<string, string[]> = {};
+                  for (const result of results) {
+                    appCountriesMap[result.app_store_id] = result.countries_present;
                   }
+
+                  // Fire and forget - don't block on this
+                  upsertGapAppsToMaster(fullAppDetails, appCountriesMap, session.category)
+                    .then((masterResult) => {
+                      console.log(`[Gap Analysis] Saved to main apps DB: ${masterResult.inserted} inserted, ${masterResult.updated} updated`);
+                    })
+                    .catch((err) => {
+                      console.error('Failed to save apps to main database:', err);
+                    });
                 }
 
                 await updateGapSessionStatus(sessionId, 'completed', {
