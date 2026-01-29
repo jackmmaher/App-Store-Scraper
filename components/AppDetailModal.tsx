@@ -100,6 +100,10 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
   // Accordion state
   const [filterSectionOpen, setFilterSectionOpen] = useState(true);
   const [stealthSectionOpen, setStealthSectionOpen] = useState(false);
+  const [countrySectionOpen, setCountrySectionOpen] = useState(false);
+
+  // Country selection for scraping (default to US)
+  const [scrapeCountry, setScrapeCountry] = useState('us');
 
   // Progress state for SSE streaming
   const [progress, setProgress] = useState<ScrapeProgress | null>(null);
@@ -209,7 +213,7 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           appId: app.id,
-          country,
+          country: scrapeCountry,
           streaming: true,
           filters: enabledFilters.map(f => ({ sort: f.sort, target: f.target })),
           stealth: stealthConfig,
@@ -259,7 +263,7 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
       setLoading(false);
       setHasScraped(true);
     }
-  }, [app.id, country, filters, stealthConfig]);
+  }, [app.id, scrapeCountry, filters, stealthConfig]);
 
   // Handle SSE events
   const handleSSEEvent = useCallback((event: Record<string, unknown>, enabledFilters: FilterConfig[]) => {
@@ -852,6 +856,46 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
                   )}
                 </div>
 
+                {/* Country Selection Accordion */}
+                <div className="border border-gray-200 dark:border-gray-700 rounded-lg mb-4">
+                  <button
+                    onClick={() => setCountrySectionOpen(!countrySectionOpen)}
+                    className="w-full px-4 py-3 flex items-center justify-between bg-gray-50 dark:bg-gray-700/50 rounded-t-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    <span className="font-medium text-gray-900 dark:text-white">App Store Country</span>
+                    <svg
+                      className={`w-5 h-5 text-gray-500 transition-transform ${countrySectionOpen ? 'rotate-180' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {countrySectionOpen && (
+                    <div className="p-4">
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
+                        Select which country's App Store to scrape reviews from
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {POPULAR_COUNTRIES.map((code) => (
+                          <button
+                            key={code}
+                            onClick={() => setScrapeCountry(code)}
+                            className={`px-3 py-1.5 text-sm rounded-full transition-colors ${
+                              scrapeCountry === code
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                            }`}
+                          >
+                            {COUNTRY_CODES[code]} ({code.toUpperCase()})
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Summary */}
                 <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 mb-4">
                   <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300">
@@ -865,6 +909,7 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
                   <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
                     {filters.filter(f => f.enabled).length} filter{filters.filter(f => f.enabled).length !== 1 ? 's' : ''} enabled
                     {' '}({filters.filter(f => f.enabled).map(f => FILTER_INFO[f.sort].label).join(', ')})
+                    {' '} · {COUNTRY_CODES[scrapeCountry] || scrapeCountry.toUpperCase()} App Store
                   </p>
                 </div>
 
