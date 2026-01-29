@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useChat } from '@/hooks/useChat';
 import ChatMessage from './ChatMessage';
 import type { AppProject } from '@/lib/supabase';
@@ -13,8 +13,11 @@ interface ChatPanelProps {
 
 export default function ChatPanel({ project, projectId, onClose }: ChatPanelProps) {
   const [input, setInput] = useState('');
+  const [panelWidth, setPanelWidth] = useState(400);
+  const [isResizing, setIsResizing] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const {
     messages,
@@ -33,10 +36,57 @@ export default function ChatPanel({ project, projectId, onClose }: ChatPanelProp
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Auto-resize textarea based on content
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+      const scrollHeight = inputRef.current.scrollHeight;
+      inputRef.current.style.height = `${Math.min(scrollHeight, 200)}px`;
+    }
+  }, [input]);
+
+  // Handle resize drag
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing) return;
+
+      const newWidth = window.innerWidth - e.clientX;
+      // Clamp between 300px and 700px
+      setPanelWidth(Math.max(300, Math.min(700, newWidth)));
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing]);
+
   const handleSend = () => {
     if (!input.trim() || isLoading) return;
     sendMessage(input);
     setInput('');
+    // Reset textarea height
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto';
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -49,14 +99,25 @@ export default function ChatPanel({ project, projectId, onClose }: ChatPanelProp
   const handleInsertAnalysis = () => {
     const analysis = insertAnalysis();
     if (analysis) {
-      // Prepend a request about the analysis
       setInput(`Based on the AI analysis, `);
       inputRef.current?.focus();
     }
   };
 
   return (
-    <div className="w-[350px] flex-shrink-0 border-l border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col h-[calc(100vh-64px)] sticky top-16">
+    <div
+      ref={panelRef}
+      className="flex-shrink-0 border-l border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col h-[calc(100vh-64px)] sticky top-16 relative"
+      style={{ width: `${panelWidth}px` }}
+    >
+      {/* Resize handle */}
+      <div
+        className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500 transition-colors z-10 group"
+        onMouseDown={handleMouseDown}
+      >
+        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-gray-300 dark:bg-gray-600 rounded group-hover:bg-blue-500 transition-colors" />
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
         <h3 className="font-medium text-gray-900 dark:text-white truncate">
@@ -138,7 +199,7 @@ export default function ChatPanel({ project, projectId, onClose }: ChatPanelProp
 
       {/* Input area */}
       <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700">
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-end">
           <textarea
             ref={inputRef}
             value={input}
@@ -146,13 +207,14 @@ export default function ChatPanel({ project, projectId, onClose }: ChatPanelProp
             onKeyDown={handleKeyDown}
             placeholder="Type your message..."
             rows={1}
-            className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            style={{ minHeight: '38px', maxHeight: '120px' }}
+            className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent overflow-hidden"
+            style={{ minHeight: '38px', maxHeight: '200px' }}
           />
           <button
             onClick={handleSend}
             disabled={!input.trim() || isLoading}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+            style={{ height: '38px' }}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
