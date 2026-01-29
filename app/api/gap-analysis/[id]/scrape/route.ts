@@ -3,7 +3,7 @@ import { isAuthenticated } from '@/lib/auth';
 import {
   getGapSession,
   updateGapSessionStatus,
-  upsertGapApp,
+  bulkInsertGapApps,
 } from '@/lib/supabase';
 import { scrapeMultipleCountries, type GapScrapeResult } from '@/lib/gap-scraper';
 
@@ -96,20 +96,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
               },
 
               onComplete: async (results: GapScrapeResult[], countriesScraped: string[]) => {
-                // Save all apps to database
-                for (const app of results) {
-                  for (const [country, rank] of Object.entries(app.country_ranks)) {
-                    await upsertGapApp(sessionId, {
-                      app_store_id: app.app_store_id,
-                      app_name: app.app_name,
-                      app_icon_url: app.app_icon_url || undefined,
-                      app_developer: app.app_developer || undefined,
-                      app_rating: app.app_rating || undefined,
-                      app_review_count: app.app_review_count,
-                      app_primary_genre: app.app_primary_genre || undefined,
-                      app_url: app.app_url || undefined,
-                    }, country, rank);
-                  }
+                // Save all apps to database using bulk insert (much faster)
+                const success = await bulkInsertGapApps(sessionId, results);
+                if (!success) {
+                  throw new Error('Failed to save apps to database');
                 }
 
                 // Update session status

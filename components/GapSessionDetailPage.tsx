@@ -47,10 +47,7 @@ export default function GapSessionDetailPage({ sessionId }: Props) {
   const [showChat, setShowChat] = useState(false);
   const [analyzingAppId, setAnalyzingAppId] = useState<string | null>(null);
 
-  // Reload session when component mounts
-  useEffect(() => {
-    loadSession(sessionId);
-  }, [sessionId, loadSession]);
+  // Note: loadSession is already called by useGapAnalysis hook when sessionId changes
 
   const handleStartScrape = async () => {
     await startScrape(sessionId);

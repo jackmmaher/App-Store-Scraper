@@ -121,6 +121,8 @@ export function useGapAnalysis({ sessionId }: UseGapAnalysisProps = {}) {
     setScrapeProgress({});
     setError(null);
 
+    let receivedComplete = false;
+
     try {
       const res = await fetch(`/api/gap-analysis?id=${id}&action=scrape`, { method: 'POST' });
 
@@ -174,10 +176,7 @@ export function useGapAnalysis({ sessionId }: UseGapAnalysisProps = {}) {
               }
 
               if (eventData.type === 'complete') {
-                // Reload session data
-                await loadSession(id);
-                setIsScraping(false);
-                return true;
+                receivedComplete = true;
               }
 
               if (eventData.type === 'error') {
@@ -194,11 +193,18 @@ export function useGapAnalysis({ sessionId }: UseGapAnalysisProps = {}) {
         }
       }
 
-      return true;
+      // Stream ended - always reload session to get latest state from DB
+      // This handles cases where the connection dropped before complete event
+      await loadSession(id);
+      return receivedComplete;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Scrape failed');
-      setIsScraping(false);
+      // Still reload session to get current state
+      await loadSession(id).catch(() => {});
       return false;
+    } finally {
+      // Always reset scraping state when stream ends
+      setIsScraping(false);
     }
   }, [loadSession]);
 
