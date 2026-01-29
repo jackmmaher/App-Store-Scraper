@@ -1,47 +1,141 @@
-import { AppProject, BlueprintAttachment } from './supabase';
+import { AppProject, BlueprintAttachment, Review } from './supabase';
 
-// Section 1: Pareto Strategy Prompt
-export function getParetoStrategyPrompt(project: AppProject): string {
-  return `You are a senior product strategist specializing in mobile app development. Analyze the following competitor app and create a comprehensive Pareto Strategy document that identifies the 20% of features that deliver 80% of the value.
+// Helper to get diverse sample reviews (mix of ratings)
+function getSampleReviews(reviews: Review[], count: number = 10): Review[] {
+  if (reviews.length <= count) return reviews;
 
-## Competitor App Details
+  const byRating: Record<number, Review[]> = { 1: [], 2: [], 3: [], 4: [], 5: [] };
+  reviews.forEach((r) => {
+    if (byRating[r.rating]) {
+      byRating[r.rating].push(r);
+    }
+  });
+
+  const sampled: Review[] = [];
+  const perRating = Math.ceil(count / 5);
+
+  // Take from each rating category for diversity
+  [1, 2, 3, 4, 5].forEach((rating) => {
+    const ratingReviews = byRating[rating];
+    // Prioritize reviews with more votes (more helpful)
+    const sorted = ratingReviews.sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0));
+    sampled.push(...sorted.slice(0, perRating));
+  });
+
+  return sampled.slice(0, count);
+}
+
+// Format reviews for prompt inclusion
+function formatReviewsForPrompt(reviews: Review[]): string {
+  if (reviews.length === 0) return 'No reviews available.';
+
+  return reviews.map((r, i) =>
+    `**Review ${i + 1}** (${r.rating}★)${r.vote_count > 0 ? ` - ${r.vote_count} found helpful` : ''}
+> "${r.title}"
+> ${r.content.slice(0, 500)}${r.content.length > 500 ? '...' : ''}`
+  ).join('\n\n');
+}
+
+// Build project context section used across all prompts
+function buildProjectContext(project: AppProject): string {
+  const sections: string[] = [];
+
+  // Basic app info
+  sections.push(`## Competitor App Details
 
 **App Name:** ${project.app_name}
 **Category:** ${project.app_primary_genre || 'Unknown'}
 **Developer:** ${project.app_developer || 'Unknown'}
-**Rating:** ${project.app_rating?.toFixed(1) || 'N/A'} ⭐ (${project.app_review_count?.toLocaleString() || 0} reviews)
+**Rating:** ${project.app_rating?.toFixed(1) || 'N/A'} ⭐ (${project.app_review_count?.toLocaleString() || 0} total reviews)
 **Price:** ${project.app_price > 0 ? `${project.app_currency} ${project.app_price}` : 'Free'}
+**Reviews Analyzed:** ${project.review_count} reviews scraped and analyzed`);
 
-## AI Analysis of Reviews
-${project.ai_analysis || 'No AI analysis available.'}
+  // AI Analysis (the main insight source)
+  if (project.ai_analysis) {
+    sections.push(`## AI Analysis of Reviews
+
+This analysis was generated from ${project.review_count} user reviews:
+
+${project.ai_analysis}`);
+  }
+
+  // User's personal notes
+  if (project.notes && project.notes.trim()) {
+    sections.push(`## Researcher's Notes
+
+The following notes were added by the researcher analyzing this competitor:
+
+${project.notes}`);
+  }
+
+  // Sample raw reviews for direct user voice
+  const sampleReviews = getSampleReviews(project.reviews, 10);
+  if (sampleReviews.length > 0) {
+    sections.push(`## Sample User Reviews
+
+These are actual user reviews showing diverse perspectives (1-5 stars):
+
+${formatReviewsForPrompt(sampleReviews)}`);
+  }
+
+  // Review stats if available
+  if (project.review_stats) {
+    const dist = project.review_stats.rating_distribution;
+    sections.push(`## Rating Distribution
+
+| Rating | Count |
+|--------|-------|
+| 5★ | ${dist['5'] || 0} |
+| 4★ | ${dist['4'] || 0} |
+| 3★ | ${dist['3'] || 0} |
+| 2★ | ${dist['2'] || 0} |
+| 1★ | ${dist['1'] || 0} |
+
+Average: ${project.review_stats.average_rating?.toFixed(2) || 'N/A'}`);
+  }
+
+  return sections.join('\n\n---\n\n');
+}
+
+// Section 1: Pareto Strategy Prompt
+export function getParetoStrategyPrompt(project: AppProject): string {
+  const context = buildProjectContext(project);
+
+  return `You are a senior product strategist specializing in mobile app development. Analyze the following competitor app and create a comprehensive Pareto Strategy document that identifies the 20% of features that deliver 80% of the value.
+
+${context}
+
+---
 
 ## Your Task
 
-Create a detailed Pareto Strategy document with the following sections:
+Based on ALL the information above (app details, AI analysis, researcher notes, and raw user reviews), create a detailed Pareto Strategy document:
 
 ### 1. Core Value Proposition
 - What is the single most important problem this app solves?
-- What makes users choose this app over alternatives?
+- What makes users choose this app over alternatives? (cite specific review feedback)
 - What's the "aha moment" that hooks users?
 
 ### 2. Must-Have Features (Pareto 20%)
-Create a table of the essential features that deliver 80% of user value:
+Create a table of the essential features that deliver 80% of user value. Base this on what users actually praise and complain about:
 
-| Feature | User Value | Implementation Priority | Complexity |
-|---------|-----------|------------------------|------------|
-| ... | ... | P0/P1/P2 | Low/Medium/High |
+| Feature | User Value | Evidence from Reviews | Priority | Complexity |
+|---------|-----------|----------------------|----------|------------|
+| ... | ... | "quote from review" | P0/P1/P2 | Low/Med/High |
 
 ### 3. Onboarding Strategy
 - Recommended onboarding flow (steps)
 - Key screens to include
 - Information to collect vs. skip
 - Time-to-value target
+- Address any onboarding complaints from reviews
 
 ### 4. Monetization & Paywall Strategy
 - Recommended pricing model (freemium, subscription, one-time, etc.)
 - When to show paywall (soft vs. hard)
 - Pricing tiers recommendation
 - Free tier limitations
+- Address any pricing complaints from reviews
 
 ### 5. Core Architecture Decisions
 - Key data models needed
@@ -49,7 +143,13 @@ Create a table of the essential features that deliver 80% of user value:
 - Offline-first considerations
 - Sync strategy if applicable
 
-Format your response in clean Markdown with proper headings, tables, and bullet points.`;
+### 6. Competitive Advantages to Build
+Based on the negative reviews and researcher notes, what opportunities exist to differentiate:
+- Pain points to solve better
+- Missing features users request
+- UX improvements needed
+
+Format your response in clean Markdown with proper headings, tables, and bullet points. Cite specific reviews where relevant.`;
 }
 
 // Section 2: UI Wireframes Prompt
@@ -62,20 +162,34 @@ export function getUIWireframesPrompt(
     ? `\n## Reference Screenshots\nThe user has provided ${attachments.length} inspiration screenshot(s):\n${attachments.map(a => `- ${a.screen_label || a.file_name}`).join('\n')}\n\nConsider these as visual references for the recommended UI style and patterns.`
     : '';
 
-  return `You are a senior UI/UX designer specializing in iOS mobile apps. Based on the Pareto Strategy below, create a detailed UI Wireframe specification document.
+  // Include notes if available for design context
+  const notesSection = project.notes && project.notes.trim()
+    ? `\n## Researcher's Notes\n${project.notes}\n`
+    : '';
+
+  return `You are a senior UI/UX designer specializing in iOS mobile apps. Based on the Pareto Strategy and project context below, create a detailed UI Wireframe specification document.
 
 ## App Context
 
 **App Name:** ${project.app_name}
 **Category:** ${project.app_primary_genre || 'Unknown'}
-
+**Original Rating:** ${project.app_rating?.toFixed(1) || 'N/A'} ⭐
+${notesSection}
 ## Pareto Strategy (Section 1)
+
 ${paretoStrategy}
 ${attachmentInfo}
 
+## AI Analysis Reference
+
+Key insights to inform UI decisions:
+${project.ai_analysis ? project.ai_analysis.slice(0, 2000) + (project.ai_analysis.length > 2000 ? '\n\n[truncated]' : '') : 'No analysis available.'}
+
+---
+
 ## Your Task
 
-Create a comprehensive UI Wireframe specification with numbered screens. For each screen, provide:
+Create a comprehensive UI Wireframe specification with numbered screens. Address any UX issues mentioned in the Pareto Strategy.
 
 ### Screen List Format
 
@@ -136,22 +250,31 @@ export function getTechStackPrompt(
   paretoStrategy: string,
   uiWireframes: string
 ): string {
+  // Include notes if they contain technical preferences
+  const notesSection = project.notes && project.notes.trim()
+    ? `\n## Researcher's Notes\n\nConsider any technical preferences or constraints mentioned:\n${project.notes}\n`
+    : '';
+
   return `You are a senior iOS developer and architect. Based on the Pareto Strategy and UI Wireframes below, create a comprehensive Tech Stack recommendation document.
 
 ## App Context
 
 **App Name:** ${project.app_name}
 **Category:** ${project.app_primary_genre || 'Unknown'}
-
+${notesSection}
 ## Pareto Strategy (Section 1)
+
 ${paretoStrategy}
 
 ## UI Wireframes (Section 2)
+
 ${uiWireframes}
+
+---
 
 ## Your Task
 
-Create a detailed Tech Stack document with the following sections:
+Create a detailed Tech Stack document. Ensure recommendations support all features identified in the Pareto Strategy.
 
 ### 1. Native iOS Stack
 
@@ -229,39 +352,57 @@ export function getPRDPrompt(
   uiWireframes: string,
   techStack: string
 ): string {
+  // Include full notes in PRD for comprehensive context
+  const notesSection = project.notes && project.notes.trim()
+    ? `\n## Researcher's Notes & Insights\n\n${project.notes}\n`
+    : '';
+
   return `You are a senior product manager creating a Product Requirements Document (PRD) for a new iOS app. Synthesize all the previous sections into a comprehensive PRD.
 
 ## App Context
 
 **App Name:** ${project.app_name} Clone
 **Category:** ${project.app_primary_genre || 'Unknown'}
-**Original App Rating:** ${project.app_rating?.toFixed(1) || 'N/A'} ⭐
+**Original App Rating:** ${project.app_rating?.toFixed(1) || 'N/A'} ⭐ (${project.app_review_count?.toLocaleString() || 0} reviews)
+**Reviews Analyzed:** ${project.review_count}
+${notesSection}
+## Original AI Analysis
 
-## Previous Sections
+Key findings from competitor review analysis:
+${project.ai_analysis ? project.ai_analysis.slice(0, 1500) + (project.ai_analysis.length > 1500 ? '\n\n[truncated]' : '') : 'No analysis available.'}
+
+---
+
+## Previous Blueprint Sections
 
 ### Pareto Strategy (Section 1)
+
 ${paretoStrategy}
 
 ### UI Wireframes (Section 2)
+
 ${uiWireframes}
 
 ### Tech Stack (Section 3)
+
 ${techStack}
+
+---
 
 ## Your Task
 
-Create a comprehensive PRD with the following sections:
+Create a comprehensive PRD that synthesizes ALL the above information:
 
 ### 1. Executive Summary
 - Product vision (2-3 sentences)
 - Target market
-- Key differentiators from original app
+- Key differentiators from original app (based on weaknesses found in reviews)
 - Success criteria
 
 ### 2. Problem Statement
 - What problem does this app solve?
 - Who experiences this problem?
-- Current solutions and their limitations
+- Current solutions and their limitations (cite competitor weaknesses)
 - Our approach
 
 ### 3. Target Users
