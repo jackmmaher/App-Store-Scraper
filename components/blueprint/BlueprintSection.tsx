@@ -137,8 +137,8 @@ export default function BlueprintSection({
             <BlueprintProgressTracker section={section} isGenerating={isGenerating} />
           </div>
         ) : displayContent ? (
-          <div className="prose dark:prose-invert max-w-none overflow-x-auto">
-            <div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-3 sm:p-6 max-h-[50vh] sm:max-h-[600px] overflow-y-auto overflow-x-auto">
+          <div>
+            <div className="analysis-report bg-gray-50 dark:bg-gray-900 rounded-lg p-4 sm:p-6 max-h-[50vh] sm:max-h-[600px] overflow-y-auto overflow-x-auto">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                 {displayContent}
               </ReactMarkdown>

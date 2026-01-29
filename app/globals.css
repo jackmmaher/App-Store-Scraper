@@ -29,19 +29,35 @@
   word-break: break-word;
 }
 
-/* Analysis Report Styles */
+/* Analysis Report Styles - used for AI Analysis and Blueprint sections */
 @layer components {
   .analysis-report {
-    @apply text-sm text-gray-700 dark:text-gray-300;
+    @apply text-sm text-gray-700 dark:text-gray-300 leading-relaxed;
   }
 
-  /* Section spacing */
+  /* Main title (H1) */
+  .analysis-report h1 {
+    @apply text-xl font-bold text-gray-900 dark:text-white mt-0 mb-6 pb-3 border-b-2 border-blue-500 dark:border-blue-400;
+  }
+
+  /* Section headings (H2) */
   .analysis-report h2 {
     @apply text-lg font-bold text-gray-900 dark:text-white mt-10 mb-4 pb-2 border-b border-gray-200 dark:border-gray-700;
   }
 
-  .analysis-report h2:first-child {
+  .analysis-report h2:first-child,
+  .analysis-report h1 + h2 {
     @apply mt-0;
+  }
+
+  /* Subsections (H3) */
+  .analysis-report h3 {
+    @apply text-base font-semibold text-gray-800 dark:text-gray-200 mt-8 mb-3;
+  }
+
+  /* Sub-subsections (H4) */
+  .analysis-report h4 {
+    @apply text-sm font-semibold text-gray-700 dark:text-gray-300 mt-6 mb-2;
   }
 
   /* Horizontal rules as section dividers */
@@ -59,11 +75,11 @@
   }
 
   .analysis-report th {
-    @apply px-4 py-3 text-left font-semibold text-gray-900 dark:text-white border border-gray-300 dark:border-gray-600;
+    @apply px-3 sm:px-4 py-2 sm:py-3 text-left font-semibold text-gray-900 dark:text-white border border-gray-300 dark:border-gray-600 text-xs sm:text-sm;
   }
 
   .analysis-report td {
-    @apply px-4 py-3 align-top border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300;
+    @apply px-3 sm:px-4 py-2 sm:py-3 align-top border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-xs sm:text-sm;
   }
 
   .analysis-report tbody tr:nth-child(even) {
@@ -76,12 +92,28 @@
   }
 
   /* Lists */
-  .analysis-report ul,
+  .analysis-report ul {
+    @apply my-4 pl-6 list-disc;
+  }
+
   .analysis-report ol {
-    @apply my-4 pl-6;
+    @apply my-4 pl-6 list-decimal;
   }
 
   .analysis-report li {
+    @apply my-2 pl-1;
+  }
+
+  .analysis-report li > ul,
+  .analysis-report li > ol {
+    @apply mt-2 mb-0;
+  }
+
+  /* Nested lists */
+  .analysis-report ul ul,
+  .analysis-report ol ol,
+  .analysis-report ul ol,
+  .analysis-report ol ul {
     @apply my-2;
   }
 
@@ -90,19 +122,33 @@
     @apply font-semibold text-gray-900 dark:text-white;
   }
 
-  /* Inline code / quotes */
+  /* Emphasis/italic text */
+  .analysis-report em {
+    @apply italic text-gray-600 dark:text-gray-400;
+  }
+
+  /* Inline code */
   .analysis-report code {
-    @apply bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded text-sm;
+    @apply bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded text-xs sm:text-sm font-mono text-blue-700 dark:text-blue-300;
+  }
+
+  /* Code blocks */
+  .analysis-report pre {
+    @apply my-4 p-4 bg-gray-800 dark:bg-gray-950 rounded-lg overflow-x-auto;
+  }
+
+  .analysis-report pre code {
+    @apply bg-transparent p-0 text-gray-100 text-xs sm:text-sm;
   }
 
   /* Block quotes for user quotes */
   .analysis-report blockquote {
-    @apply my-4 pl-4 border-l-4 border-blue-400 dark:border-blue-600 italic text-gray-600 dark:text-gray-400;
+    @apply my-4 pl-4 border-l-4 border-blue-400 dark:border-blue-600 italic text-gray-600 dark:text-gray-400 bg-blue-50 dark:bg-blue-900/20 py-2 pr-4 rounded-r-lg;
   }
 
-  /* Subsections */
-  .analysis-report h3 {
-    @apply text-base font-semibold text-gray-800 dark:text-gray-200 mt-6 mb-3;
+  /* Links */
+  .analysis-report a {
+    @apply text-blue-600 dark:text-blue-400 hover:underline;
   }
 }
 
