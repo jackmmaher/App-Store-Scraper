@@ -32,7 +32,7 @@ export default function GapAppDetailModal({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="flex min-h-full items-center justify-center p-4">
+      <div className="flex min-h-full items-center justify-center p-2 sm:p-4">
         {/* Backdrop */}
         <div
           className="fixed inset-0 bg-black/50 transition-opacity"
@@ -40,21 +40,21 @@ export default function GapAppDetailModal({
         />
 
         {/* Modal */}
-        <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
+        <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full sm:max-w-2xl max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col">
           {/* Header */}
-          <div className="flex items-start justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-            <div className="flex items-center gap-4">
+          <div className="flex items-start justify-between p-3 sm:p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+            <div className="flex items-center gap-3 sm:gap-4 min-w-0">
               {app.app_icon_url ? (
                 <img
                   src={app.app_icon_url}
                   alt={app.app_name}
-                  className="w-16 h-16 rounded-xl"
+                  className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl flex-shrink-0"
                 />
               ) : (
-                <div className="w-16 h-16 rounded-xl bg-gray-200 dark:bg-gray-600" />
+                <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl bg-gray-200 dark:bg-gray-600 flex-shrink-0" />
               )}
-              <div>
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+              <div className="min-w-0">
+                <h2 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white truncate">
                   {app.app_name}
                 </h2>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -79,7 +79,7 @@ export default function GapAppDetailModal({
           </div>
 
           {/* Tabs */}
-          <div className="flex border-b border-gray-200 dark:border-gray-700">
+          <div className="flex border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
             {[
               { id: 'overview', label: 'Overview' },
               { id: 'presence', label: 'Country Presence' },
@@ -87,7 +87,7 @@ export default function GapAppDetailModal({
               <button
                 key={id}
                 onClick={() => setActiveTab(id as 'overview' | 'presence')}
-                className={`px-4 py-2 text-sm font-medium transition-colors ${
+                className={`px-3 sm:px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
                   activeTab === id
                     ? 'text-blue-600 border-b-2 border-blue-600'
                     : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
@@ -99,7 +99,7 @@ export default function GapAppDetailModal({
           </div>
 
           {/* Content */}
-          <div className="p-4 overflow-y-auto max-h-[60vh]">
+          <div className="p-3 sm:p-4 overflow-y-auto flex-1 min-h-0">
             {activeTab === 'overview' && (
               <div className="space-y-6">
                 {/* Stats Grid */}
@@ -222,7 +222,7 @@ export default function GapAppDetailModal({
           </div>
 
           {/* Footer */}
-          <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+          <div className="p-3 sm:p-4 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-2 sm:gap-3 flex-shrink-0">
             <button
               onClick={onClose}
               className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors"

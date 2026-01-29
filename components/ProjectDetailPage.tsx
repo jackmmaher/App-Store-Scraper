@@ -370,20 +370,21 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
 
         {/* Tabs */}
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
-          <div className="flex border-b border-gray-200 dark:border-gray-700">
+          <div className="flex overflow-x-auto border-b border-gray-200 dark:border-gray-700 scrollbar-hide">
             <button
               onClick={() => setActiveTab('analysis')}
-              className={`px-6 py-3 text-sm font-medium transition-colors ${
+              className={`px-3 sm:px-6 py-3 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
                 activeTab === 'analysis'
                   ? 'text-blue-600 border-b-2 border-blue-600'
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
-              AI Analysis
+              <span className="hidden sm:inline">AI Analysis</span>
+              <span className="sm:hidden">Analysis</span>
             </button>
             <button
               onClick={() => setActiveTab('reviews')}
-              className={`px-6 py-3 text-sm font-medium transition-colors ${
+              className={`px-3 sm:px-6 py-3 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
                 activeTab === 'reviews'
                   ? 'text-blue-600 border-b-2 border-blue-600'
                   : 'text-gray-500 hover:text-gray-700'
@@ -393,7 +394,7 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
             </button>
             <button
               onClick={() => setActiveTab('notes')}
-              className={`px-6 py-3 text-sm font-medium transition-colors ${
+              className={`px-3 sm:px-6 py-3 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
                 activeTab === 'notes'
                   ? 'text-blue-600 border-b-2 border-blue-600'
                   : 'text-gray-500 hover:text-gray-700'
@@ -403,7 +404,7 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
             </button>
             <button
               onClick={() => setActiveTab('keywords')}
-              className={`px-6 py-3 text-sm font-medium transition-colors ${
+              className={`px-3 sm:px-6 py-3 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
                 activeTab === 'keywords'
                   ? 'text-blue-600 border-b-2 border-blue-600'
                   : 'text-gray-500 hover:text-gray-700'
@@ -413,7 +414,7 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
             </button>
             <button
               onClick={() => setActiveTab('blueprint')}
-              className={`px-6 py-3 text-sm font-medium transition-colors ${
+              className={`px-3 sm:px-6 py-3 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
                 activeTab === 'blueprint'
                   ? 'text-blue-600 border-b-2 border-blue-600'
                   : 'text-gray-500 hover:text-gray-700'
@@ -423,7 +424,7 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
             </button>
           </div>
 
-          <div className="p-6">
+          <div className="p-4 sm:p-6">
             {/* Analysis Tab */}
             {activeTab === 'analysis' && (
               <div>
