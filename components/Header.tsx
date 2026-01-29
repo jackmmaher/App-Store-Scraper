@@ -98,6 +98,17 @@ export default function Header() {
               >
                 My Projects
               </Link>
+              <Link
+                href="/gap-analysis"
+                className={clsx(
+                  'px-3 py-2 rounded-md text-sm font-medium transition-colors',
+                  pathname?.startsWith('/gap-analysis')
+                    ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
+                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                )}
+              >
+                Gap Analysis
+              </Link>
             </nav>
           </div>
 

@@ -728,3 +728,392 @@ export async function clearChatMessages(projectId: string): Promise<boolean> {
   return true;
 }
 
+// ============================================
+// Gap Analysis Sessions Types & Operations
+// ============================================
+
+export interface GapAnalysisSession {
+  id: string;
+  name: string | null;
+  category: string;
+  countries: string[];
+  apps_per_country: number;
+  scrape_status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  scrape_progress: {
+    current_country?: string;
+    current_index?: number;
+    total_countries?: number;
+    countries_completed?: string[];
+    total_apps_found?: number;
+    unique_apps?: number;
+    error?: string;
+  };
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GapAnalysisApp {
+  id: string;
+  session_id: string;
+  app_store_id: string;
+  app_name: string;
+  app_icon_url: string | null;
+  app_developer: string | null;
+  app_rating: number | null;
+  app_review_count: number;
+  app_primary_genre: string | null;
+  app_url: string | null;
+  countries_present: string[];
+  country_ranks: Record<string, number | null>;
+  presence_count: number;
+  average_rank: number | null;
+  classification: 'global_leader' | 'brand' | 'local_champion' | null;
+  classification_reason: string | null;
+  created_at: string;
+}
+
+export interface GapAnalysisChatMessage {
+  id: string;
+  session_id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  created_at: string;
+}
+
+// Create a new gap analysis session
+export async function createGapSession(
+  name: string | null,
+  category: string,
+  countries: string[],
+  appsPerCountry: number = 50
+): Promise<GapAnalysisSession | null> {
+  const { data, error } = await supabase
+    .from('gap_analysis_sessions')
+    .insert({
+      name,
+      category,
+      countries,
+      apps_per_country: appsPerCountry,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error creating gap session:', error);
+    return null;
+  }
+
+  return data;
+}
+
+// Get all gap analysis sessions
+export async function getGapSessions(): Promise<GapAnalysisSession[]> {
+  const { data, error } = await supabase
+    .from('gap_analysis_sessions')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching gap sessions:', error);
+    return [];
+  }
+
+  return data || [];
+}
+
+// Get a single gap session with its apps
+export async function getGapSession(id: string): Promise<{
+  session: GapAnalysisSession;
+  apps: GapAnalysisApp[];
+} | null> {
+  const { data: session, error: sessionError } = await supabase
+    .from('gap_analysis_sessions')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (sessionError) {
+    if (sessionError.code !== 'PGRST116') {
+      console.error('Error fetching gap session:', sessionError);
+    }
+    return null;
+  }
+
+  const { data: apps, error: appsError } = await supabase
+    .from('gap_analysis_apps')
+    .select('*')
+    .eq('session_id', id)
+    .order('presence_count', { ascending: false });
+
+  if (appsError) {
+    console.error('Error fetching gap apps:', appsError);
+  }
+
+  return {
+    session,
+    apps: apps || [],
+  };
+}
+
+// Update gap session status and progress
+export async function updateGapSessionStatus(
+  id: string,
+  status: GapAnalysisSession['scrape_status'],
+  progress?: GapAnalysisSession['scrape_progress']
+): Promise<boolean> {
+  const updateData: Record<string, unknown> = { scrape_status: status };
+  if (progress) {
+    updateData.scrape_progress = progress;
+  }
+
+  const { error } = await supabase
+    .from('gap_analysis_sessions')
+    .update(updateData)
+    .eq('id', id);
+
+  if (error) {
+    console.error('Error updating gap session:', error);
+    return false;
+  }
+
+  return true;
+}
+
+// Delete a gap session (cascades to apps and chat)
+export async function deleteGapSession(id: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('gap_analysis_sessions')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    console.error('Error deleting gap session:', error);
+    return false;
+  }
+
+  return true;
+}
+
+// Upsert apps for a gap session (update country presence if exists)
+export async function upsertGapApp(
+  sessionId: string,
+  app: {
+    app_store_id: string;
+    app_name: string;
+    app_icon_url?: string;
+    app_developer?: string;
+    app_rating?: number;
+    app_review_count?: number;
+    app_primary_genre?: string;
+    app_url?: string;
+  },
+  country: string,
+  rank: number
+): Promise<GapAnalysisApp | null> {
+  // Check if app exists in session
+  const { data: existing } = await supabase
+    .from('gap_analysis_apps')
+    .select('*')
+    .eq('session_id', sessionId)
+    .eq('app_store_id', app.app_store_id)
+    .single();
+
+  if (existing) {
+    // Update existing: add country to presence
+    const countriesPresent = [...new Set([...existing.countries_present, country])];
+    const countryRanks = { ...existing.country_ranks, [country]: rank };
+    const presenceCount = countriesPresent.length;
+
+    // Calculate average rank from non-null values
+    const rankValues = Object.values(countryRanks).filter((r): r is number => r !== null);
+    const averageRank = rankValues.length > 0
+      ? rankValues.reduce((a, b) => a + b, 0) / rankValues.length
+      : null;
+
+    const { data, error } = await supabase
+      .from('gap_analysis_apps')
+      .update({
+        countries_present: countriesPresent,
+        country_ranks: countryRanks,
+        presence_count: presenceCount,
+        average_rank: averageRank,
+        // Update metadata if newer/better
+        app_rating: app.app_rating ?? existing.app_rating,
+        app_review_count: Math.max(app.app_review_count || 0, existing.app_review_count || 0),
+      })
+      .eq('id', existing.id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating gap app:', error);
+      return null;
+    }
+
+    return data;
+  } else {
+    // Insert new app
+    const { data, error } = await supabase
+      .from('gap_analysis_apps')
+      .insert({
+        session_id: sessionId,
+        app_store_id: app.app_store_id,
+        app_name: app.app_name,
+        app_icon_url: app.app_icon_url,
+        app_developer: app.app_developer,
+        app_rating: app.app_rating,
+        app_review_count: app.app_review_count || 0,
+        app_primary_genre: app.app_primary_genre,
+        app_url: app.app_url,
+        countries_present: [country],
+        country_ranks: { [country]: rank },
+        presence_count: 1,
+        average_rank: rank,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error inserting gap app:', error);
+      return null;
+    }
+
+    return data;
+  }
+}
+
+// Bulk update app classifications
+export async function updateGapAppClassifications(
+  sessionId: string,
+  classifications: Array<{
+    app_store_id: string;
+    classification: GapAnalysisApp['classification'];
+    classification_reason: string;
+  }>
+): Promise<boolean> {
+  for (const { app_store_id, classification, classification_reason } of classifications) {
+    const { error } = await supabase
+      .from('gap_analysis_apps')
+      .update({ classification, classification_reason })
+      .eq('session_id', sessionId)
+      .eq('app_store_id', app_store_id);
+
+    if (error) {
+      console.error('Error updating classification:', error);
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// Get apps for a session with filtering
+export async function getGapAppsFiltered(
+  sessionId: string,
+  filters: {
+    classification?: GapAnalysisApp['classification'] | 'all';
+    minPresence?: number;
+    maxPresence?: number;
+    search?: string;
+    sortBy?: 'presence' | 'rank' | 'rating' | 'reviews' | 'name';
+    sortOrder?: 'asc' | 'desc';
+  }
+): Promise<GapAnalysisApp[]> {
+  let query = supabase
+    .from('gap_analysis_apps')
+    .select('*')
+    .eq('session_id', sessionId);
+
+  if (filters.classification && filters.classification !== 'all') {
+    query = query.eq('classification', filters.classification);
+  }
+
+  if (filters.minPresence) {
+    query = query.gte('presence_count', filters.minPresence);
+  }
+
+  if (filters.maxPresence) {
+    query = query.lte('presence_count', filters.maxPresence);
+  }
+
+  if (filters.search) {
+    query = query.or(`app_name.ilike.%${filters.search}%,app_developer.ilike.%${filters.search}%`);
+  }
+
+  const sortColumn = {
+    presence: 'presence_count',
+    rank: 'average_rank',
+    rating: 'app_rating',
+    reviews: 'app_review_count',
+    name: 'app_name',
+  }[filters.sortBy || 'presence'] || 'presence_count';
+
+  const ascending = filters.sortBy === 'rank'
+    ? (filters.sortOrder !== 'desc')
+    : (filters.sortOrder === 'asc');
+
+  query = query.order(sortColumn, { ascending });
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('Error fetching filtered gap apps:', error);
+    return [];
+  }
+
+  return data || [];
+}
+
+// Gap analysis chat operations
+export async function getGapChatMessages(sessionId: string): Promise<GapAnalysisChatMessage[]> {
+  const { data, error } = await supabase
+    .from('gap_analysis_chat_messages')
+    .select('*')
+    .eq('session_id', sessionId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching gap chat messages:', error);
+    return [];
+  }
+
+  return data || [];
+}
+
+export async function saveGapChatMessage(
+  sessionId: string,
+  role: 'user' | 'assistant',
+  content: string
+): Promise<GapAnalysisChatMessage | null> {
+  const { data, error } = await supabase
+    .from('gap_analysis_chat_messages')
+    .insert({
+      session_id: sessionId,
+      role,
+      content,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error saving gap chat message:', error);
+    return null;
+  }
+
+  return data;
+}
+
+export async function clearGapChatMessages(sessionId: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('gap_analysis_chat_messages')
+    .delete()
+    .eq('session_id', sessionId);
+
+  if (error) {
+    console.error('Error clearing gap chat messages:', error);
+    return false;
+  }
+
+  return true;
+}
+
