@@ -982,6 +982,63 @@ export async function upsertGapApp(
   }
 }
 
+// Bulk insert gap apps - much faster than individual upserts
+export async function bulkInsertGapApps(
+  sessionId: string,
+  apps: Array<{
+    app_store_id: string;
+    app_name: string;
+    app_icon_url?: string | null;
+    app_developer?: string | null;
+    app_rating?: number | null;
+    app_review_count?: number;
+    app_primary_genre?: string | null;
+    app_url?: string | null;
+    countries_present: string[];
+    country_ranks: Record<string, number>;
+    presence_count: number;
+    average_rank: number | null;
+  }>
+): Promise<boolean> {
+  if (apps.length === 0) return true;
+
+  // Prepare rows for bulk insert
+  const rows = apps.map((app) => ({
+    session_id: sessionId,
+    app_store_id: app.app_store_id,
+    app_name: app.app_name,
+    app_icon_url: app.app_icon_url || null,
+    app_developer: app.app_developer || null,
+    app_rating: app.app_rating || null,
+    app_review_count: app.app_review_count || 0,
+    app_primary_genre: app.app_primary_genre || null,
+    app_url: app.app_url || null,
+    countries_present: app.countries_present,
+    country_ranks: app.country_ranks,
+    presence_count: app.presence_count,
+    average_rank: app.average_rank,
+  }));
+
+  // Insert in batches of 100 to avoid hitting limits
+  const batchSize = 100;
+  for (let i = 0; i < rows.length; i += batchSize) {
+    const batch = rows.slice(i, i + batchSize);
+    const { error } = await supabase
+      .from('gap_analysis_apps')
+      .upsert(batch, {
+        onConflict: 'session_id,app_store_id',
+        ignoreDuplicates: false
+      });
+
+    if (error) {
+      console.error('Error bulk inserting gap apps:', error);
+      return false;
+    }
+  }
+
+  return true;
+}
+
 // Bulk update app classifications
 export async function updateGapAppClassifications(
   sessionId: string,

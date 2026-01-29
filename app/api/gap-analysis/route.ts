@@ -6,7 +6,7 @@ import {
   createGapSession,
   deleteGapSession,
   updateGapSessionStatus,
-  upsertGapApp,
+  bulkInsertGapApps,
   updateGapAppClassifications,
   getGapChatMessages,
   saveGapChatMessage,
@@ -222,20 +222,27 @@ async function handleScrape(sessionId: string) {
                 });
               },
               onComplete: async (results: GapScrapeResult[], countriesScraped: string[]) => {
-                for (const app of results) {
-                  for (const [country, rank] of Object.entries(app.country_ranks)) {
-                    await upsertGapApp(sessionId, {
-                      app_store_id: app.app_store_id,
-                      app_name: app.app_name,
-                      app_icon_url: app.app_icon_url || undefined,
-                      app_developer: app.app_developer || undefined,
-                      app_rating: app.app_rating || undefined,
-                      app_review_count: app.app_review_count,
-                      app_primary_genre: app.app_primary_genre || undefined,
-                      app_url: app.app_url || undefined,
-                    }, country, rank);
-                  }
+                // Bulk insert all apps at once (much faster than individual upserts)
+                const appsToInsert = results.map((app) => ({
+                  app_store_id: app.app_store_id,
+                  app_name: app.app_name,
+                  app_icon_url: app.app_icon_url,
+                  app_developer: app.app_developer,
+                  app_rating: app.app_rating,
+                  app_review_count: app.app_review_count,
+                  app_primary_genre: app.app_primary_genre,
+                  app_url: app.app_url,
+                  countries_present: app.countries_present,
+                  country_ranks: app.country_ranks,
+                  presence_count: app.presence_count,
+                  average_rank: app.average_rank,
+                }));
+
+                const inserted = await bulkInsertGapApps(sessionId, appsToInsert);
+                if (!inserted) {
+                  console.error('Failed to bulk insert apps');
                 }
+
                 await updateGapSessionStatus(sessionId, 'completed', {
                   countries_completed: countriesScraped,
                   total_apps_found: totalAppsFound,
