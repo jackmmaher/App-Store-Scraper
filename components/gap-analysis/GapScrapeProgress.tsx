@@ -139,8 +139,14 @@ export default function GapScrapeProgress({ countries, progress, isActive }: Pro
       <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
         {countries.map((code, idx) => {
           let status: 'pending' | 'active' | 'done' = 'pending';
-          if (idx < currentIndex) status = 'done';
-          else if (idx === currentIndex) status = 'active';
+          // When scraping is not active, all processed countries are done
+          if (!isActive && currentIndex >= 0) {
+            status = idx <= currentIndex ? 'done' : 'pending';
+          } else if (idx < currentIndex) {
+            status = 'done';
+          } else if (idx === currentIndex) {
+            status = 'active';
+          }
 
           return (
             <div
