@@ -661,3 +661,70 @@ export async function getProjectByAppId(appStoreId: string): Promise<AppProject 
   return data;
 }
 
+// ============================================
+// Project Chat Messages Types & Operations
+// ============================================
+
+export interface ChatMessage {
+  id: string;
+  project_id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  created_at: string;
+}
+
+// Get all chat messages for a project
+export async function getChatMessages(projectId: string): Promise<ChatMessage[]> {
+  const { data, error } = await supabase
+    .from('project_chat_messages')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching chat messages:', error);
+    return [];
+  }
+
+  return data || [];
+}
+
+// Save a single chat message
+export async function saveChatMessage(
+  projectId: string,
+  role: 'user' | 'assistant',
+  content: string
+): Promise<ChatMessage | null> {
+  const { data, error } = await supabase
+    .from('project_chat_messages')
+    .insert({
+      project_id: projectId,
+      role,
+      content,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error saving chat message:', error);
+    return null;
+  }
+
+  return data;
+}
+
+// Clear all chat messages for a project
+export async function clearChatMessages(projectId: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('project_chat_messages')
+    .delete()
+    .eq('project_id', projectId);
+
+  if (error) {
+    console.error('Error clearing chat messages:', error);
+    return false;
+  }
+
+  return true;
+}
+
