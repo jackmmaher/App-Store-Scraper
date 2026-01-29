@@ -10,12 +10,12 @@ export function useGapChat({ sessionId }: UseGapChatProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
 
-  // Load messages on mount
+  // Load messages on mount (using query param)
   const loadMessages = useCallback(async () => {
     if (!sessionId) return;
 
     try {
-      const res = await fetch(`/api/gap-analysis/${sessionId}/chat`);
+      const res = await fetch(`/api/gap-analysis?id=${sessionId}&action=chat-history`);
       if (res.ok) {
         const data = await res.json();
         setMessages(data.messages || []);
@@ -31,7 +31,7 @@ export function useGapChat({ sessionId }: UseGapChatProps) {
     loadMessages();
   }, [loadMessages]);
 
-  // Send a message and get Claude's response
+  // Send a message and get Claude's response (using query param)
   const sendMessage = useCallback(async (content: string) => {
     if (!content.trim() || !sessionId) return;
 
@@ -48,7 +48,7 @@ export function useGapChat({ sessionId }: UseGapChatProps) {
     setMessages((prev) => [...prev, tempUserMessage]);
 
     try {
-      const res = await fetch(`/api/gap-analysis/${sessionId}/chat`, {
+      const res = await fetch(`/api/gap-analysis?id=${sessionId}&action=chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: content.trim() }),
@@ -75,14 +75,14 @@ export function useGapChat({ sessionId }: UseGapChatProps) {
     }
   }, [sessionId]);
 
-  // Clear the conversation
+  // Clear the conversation (using query param)
   const clearConversation = useCallback(async () => {
     if (!sessionId) return;
 
     if (!confirm('Clear all messages in this conversation?')) return;
 
     try {
-      const res = await fetch(`/api/gap-analysis/${sessionId}/chat`, {
+      const res = await fetch(`/api/gap-analysis?id=${sessionId}&action=clear-chat`, {
         method: 'DELETE',
       });
 

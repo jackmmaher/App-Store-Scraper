@@ -49,13 +49,14 @@ export function useGapAnalysis({ sessionId }: UseGapAnalysisProps = {}) {
     }
   }, []);
 
-  // Load single session with apps
+  // Load single session with apps (using query param fallback)
   const loadSession = useCallback(async (id: string) => {
     setLoading(true);
     setError(null);
 
     try {
-      const res = await fetch(`/api/gap-analysis/${id}`);
+      // Use query param as fallback for Vercel dynamic route issues
+      const res = await fetch(`/api/gap-analysis?id=${id}`);
       if (!res.ok) throw new Error('Failed to fetch session');
       const data = await res.json();
       setCurrentSession(data.session);
@@ -97,10 +98,10 @@ export function useGapAnalysis({ sessionId }: UseGapAnalysisProps = {}) {
     }
   }, []);
 
-  // Delete session
+  // Delete session (using query param)
   const deleteSession = useCallback(async (id: string): Promise<boolean> => {
     try {
-      const res = await fetch(`/api/gap-analysis/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/gap-analysis?id=${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete session');
       setSessions((prev) => prev.filter((s) => s.id !== id));
       if (currentSession?.id === id) {
@@ -114,14 +115,14 @@ export function useGapAnalysis({ sessionId }: UseGapAnalysisProps = {}) {
     }
   }, [currentSession?.id]);
 
-  // Start scraping
+  // Start scraping (using query param)
   const startScrape = useCallback(async (id: string): Promise<boolean> => {
     setIsScraping(true);
     setScrapeProgress({});
     setError(null);
 
     try {
-      const res = await fetch(`/api/gap-analysis/${id}/scrape`, { method: 'POST' });
+      const res = await fetch(`/api/gap-analysis?id=${id}&action=scrape`, { method: 'POST' });
 
       if (!res.ok) {
         const errorData = await res.json();
@@ -201,13 +202,13 @@ export function useGapAnalysis({ sessionId }: UseGapAnalysisProps = {}) {
     }
   }, [loadSession]);
 
-  // Run classification
+  // Run classification (using query param)
   const runClassification = useCallback(async (id: string): Promise<boolean> => {
     setIsClassifying(true);
     setError(null);
 
     try {
-      const res = await fetch(`/api/gap-analysis/${id}/classify`, { method: 'POST' });
+      const res = await fetch(`/api/gap-analysis?id=${id}&action=classify`, { method: 'POST' });
       if (!res.ok) {
         const errorData = await res.json();
         throw new Error(errorData.error || 'Classification failed');
@@ -224,7 +225,7 @@ export function useGapAnalysis({ sessionId }: UseGapAnalysisProps = {}) {
     }
   }, [loadSession]);
 
-  // Run market gap analysis for an app
+  // Run market gap analysis for an app (using query param)
   const analyzeApp = useCallback(async (
     sessionId: string,
     appStoreId: string
@@ -234,7 +235,7 @@ export function useGapAnalysis({ sessionId }: UseGapAnalysisProps = {}) {
     setError(null);
 
     try {
-      const res = await fetch(`/api/gap-analysis/${sessionId}/analyze`, {
+      const res = await fetch(`/api/gap-analysis?id=${sessionId}&action=analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ appStoreId }),
