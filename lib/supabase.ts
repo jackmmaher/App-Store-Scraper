@@ -1039,7 +1039,7 @@ export async function bulkInsertGapApps(
   return true;
 }
 
-// Upsert gap analysis apps to the main apps table
+// Upsert gap analysis apps to the main apps table using BULK operations
 // This ensures discovered apps are saved for future use and avoids wasting API costs
 export async function upsertGapAppsToMaster(
   apps: Array<{
@@ -1067,114 +1067,116 @@ export async function upsertGapAppsToMaster(
     icon_url: string;
     description: string;
   }>,
-  appCountriesMap: Record<string, string[]>,  // Map of app_store_id -> countries where found
+  appCountriesMap: Record<string, string[]>,
   category: string
 ): Promise<{ inserted: number; updated: number; errors: number }> {
   let inserted = 0;
   let updated = 0;
   let errors = 0;
 
-  console.log(`[upsertGapAppsToMaster] Starting upsert of ${apps.length} apps to main database`);
+  console.log(`[upsertGapAppsToMaster] Starting BULK upsert of ${apps.length} apps`);
 
-  for (const app of apps) {
+  // Filter apps that have country data
+  const appsWithCountries = apps.filter(app => {
+    const countries = appCountriesMap[app.id];
+    return countries && countries.length > 0;
+  });
+
+  if (appsWithCountries.length === 0) {
+    console.log(`[upsertGapAppsToMaster] No apps with country data to insert`);
+    return { inserted: 0, updated: 0, errors: 0 };
+  }
+
+  // Step 1: Get all existing app_store_ids in ONE query
+  const appStoreIds = appsWithCountries.map(app => app.id);
+  const { data: existingApps, error: fetchError } = await supabase
+    .from('apps')
+    .select('app_store_id, countries_found, categories_found, scrape_count')
+    .in('app_store_id', appStoreIds);
+
+  if (fetchError) {
+    console.error(`[upsertGapAppsToMaster] Error fetching existing apps:`, fetchError);
+    return { inserted: 0, updated: 0, errors: apps.length };
+  }
+
+  // Build lookup map for existing apps
+  const existingMap = new Map<string, { countries_found: string[]; categories_found: string[]; scrape_count: number }>();
+  for (const existing of existingApps || []) {
+    existingMap.set(existing.app_store_id, {
+      countries_found: existing.countries_found || [],
+      categories_found: existing.categories_found || [],
+      scrape_count: existing.scrape_count || 1,
+    });
+  }
+
+  console.log(`[upsertGapAppsToMaster] Found ${existingMap.size} existing apps, ${appsWithCountries.length - existingMap.size} new apps`);
+
+  // Step 2: Prepare rows for bulk upsert
+  const rows = appsWithCountries.map(app => {
     const appCountries = appCountriesMap[app.id] || [];
-    if (appCountries.length === 0) {
-      console.log(`[upsertGapAppsToMaster] Skipping app ${app.id} - no country data`);
-      continue;
-    }
+    const existing = existingMap.get(app.id);
 
-    // Check if app exists
-    const { data: existing, error: selectError } = await supabase
+    // Merge countries and categories if app exists
+    const countriesFound = existing
+      ? [...new Set([...existing.countries_found, ...appCountries])]
+      : appCountries;
+    const categoriesFound = existing
+      ? [...new Set([...existing.categories_found, category])]
+      : [category];
+
+    return {
+      app_store_id: app.id,
+      name: app.name,
+      bundle_id: app.bundle_id,
+      developer: app.developer,
+      developer_id: app.developer_id,
+      price: app.price,
+      currency: app.currency,
+      rating: app.rating,
+      rating_current_version: app.rating_current_version,
+      review_count: app.review_count,
+      review_count_current_version: app.review_count_current_version,
+      version: app.version,
+      release_date: app.release_date || null,
+      current_version_release_date: app.current_version_release_date || null,
+      min_os_version: app.min_os_version,
+      file_size_bytes: parseInt(app.file_size_bytes) || null,
+      content_rating: app.content_rating,
+      genres: app.genres,
+      primary_genre: app.primary_genre,
+      primary_genre_id: app.primary_genre_id,
+      url: app.url,
+      icon_url: app.icon_url,
+      description: app.description,
+      countries_found: countriesFound,
+      categories_found: categoriesFound,
+      last_updated_at: new Date().toISOString(),
+      scrape_count: existing ? existing.scrape_count + 1 : 1,
+    };
+  });
+
+  // Step 3: Bulk upsert in batches of 100
+  const batchSize = 100;
+  for (let i = 0; i < rows.length; i += batchSize) {
+    const batch = rows.slice(i, i + batchSize);
+    const { error } = await supabase
       .from('apps')
-      .select('id, countries_found, categories_found, scrape_count')
-      .eq('app_store_id', app.id)
-      .single();
+      .upsert(batch, {
+        onConflict: 'app_store_id',
+        ignoreDuplicates: false,
+      });
 
-    if (selectError && selectError.code !== 'PGRST116') {
-      // PGRST116 = no rows returned (expected for new apps)
-      console.error(`[upsertGapAppsToMaster] Error checking app ${app.id}:`, selectError);
-    }
-
-    if (existing) {
-      // Update existing app - merge only the countries where this app was actually found
-      const countriesFound = [...new Set([...(existing.countries_found || []), ...appCountries])];
-      const categoriesFound = [...new Set([...(existing.categories_found || []), category])];
-
-      const { error } = await supabase
-        .from('apps')
-        .update({
-          name: app.name,
-          bundle_id: app.bundle_id,
-          developer: app.developer,
-          developer_id: app.developer_id,
-          price: app.price,
-          currency: app.currency,
-          rating: app.rating,
-          rating_current_version: app.rating_current_version,
-          review_count: app.review_count,
-          review_count_current_version: app.review_count_current_version,
-          version: app.version,
-          release_date: app.release_date || null,
-          current_version_release_date: app.current_version_release_date || null,
-          min_os_version: app.min_os_version,
-          file_size_bytes: parseInt(app.file_size_bytes) || null,
-          content_rating: app.content_rating,
-          genres: app.genres,
-          primary_genre: app.primary_genre,
-          primary_genre_id: app.primary_genre_id,
-          url: app.url,
-          icon_url: app.icon_url,
-          description: app.description,
-          countries_found: countriesFound,
-          categories_found: categoriesFound,
-          last_updated_at: new Date().toISOString(),
-          scrape_count: (existing.scrape_count || 1) + 1,
-        })
-        .eq('id', existing.id);
-
-      if (error) {
-        console.error(`[upsertGapAppsToMaster] Error updating app ${app.id}:`, error);
-        errors++;
-      } else {
-        updated++;
-      }
+    if (error) {
+      console.error(`[upsertGapAppsToMaster] Batch ${Math.floor(i / batchSize) + 1} error:`, error);
+      errors += batch.length;
     } else {
-      // Insert new app with the specific countries where it was found
-      const { error } = await supabase
-        .from('apps')
-        .insert({
-          app_store_id: app.id,
-          name: app.name,
-          bundle_id: app.bundle_id,
-          developer: app.developer,
-          developer_id: app.developer_id,
-          price: app.price,
-          currency: app.currency,
-          rating: app.rating,
-          rating_current_version: app.rating_current_version,
-          review_count: app.review_count,
-          review_count_current_version: app.review_count_current_version,
-          version: app.version,
-          release_date: app.release_date || null,
-          current_version_release_date: app.current_version_release_date || null,
-          min_os_version: app.min_os_version,
-          file_size_bytes: parseInt(app.file_size_bytes) || null,
-          content_rating: app.content_rating,
-          genres: app.genres,
-          primary_genre: app.primary_genre,
-          primary_genre_id: app.primary_genre_id,
-          url: app.url,
-          icon_url: app.icon_url,
-          description: app.description,
-          countries_found: appCountries,
-          categories_found: [category],
-        });
-
-      if (error) {
-        console.error(`[upsertGapAppsToMaster] Error inserting app ${app.id} (${app.name}):`, error);
-        errors++;
-      } else {
-        inserted++;
+      // Count inserts vs updates based on what we knew before
+      for (const row of batch) {
+        if (existingMap.has(row.app_store_id)) {
+          updated++;
+        } else {
+          inserted++;
+        }
       }
     }
   }
