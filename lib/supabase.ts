@@ -1067,13 +1067,16 @@ export async function upsertGapAppsToMaster(
     icon_url: string;
     description: string;
   }>,
-  countries: string[],
+  appCountriesMap: Record<string, string[]>,  // Map of app_store_id -> countries where found
   category: string
 ): Promise<{ inserted: number; updated: number }> {
   let inserted = 0;
   let updated = 0;
 
   for (const app of apps) {
+    const appCountries = appCountriesMap[app.id] || [];
+    if (appCountries.length === 0) continue; // Skip if no country data
+
     // Check if app exists
     const { data: existing } = await supabase
       .from('apps')
@@ -1082,8 +1085,8 @@ export async function upsertGapAppsToMaster(
       .single();
 
     if (existing) {
-      // Update existing app - merge all gap analysis countries
-      const countriesFound = [...new Set([...(existing.countries_found || []), ...countries])];
+      // Update existing app - merge only the countries where this app was actually found
+      const countriesFound = [...new Set([...(existing.countries_found || []), ...appCountries])];
       const categoriesFound = [...new Set([...(existing.categories_found || []), category])];
 
       const { error } = await supabase
@@ -1120,7 +1123,7 @@ export async function upsertGapAppsToMaster(
 
       if (!error) updated++;
     } else {
-      // Insert new app
+      // Insert new app with the specific countries where it was found
       const { error } = await supabase
         .from('apps')
         .insert({
@@ -1147,7 +1150,7 @@ export async function upsertGapAppsToMaster(
           url: app.url,
           icon_url: app.icon_url,
           description: app.description,
-          countries_found: countries,
+          countries_found: appCountries,
           categories_found: [category],
         });
 
