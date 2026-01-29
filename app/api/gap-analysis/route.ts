@@ -245,21 +245,26 @@ async function handleScrape(sessionId: string) {
                 }
 
                 // Also save to main apps database to avoid wasting API costs
-                // Run in background (don't await) to prevent blocking the scrape completion
+                // Must await this to prevent Vercel from terminating the function early
                 if (fullAppDetails && fullAppDetails.length > 0) {
+                  console.log(`[Gap Analysis] Preparing to save ${fullAppDetails.length} apps to main DB`);
+
                   const appCountriesMap: Record<string, string[]> = {};
                   for (const result of results) {
                     appCountriesMap[result.app_store_id] = result.countries_present;
                   }
 
-                  // Fire and forget - don't block on this
-                  upsertGapAppsToMaster(fullAppDetails, appCountriesMap, session.category)
-                    .then((masterResult) => {
-                      console.log(`[Gap Analysis] Saved to main apps DB: ${masterResult.inserted} inserted, ${masterResult.updated} updated`);
-                    })
-                    .catch((err) => {
-                      console.error('Failed to save apps to main database:', err);
-                    });
+                  console.log(`[Gap Analysis] Built country map for ${Object.keys(appCountriesMap).length} apps`);
+
+                  try {
+                    const masterResult = await upsertGapAppsToMaster(fullAppDetails, appCountriesMap, session.category);
+                    console.log(`[Gap Analysis] Saved to main apps DB: ${masterResult.inserted} inserted, ${masterResult.updated} updated, ${masterResult.errors} errors`);
+                  } catch (err) {
+                    console.error('[Gap Analysis] Failed to save apps to main database:', err);
+                    // Don't throw - let the scrape complete successfully even if master DB save fails
+                  }
+                } else {
+                  console.log(`[Gap Analysis] No fullAppDetails to save (length: ${fullAppDetails?.length || 0})`);
                 }
 
                 await updateGapSessionStatus(sessionId, 'completed', {

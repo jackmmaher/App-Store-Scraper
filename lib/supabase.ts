@@ -1069,20 +1069,31 @@ export async function upsertGapAppsToMaster(
   }>,
   appCountriesMap: Record<string, string[]>,  // Map of app_store_id -> countries where found
   category: string
-): Promise<{ inserted: number; updated: number }> {
+): Promise<{ inserted: number; updated: number; errors: number }> {
   let inserted = 0;
   let updated = 0;
+  let errors = 0;
+
+  console.log(`[upsertGapAppsToMaster] Starting upsert of ${apps.length} apps to main database`);
 
   for (const app of apps) {
     const appCountries = appCountriesMap[app.id] || [];
-    if (appCountries.length === 0) continue; // Skip if no country data
+    if (appCountries.length === 0) {
+      console.log(`[upsertGapAppsToMaster] Skipping app ${app.id} - no country data`);
+      continue;
+    }
 
     // Check if app exists
-    const { data: existing } = await supabase
+    const { data: existing, error: selectError } = await supabase
       .from('apps')
       .select('id, countries_found, categories_found, scrape_count')
       .eq('app_store_id', app.id)
       .single();
+
+    if (selectError && selectError.code !== 'PGRST116') {
+      // PGRST116 = no rows returned (expected for new apps)
+      console.error(`[upsertGapAppsToMaster] Error checking app ${app.id}:`, selectError);
+    }
 
     if (existing) {
       // Update existing app - merge only the countries where this app was actually found
@@ -1121,7 +1132,12 @@ export async function upsertGapAppsToMaster(
         })
         .eq('id', existing.id);
 
-      if (!error) updated++;
+      if (error) {
+        console.error(`[upsertGapAppsToMaster] Error updating app ${app.id}:`, error);
+        errors++;
+      } else {
+        updated++;
+      }
     } else {
       // Insert new app with the specific countries where it was found
       const { error } = await supabase
@@ -1154,11 +1170,17 @@ export async function upsertGapAppsToMaster(
           categories_found: [category],
         });
 
-      if (!error) inserted++;
+      if (error) {
+        console.error(`[upsertGapAppsToMaster] Error inserting app ${app.id} (${app.name}):`, error);
+        errors++;
+      } else {
+        inserted++;
+      }
     }
   }
 
-  return { inserted, updated };
+  console.log(`[upsertGapAppsToMaster] Completed: ${inserted} inserted, ${updated} updated, ${errors} errors`);
+  return { inserted, updated, errors };
 }
 
 // Bulk update app classifications
