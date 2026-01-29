@@ -174,21 +174,62 @@ export default function GapResultsTable({
         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead className="bg-gray-50 dark:bg-gray-900">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 App
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="hidden sm:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Classification
               </th>
-              <SortHeader field="presence" label="Presence" />
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th
+                className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-200"
+                onClick={() => handleSort('presence')}
+              >
+                <div className="flex items-center gap-1">
+                  <span className="hidden sm:inline">Presence</span>
+                  <span className="sm:hidden">#</span>
+                  {sortField === 'presence' && (
+                    <span>{sortOrder === 'asc' ? '\u2191' : '\u2193'}</span>
+                  )}
+                </div>
+              </th>
+              <th className="hidden lg:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 Countries
               </th>
-              <SortHeader field="rank" label="Avg Rank" />
-              <SortHeader field="rating" label="Rating" />
-              <SortHeader field="reviews" label="Reviews" />
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                Actions
+              <th
+                className="hidden md:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-200"
+                onClick={() => handleSort('rank')}
+              >
+                <div className="flex items-center gap-1">
+                  Avg Rank
+                  {sortField === 'rank' && (
+                    <span>{sortOrder === 'asc' ? '\u2191' : '\u2193'}</span>
+                  )}
+                </div>
+              </th>
+              <th
+                className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-200"
+                onClick={() => handleSort('rating')}
+              >
+                <div className="flex items-center gap-1">
+                  Rating
+                  {sortField === 'rating' && (
+                    <span>{sortOrder === 'asc' ? '\u2191' : '\u2193'}</span>
+                  )}
+                </div>
+              </th>
+              <th
+                className="hidden sm:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:text-gray-700 dark:hover:text-gray-200"
+                onClick={() => handleSort('reviews')}
+              >
+                <div className="flex items-center gap-1">
+                  Reviews
+                  {sortField === 'reviews' && (
+                    <span>{sortOrder === 'asc' ? '\u2191' : '\u2193'}</span>
+                  )}
+                </div>
+              </th>
+              <th className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                <span className="sr-only">Actions</span>
               </th>
             </tr>
           </thead>
@@ -199,38 +240,38 @@ export default function GapResultsTable({
                 className="hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
                 onClick={() => onSelectApp(app)}
               >
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-3">
+                <td className="px-2 sm:px-4 py-3">
+                  <div className="flex items-center gap-2 sm:gap-3">
                     {app.app_icon_url ? (
                       <img
                         src={app.app_icon_url}
                         alt={app.app_name}
-                        className="w-10 h-10 rounded-lg"
+                        className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex-shrink-0"
                       />
                     ) : (
-                      <div className="w-10 h-10 rounded-lg bg-gray-200 dark:bg-gray-600" />
+                      <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-gray-200 dark:bg-gray-600 flex-shrink-0" />
                     )}
-                    <div>
-                      <div className="font-medium text-gray-900 dark:text-white">
+                    <div className="min-w-0">
+                      <div className="font-medium text-gray-900 dark:text-white text-xs sm:text-sm truncate max-w-[100px] sm:max-w-none">
                         {app.app_name}
                       </div>
-                      <div className="text-sm text-gray-500 dark:text-gray-400">
+                      <div className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[80px] sm:max-w-none">
                         {app.app_developer || 'Unknown'}
                       </div>
                     </div>
                   </div>
                 </td>
-                <td className="px-4 py-3">
+                <td className="hidden sm:table-cell px-4 py-3">
                   <GapClassificationBadge
                     classification={app.classification}
                     reason={app.classification_reason}
                     size="sm"
                   />
                 </td>
-                <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                <td className="px-2 sm:px-4 py-3 text-xs sm:text-sm text-gray-900 dark:text-white">
                   {app.presence_count}/{countries.length}
                 </td>
-                <td className="px-4 py-3">
+                <td className="hidden lg:table-cell px-4 py-3">
                   <GapCountryPresenceGrid
                     countries={countries}
                     countriesPresent={app.countries_present}
@@ -238,25 +279,25 @@ export default function GapResultsTable({
                     compact
                   />
                 </td>
-                <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                <td className="hidden md:table-cell px-4 py-3 text-sm text-gray-900 dark:text-white">
                   {app.average_rank?.toFixed(1) || '-'}
                 </td>
-                <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                <td className="px-2 sm:px-4 py-3 text-xs sm:text-sm text-gray-900 dark:text-white">
                   {app.app_rating?.toFixed(1) || '-'}
                 </td>
-                <td className="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                <td className="hidden sm:table-cell px-4 py-3 text-sm text-gray-900 dark:text-white">
                   {app.app_review_count?.toLocaleString() || '0'}
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-2 sm:px-4 py-3">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       onAnalyzeApp(app.app_store_id);
                     }}
                     disabled={isAnalyzing}
-                    className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 text-sm font-medium disabled:opacity-50"
+                    className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 text-xs sm:text-sm font-medium disabled:opacity-50"
                   >
-                    {isAnalyzing ? 'Analyzing...' : 'Analyze'}
+                    {isAnalyzing ? '...' : 'Analyze'}
                   </button>
                 </td>
               </tr>

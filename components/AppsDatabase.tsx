@@ -202,46 +202,46 @@ export default function AppsDatabase() {
                 <tr>
                   <th
                     onClick={() => handleSort('name')}
-                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                    className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
                   >
                     App<SortIndicator column="name" />
                   </th>
                   <th
                     onClick={() => handleSort('developer')}
-                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                    className="hidden lg:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
                   >
                     Developer<SortIndicator column="developer" />
                   </th>
                   <th
                     onClick={() => handleSort('reviews')}
-                    className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                    className="px-2 sm:px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
                   >
                     Reviews<SortIndicator column="reviews" />
                   </th>
                   <th
                     onClick={() => handleSort('rating')}
-                    className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                    className="px-2 sm:px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
                   >
                     Rating<SortIndicator column="rating" />
                   </th>
                   <th
                     onClick={() => handleSort('price')}
-                    className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                    className="hidden sm:table-cell px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
                   >
                     Price<SortIndicator column="price" />
                   </th>
                   <th
                     onClick={() => handleSort('category')}
-                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                    className="hidden md:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
                   >
                     Category<SortIndicator column="category" />
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="hidden lg:table-cell px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Countries
                   </th>
                   <th
                     onClick={() => handleSort('scrapes')}
-                    className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
+                    className="hidden xl:table-cell px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none"
                   >
                     Scrapes<SortIndicator column="scrapes" />
                   </th>
@@ -254,28 +254,28 @@ export default function AppsDatabase() {
                     className="hover:bg-gray-50 cursor-pointer"
                     onClick={() => setSelectedApp(app)}
                   >
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
+                    <td className="px-2 sm:px-4 py-3">
+                      <div className="flex items-center gap-2 sm:gap-3">
                         {app.icon_url && (
                           <img
                             src={app.icon_url}
                             alt=""
-                            className="w-10 h-10 rounded-lg"
+                            className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex-shrink-0"
                           />
                         )}
-                        <div>
-                          <div className="font-medium text-gray-900 text-sm">{app.name}</div>
-                          <div className="text-xs text-gray-500">{app.bundle_id}</div>
+                        <div className="min-w-0">
+                          <div className="font-medium text-gray-900 text-xs sm:text-sm truncate max-w-[120px] sm:max-w-none">{app.name}</div>
+                          <div className="text-xs text-gray-500 truncate max-w-[100px] sm:max-w-none">{app.bundle_id}</div>
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-600 max-w-[200px] truncate">
+                    <td className="hidden lg:table-cell px-4 py-3 text-sm text-gray-600 max-w-[200px] truncate">
                       {app.developer}
                     </td>
-                    <td className="px-4 py-3 text-sm text-right font-medium">
+                    <td className="px-2 sm:px-4 py-3 text-xs sm:text-sm text-right font-medium">
                       {formatNumber(app.review_count)}
                     </td>
-                    <td className="px-4 py-3 text-sm text-right">
+                    <td className="px-2 sm:px-4 py-3 text-xs sm:text-sm text-right">
                       {app.rating ? (
                         <span className={`font-medium ${
                           app.rating >= 4 ? 'text-green-600' :
@@ -287,21 +287,21 @@ export default function AppsDatabase() {
                         <span className="text-gray-400">-</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-sm text-right">
+                    <td className="hidden sm:table-cell px-4 py-3 text-sm text-right">
                       {app.price === 0 ? (
                         <span className="text-green-600">Free</span>
                       ) : (
                         <span>${app.price.toFixed(2)}</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">
+                    <td className="hidden md:table-cell px-4 py-3 text-sm text-gray-600">
                       {app.primary_genre || '-'}
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">
+                    <td className="hidden lg:table-cell px-4 py-3 text-sm text-gray-600">
                       {app.countries_found?.slice(0, 3).map(c => c.toUpperCase()).join(', ')}
                       {(app.countries_found?.length || 0) > 3 && ` +${app.countries_found!.length - 3}`}
                     </td>
-                    <td className="px-4 py-3 text-sm text-right text-gray-500">
+                    <td className="hidden xl:table-cell px-4 py-3 text-sm text-right text-gray-500">
                       {app.scrape_count}
                     </td>
                   </tr>

@@ -190,8 +190,8 @@ export default function GapSessionDetailPage({ sessionId }: Props) {
         </div>
       )}
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className={`grid gap-8 ${showChat ? 'grid-cols-1 lg:grid-cols-3' : 'grid-cols-1'}`}>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-8 overflow-x-hidden">
+        <div className={`grid gap-4 sm:gap-8 ${showChat ? 'grid-cols-1 lg:grid-cols-3' : 'grid-cols-1'}`}>
           {/* Main Content */}
           <div className={showChat ? 'lg:col-span-2' : ''}>
             {/* Scrape Progress */}

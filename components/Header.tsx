@@ -25,11 +25,11 @@ export default function Header() {
       <header className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <div className="flex items-center space-x-8">
+            <div className="flex items-center gap-2 sm:gap-4 md:space-x-8 min-w-0">
               {/* Projects Sidebar Toggle */}
               <button
                 onClick={() => setSidebarOpen(true)}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors flex-shrink-0"
                 title="My Projects"
               >
                 <svg
@@ -49,9 +49,10 @@ export default function Header() {
 
               <Link
                 href="/"
-                className="text-xl font-bold text-gray-900 dark:text-white"
+                className="text-base sm:text-xl font-bold text-gray-900 dark:text-white truncate"
               >
-                App Store Scraper
+                <span className="hidden sm:inline">App Store Scraper</span>
+                <span className="sm:hidden">App Scraper</span>
               </Link>
 
             {/* Desktop Navigation */}

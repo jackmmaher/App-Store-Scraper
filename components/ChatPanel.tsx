@@ -51,13 +51,17 @@ export default function ChatPanel({ project, projectId, onClose }: ChatPanelProp
     setIsResizing(true);
   }, []);
 
+  // On mobile, use full width
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizing) return;
 
       const newWidth = window.innerWidth - e.clientX;
-      // Clamp between 300px and 700px
-      setPanelWidth(Math.max(300, Math.min(700, newWidth)));
+      // Clamp between 280px (mobile safe) and 700px, but cap at 90vw
+      const maxWidth = Math.min(700, window.innerWidth * 0.9);
+      setPanelWidth(Math.max(280, Math.min(maxWidth, newWidth)));
     };
 
     const handleMouseUp = () => {
@@ -107,8 +111,8 @@ export default function ChatPanel({ project, projectId, onClose }: ChatPanelProp
   return (
     <div
       ref={panelRef}
-      className="flex-shrink-0 border-l border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col h-[calc(100vh-64px)] sticky top-16 relative max-w-full"
-      style={{ width: `min(${panelWidth}px, 100vw)` }}
+      className="flex-shrink-0 border-l border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col h-[calc(100vh-64px)] sticky top-16 relative"
+      style={{ width: isMobile ? '100vw' : `min(${panelWidth}px, 90vw)` }}
     >
       {/* Resize handle */}
       <div

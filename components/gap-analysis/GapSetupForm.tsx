@@ -192,24 +192,24 @@ export default function GapSetupForm({ onSubmit, loading }: Props) {
 
         {/* Country Selection */}
         <div>
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-              Countries ({selectedCountries.length} selected, 2-15 required)
+              Countries ({selectedCountries.length}/2-15)
             </label>
-            <div className="flex gap-2 text-xs">
+            <div className="flex flex-wrap gap-1.5 sm:gap-2 text-xs">
               <button
                 type="button"
                 onClick={() => selectPreset('english')}
                 className="text-blue-600 hover:text-blue-700 dark:text-blue-400"
               >
-                English
+                EN
               </button>
               <button
                 type="button"
                 onClick={() => selectPreset('europe')}
                 className="text-blue-600 hover:text-blue-700 dark:text-blue-400"
               >
-                Europe
+                EU
               </button>
               <button
                 type="button"
@@ -223,7 +223,7 @@ export default function GapSetupForm({ onSubmit, loading }: Props) {
                 onClick={() => selectPreset('americas')}
                 className="text-blue-600 hover:text-blue-700 dark:text-blue-400"
               >
-                Americas
+                AM
               </button>
               <button
                 type="button"
@@ -235,19 +235,19 @@ export default function GapSetupForm({ onSubmit, loading }: Props) {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-2">
+          <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-1.5 sm:gap-2">
             {Object.entries(COUNTRY_CODES).map(([code, name]) => (
               <button
                 key={code}
                 type="button"
                 onClick={() => toggleCountry(code)}
-                className={`flex items-center gap-1.5 px-2 py-1.5 rounded-md text-sm transition-colors ${
+                className={`flex items-center justify-center gap-1 px-1.5 sm:px-2 py-1.5 rounded-md text-xs sm:text-sm transition-colors ${
                   selectedCountries.includes(code)
                     ? 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 border-2 border-blue-500'
                     : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
                 }`}
               >
-                <span>{COUNTRY_FLAGS[code] || ''}</span>
+                <span className="hidden sm:inline">{COUNTRY_FLAGS[code] || ''}</span>
                 <span className="truncate">{code.toUpperCase()}</span>
               </button>
             ))}

@@ -738,21 +738,21 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
                       {filters.map((filter) => (
                         <div
                           key={filter.sort}
-                          className={`flex items-start gap-4 p-3 rounded-lg border transition-colors ${
+                          className={`flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4 p-3 rounded-lg border transition-colors ${
                             filter.enabled
                               ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
                               : 'bg-gray-50 dark:bg-gray-700/30 border-gray-200 dark:border-gray-700'
                           }`}
                         >
-                          <label className="flex items-center gap-3 cursor-pointer flex-1">
+                          <label className="flex items-center gap-3 cursor-pointer flex-1 min-w-0">
                             <input
                               type="checkbox"
                               checked={filter.enabled}
                               onChange={() => toggleFilter(filter.sort)}
-                              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 flex-shrink-0"
                             />
-                            <div className="flex-1">
-                              <span className={`font-medium ${filter.enabled ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>
+                            <div className="flex-1 min-w-0">
+                              <span className={`font-medium text-sm sm:text-base ${filter.enabled ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>
                                 {FILTER_INFO[filter.sort].label}
                               </span>
                               <p className={`text-xs ${filter.enabled ? 'text-gray-600 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500'}`}>
@@ -760,7 +760,7 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
                               </p>
                             </div>
                           </label>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 ml-7 sm:ml-0 flex-shrink-0">
                             <input
                               type="number"
                               value={filter.target}
@@ -769,7 +769,7 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
                               min={100}
                               max={2000}
                               step={100}
-                              className={`w-24 px-2 py-1 text-sm border rounded ${
+                              className={`w-20 sm:w-24 px-2 py-1 text-sm border rounded ${
                                 filter.enabled
                                   ? 'border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white'
                                   : 'border-gray-200 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500'
@@ -1127,11 +1127,11 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
                   ) : (
                     <>
                       {/* Review Filters */}
-                      <div className="flex flex-wrap items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <div className="flex flex-col gap-2 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-700">
                         {/* Rating Filter */}
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Rating:</span>
-                          <div className="flex gap-1">
+                          <div className="flex flex-wrap gap-1">
                             <button
                               onClick={() => setRatingFilter('all')}
                               className={`px-2 py-1 text-xs rounded transition-colors ${
@@ -1158,43 +1158,45 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
                           </div>
                         </div>
 
-                        {/* Source Filter */}
-                        {availableSources.length > 1 && (
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                          {/* Source Filter */}
+                          {availableSources.length > 1 && (
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Source:</span>
+                              <select
+                                value={sourceFilter}
+                                onChange={(e) => setSourceFilter(e.target.value as typeof sourceFilter)}
+                                className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                              >
+                                <option value="all">All Sources</option>
+                                {availableSources.map((source) => (
+                                  <option key={source} value={source}>
+                                    {FILTER_INFO[source]?.label || source}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+
+                          {/* Sort By */}
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Source:</span>
+                            <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Sort:</span>
                             <select
-                              value={sourceFilter}
-                              onChange={(e) => setSourceFilter(e.target.value as typeof sourceFilter)}
+                              value={sortBy}
+                              onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
                               className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                             >
-                              <option value="all">All Sources</option>
-                              {availableSources.map((source) => (
-                                <option key={source} value={source}>
-                                  {FILTER_INFO[source]?.label || source}
-                                </option>
-                              ))}
+                              <option value="default">Default</option>
+                              <option value="rating-high">Rating (High to Low)</option>
+                              <option value="rating-low">Rating (Low to High)</option>
+                              <option value="helpful">Most Helpful</option>
                             </select>
                           </div>
-                        )}
 
-                        {/* Sort By */}
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Sort:</span>
-                          <select
-                            value={sortBy}
-                            onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-                            className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                          >
-                            <option value="default">Default</option>
-                            <option value="rating-high">Rating (High to Low)</option>
-                            <option value="rating-low">Rating (Low to High)</option>
-                            <option value="helpful">Most Helpful</option>
-                          </select>
-                        </div>
-
-                        {/* Results Count */}
-                        <div className="ml-auto text-xs text-gray-500 dark:text-gray-400">
-                          Showing {filteredReviews.length} of {reviews.length} reviews
+                          {/* Results Count */}
+                          <div className="text-xs text-gray-500 dark:text-gray-400 sm:ml-auto">
+                            {filteredReviews.length} of {reviews.length}
+                          </div>
                         </div>
                       </div>
 
