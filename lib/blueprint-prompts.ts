@@ -565,6 +565,176 @@ Create a comprehensive PRD that synthesizes ALL the above information:
 Format your response in clean Markdown with proper headings, tables, and bullet points.`;
 }
 
+// Section 5: Build Manifest Prompt (generated on export)
+export function getBuildManifestPrompt(
+  appName: string,
+  paretoStrategy: string,
+  uiWireframes: string,
+  techStack: string
+): string {
+  return `You are a senior iOS developer creating a BUILD MANIFEST - a sequential task list for building an app from scratch. This manifest will be fed to an AI assistant ONE TASK AT A TIME to ensure complete implementation with no skipped steps.
+
+## App: ${appName}
+
+## Source Documents
+
+You have access to three completed planning documents. Parse them carefully to extract EVERY feature, screen, model, and technical requirement.
+
+### 1. Pareto Strategy
+${paretoStrategy}
+
+### 2. UI Wireframes
+${uiWireframes}
+
+### 3. Tech Stack
+${techStack}
+
+---
+
+## Your Task
+
+Generate a BUILD_MANIFEST.md with 50-100 atomic tasks that, when completed in sequence, result in a fully functional app matching the specifications above.
+
+## Rules
+
+1. **Atomic tasks**: Each task produces exactly ONE file or ONE small change
+2. **Sequential**: Tasks must be numbered and ordered by dependency
+3. **Specific file paths**: Every task specifies the exact file to create/modify
+4. **Reference sources**: Each task cites the wireframe #, feature, or tech spec it implements
+5. **Acceptance criteria**: Each task has clear "done when" criteria
+6. **No skipping**: A developer following this manifest sequentially will build the COMPLETE app
+7. **Native-Pure**: All code uses only Apple frameworks (StoreKit 2, SwiftData, CloudKit, etc.)
+
+## Output Format
+
+\`\`\`markdown
+# BUILD MANIFEST: ${appName}
+
+> **Instructions for AI Assistant**: Complete these tasks IN ORDER. Do not skip any task.
+> Each task should be completed fully before moving to the next.
+> When asked to implement a task, produce the complete file contents.
+
+---
+
+## Phase 1: Project Setup (Tasks 1-10)
+
+### Task 1: Create Xcode Project
+**Action:** Create new Xcode project
+**Settings:**
+- Product Name: ${appName}
+- Interface: SwiftUI
+- Language: Swift
+- Storage: SwiftData
+- Minimum iOS: 17.0
+
+**Done when:** Fresh Xcode project opens and builds successfully
+
+---
+
+### Task 2: Configure Info.plist Permissions
+**File:** \`Info.plist\`
+**Reference:** Tech Stack Section 3 (Hardware APIs)
+**Add keys:**
+- NSCameraUsageDescription: "[reason from tech stack]"
+- [other permissions identified in tech stack]
+
+**Done when:** All required permission keys added with user-facing descriptions
+
+---
+
+### Task 3: Create App Entry Point
+**File:** \`${appName}App.swift\`
+**Reference:** Tech Stack Section 6 (CloudKit Sync)
+**Code requirements:**
+- Configure SwiftData ModelContainer
+- Set up CloudKit sync if specified
+- Register all models from Tech Stack
+
+**Done when:** App launches with SwiftData configured
+
+---
+
+## Phase 2: Data Models (Tasks 11-XX)
+
+### Task 11: Create [Model Name] Model
+**File:** \`Models/[Name].swift\`
+**Reference:** Tech Stack Section 5 (Data Models)
+**Properties:**
+- [list each property with type]
+- [relationships]
+
+**Done when:** Model compiles, can be used with SwiftData
+
+---
+
+## Phase 3: Core Views (Tasks XX-XX)
+
+### Task XX: Create [Screen Name] View
+**File:** \`Views/[Name]View.swift\`
+**Reference:** Wireframe #[N]
+**Elements:**
+- [list UI elements from wireframe]
+**Navigation:**
+- [where does each action go]
+**State:**
+- [what @State/@Observable needed]
+
+**Done when:** Screen matches wireframe specification, navigation works
+
+---
+
+## Phase 4: Features (Tasks XX-XX)
+
+[Continue for all features from Pareto Strategy]
+
+---
+
+## Phase 5: StoreKit & Paywall (Tasks XX-XX)
+
+### Task XX: Configure StoreKit
+**File:** \`Store/StoreManager.swift\`
+**Reference:** Pareto Strategy Section 4 (Monetization)
+**Requirements:**
+- Product IDs for each tier
+- SubscriptionStoreView implementation
+- Purchase handling
+
+---
+
+## Phase 6: Polish & Launch Prep (Tasks XX-XX)
+
+### Task XX: Add App Icons
+**File:** \`Assets.xcassets/AppIcon.appiconset\`
+**Sizes needed:** [list all required sizes]
+
+---
+
+# Completion Checklist
+
+At the end, verify ALL of the following from the source documents:
+
+## From Pareto Strategy:
+- [ ] Core value proposition implemented
+- [ ] All P0 features working
+- [ ] All P1 features working
+- [ ] Onboarding flow complete
+- [ ] Monetization/paywall working
+
+## From Wireframes:
+- [ ] Screen #1 implemented
+- [ ] Screen #2 implemented
+[... list ALL screens]
+
+## From Tech Stack:
+- [ ] All required frameworks imported
+- [ ] All data models created
+- [ ] CloudKit sync working (if specified)
+- [ ] All permissions configured
+\`\`\`
+
+Generate the complete BUILD_MANIFEST.md following this format. Extract EVERY screen from wireframes, EVERY model from tech stack, EVERY feature from pareto strategy. Miss nothing.`;
+}
+
 // Helper to get the appropriate prompt for a section
 export function getBlueprintPrompt(
   section: 'pareto' | 'wireframes' | 'tech_stack' | 'prd',
