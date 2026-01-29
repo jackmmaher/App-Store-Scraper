@@ -78,3 +78,8 @@ CREATE TABLE gap_analysis_chat_messages (
 
 CREATE INDEX idx_gap_chat_session ON gap_analysis_chat_messages(session_id);
 CREATE INDEX idx_gap_chat_created_at ON gap_analysis_chat_messages(created_at);
+
+-- Disable Row Level Security (single-user app with app-level auth)
+ALTER TABLE gap_analysis_sessions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE gap_analysis_apps DISABLE ROW LEVEL SECURITY;
+ALTER TABLE gap_analysis_chat_messages DISABLE ROW LEVEL SECURITY;
