@@ -101,7 +101,15 @@ Average: ${project.review_stats.average_rating?.toFixed(2) || 'N/A'}`);
 export function getParetoStrategyPrompt(project: AppProject): string {
   const context = buildProjectContext(project);
 
-  return `You are a senior product strategist specializing in mobile app development. Analyze the following competitor app and create a comprehensive Pareto Strategy document that identifies the 20% of features that deliver 80% of the value.
+  return `You are a senior product strategist specializing in native iOS app development. Analyze the following competitor app and create a comprehensive Pareto Strategy document that identifies the 20% of features that deliver 80% of the value.
+
+**IMPORTANT: Native-Pure Approach**
+This app will be built using ONLY native Apple frameworks. No third-party dependencies (SPM or CocoaPods) like Firebase, RevenueCat, Mixpanel, or Realm. All recommendations must use native Apple technologies:
+- **Payments:** StoreKit 2 with SubscriptionStoreView
+- **Data:** SwiftData (local) + CloudKit (sync)
+- **Auth:** Sign in with Apple (AuthenticationServices)
+- **Analytics:** App Store Connect + MetricKit
+- **Crash Reporting:** MetricKit + Xcode Organizer
 
 ${context}
 
@@ -167,7 +175,16 @@ export function getUIWireframesPrompt(
     ? `\n## Researcher's Notes\n${project.notes}\n`
     : '';
 
-  return `You are a senior UI/UX designer specializing in iOS mobile apps. Based on the Pareto Strategy and project context below, create a detailed UI Wireframe specification document.
+  return `You are a senior UI/UX designer specializing in native iOS apps built with SwiftUI. Based on the Pareto Strategy and project context below, create a detailed UI Wireframe specification document.
+
+**IMPORTANT: Native SwiftUI Design**
+All UI recommendations must use native SwiftUI components and Apple's Human Interface Guidelines:
+- Use native SwiftUI views: NavigationStack, TabView, List, Form, Sheet, etc.
+- Use system materials (.ultraThinMaterial, .regularMaterial) for depth
+- Use SF Symbols for icons
+- Use native controls: Toggle, Picker, Slider, DatePicker
+- For paywall: Use StoreKit 2's SubscriptionStoreView for native purchase UI
+- Follow iOS design patterns for navigation, modals, and gestures
 
 ## App Context
 
@@ -255,7 +272,15 @@ export function getTechStackPrompt(
     ? `\n## Researcher's Notes\n\nConsider any technical preferences or constraints mentioned:\n${project.notes}\n`
     : '';
 
-  return `You are a senior iOS developer and architect. Based on the Pareto Strategy and UI Wireframes below, create a comprehensive Tech Stack recommendation document.
+  return `You are a senior iOS developer and architect specializing in native Apple development. Based on the Pareto Strategy and UI Wireframes below, create a comprehensive Native-Pure Tech Stack document.
+
+**CRITICAL: Native-Pure Development Philosophy**
+This app will use ONLY native Apple frameworks. Do NOT recommend any third-party dependencies (SPM or CocoaPods) like Firebase, RevenueCat, Mixpanel, Realm, Alamofire, or any external SDKs. Benefits of Native-Pure:
+- Smaller app size
+- Simpler privacy policy
+- Day-one access to new iOS features
+- No dependency management overhead
+- Better performance and battery life
 
 ## App Context
 
@@ -274,75 +299,143 @@ ${uiWireframes}
 
 ## Your Task
 
-Create a detailed Tech Stack document. Ensure recommendations support all features identified in the Pareto Strategy.
+Create a detailed Native-Pure Tech Stack document using ONLY Apple frameworks.
 
-### 1. Native iOS Stack
+### 1. Core iOS Stack
 
 | Component | Recommendation | Rationale |
 |-----------|---------------|-----------|
-| Language | Swift 5.9+ | ... |
-| UI Framework | SwiftUI | ... |
-| Min iOS Version | iOS 17.0 | ... |
-| Xcode Version | 15.0+ | ... |
-| Architecture | MVVM / TCA / etc. | ... |
+| Language | Swift 5.9+ | Latest language features |
+| UI Framework | SwiftUI | Declarative, native, future-proof |
+| Min iOS Version | iOS 17.0+ | SwiftData, StoreKit 2 views, Observation |
+| Xcode Version | 15.0+ | Latest tooling |
+| Architecture | MVVM + Observation | Native @Observable macro, no external deps |
+| State Management | Observation framework | @Observable, @State, @Environment |
 
-### 2. iPhone APIs & Capabilities
+### 2. Native Service Stack (No 3rd Party!)
 
-Based on the features identified, which native iOS APIs will be needed:
+| Category | Native Apple Solution | Framework | Notes |
+|----------|----------------------|-----------|-------|
+| **Payments/Subscriptions** | StoreKit 2 + SubscriptionStoreView | StoreKit | Native paywall UI, no RevenueCat needed |
+| **Local Database** | SwiftData | SwiftData | @Model macro, automatic persistence |
+| **Cloud Sync** | CloudKit | CloudKit | Uses user's iCloud, free for developers |
+| **Authentication** | Sign in with Apple + Passkeys | AuthenticationServices | Privacy-focused, no Auth0/Firebase |
+| **Analytics** | App Analytics + MetricKit | App Store Connect API, MetricKit | Built into App Store Connect |
+| **Crash Reporting** | MetricKit + Xcode Organizer | MetricKit | Automatic crash logs in Xcode |
+| **Push Notifications** | APNs | UserNotifications | Native push, no OneSignal needed |
+| **File Storage** | CloudKit Assets | CloudKit | Sync files via iCloud |
 
-| API/Capability | Use Case | Required Permission | Implementation Notes |
-|---------------|----------|---------------------|---------------------|
-| Camera | ... | NSCameraUsageDescription | ... |
-| Microphone | ... | NSMicrophoneUsageDescription | ... |
-| Location | ... | NSLocationWhenInUseUsageDescription | ... |
-| Push Notifications | ... | UNUserNotificationCenter | ... |
-| HealthKit | ... | NSHealthShareUsageDescription | ... |
-| Core ML | ... | On-device | ... |
-| ARKit | ... | NSCameraUsageDescription | ... |
-| etc. | ... | ... | ... |
+### 3. Hardware & Sensor APIs
 
-### 3. Backend Services
+Based on the features identified, specify which native frameworks are needed:
 
-| Service | Provider Options | Recommendation | Rationale |
-|---------|-----------------|----------------|-----------|
-| Authentication | Firebase Auth, Supabase, Auth0 | ... | ... |
-| Database | Supabase, Firebase, CloudKit | ... | ... |
-| Storage | S3, Supabase Storage, CloudKit | ... | ... |
-| Analytics | Mixpanel, Amplitude, PostHog | ... | ... |
-| Crash Reporting | Sentry, Firebase Crashlytics | ... | ... |
+#### Camera & Media
+| Framework | Use Case | Permission Key | Implementation |
+|-----------|----------|----------------|----------------|
+| AVFoundation | Custom camera, video, QR scanning | NSCameraUsageDescription | AVCaptureSession |
+| PhotosUI | Photo picker | None (privacy-safe) | PhotosPicker view |
+| AVAudioEngine | Audio recording, effects | NSMicrophoneUsageDescription | Real-time audio |
 
-### 4. Third-Party SDKs
+#### Motion & Sensors
+| Framework | Use Case | Permission Key | Implementation |
+|-----------|----------|----------------|----------------|
+| CoreMotion | Accelerometer, gyroscope, pedometer | NSMotionUsageDescription | CMMotionManager |
+| CoreHaptics | Custom vibrations | None | CHHapticEngine |
+| SensoryFeedback | Simple haptics in SwiftUI | None | .sensoryFeedback modifier |
 
-| SDK | Purpose | Integration Complexity | Cost |
-|-----|---------|----------------------|------|
-| RevenueCat | Subscriptions | Low | Free tier available |
-| Mixpanel | Analytics | Low | Free tier available |
-| Sentry | Crash reporting | Low | Free tier available |
-| OpenAI | AI features | Medium | Pay per use |
-| etc. | ... | ... | ... |
+#### Location & Maps
+| Framework | Use Case | Permission Key | Implementation |
+|-----------|----------|----------------|----------------|
+| CoreLocation | GPS, geofencing, heading | NSLocationWhenInUseUsageDescription | CLLocationManager |
+| MapKit | Native maps | None | Map view in SwiftUI |
 
-### 5. Development Tools
+#### Intelligence & ML
+| Framework | Use Case | Permission Key | Implementation |
+|-----------|----------|----------------|----------------|
+| CoreML | On-device ML models | None | MLModel |
+| Vision | Face detection, text recognition | None | VNRequest |
+| NaturalLanguage | Sentiment analysis, NLP | None | NLTagger |
+| Speech | Voice transcription | NSSpeechRecognitionUsageDescription | SFSpeechRecognizer |
 
-- Package Manager: Swift Package Manager
-- CI/CD: GitHub Actions / Xcode Cloud
-- Code Quality: SwiftLint, SwiftFormat
-- Testing: XCTest, XCUITest
+#### Connectivity
+| Framework | Use Case | Permission Key | Implementation |
+|-----------|----------|----------------|----------------|
+| CoreBluetooth | BLE devices | NSBluetoothAlwaysUsageDescription | CBCentralManager |
+| Network | Network status, sockets | None | NWPathMonitor |
+| MultipeerConnectivity | Offline P2P | None | MCSession |
 
-### 6. Data Models
+### 4. Development Tools
 
-Based on the features, outline the key data models:
+| Tool | Purpose | Notes |
+|------|---------|-------|
+| Xcode Cloud | CI/CD | Native Apple CI, integrates with App Store |
+| Swift Package Manager | Dependencies | Only for Apple packages if needed |
+| XCTest | Unit testing | Native testing framework |
+| XCUITest | UI testing | Native UI automation |
+| Instruments | Performance profiling | Built into Xcode |
+| SwiftLint | Code quality | Optional, local only |
+
+### 5. Data Models (SwiftData)
+
+Based on the features, outline the key SwiftData models:
 
 \`\`\`swift
-// Example structure
-struct User {
-    let id: UUID
+import SwiftData
+
+@Model
+class User {
+    var id: UUID
     var email: String
     var displayName: String
-    // ...
+    var createdAt: Date
+
+    // Relationships
+    @Relationship(deleteRule: .cascade)
+    var items: [Item] = []
+
+    init(email: String, displayName: String) {
+        self.id = UUID()
+        self.email = email
+        self.displayName = displayName
+        self.createdAt = Date()
+    }
+}
+
+@Model
+class Item {
+    var id: UUID
+    var title: String
+    var isCompleted: Bool
+    var user: User?
+
+    init(title: String) {
+        self.id = UUID()
+        self.title = title
+        self.isCompleted = false
+    }
 }
 \`\`\`
 
-Format your response in clean Markdown with proper tables and code blocks.`;
+### 6. CloudKit Sync Strategy
+
+\`\`\`swift
+// SwiftData + CloudKit integration
+@main
+struct MyApp: App {
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+        .modelContainer(for: [User.self, Item.self],
+                        inMemory: false,
+                        isAutosaveEnabled: true,
+                        isUndoEnabled: true,
+                        cloudKitDatabase: .private("iCloud.com.yourapp"))
+    }
+}
+\`\`\`
+
+Format your response in clean Markdown with proper tables and code blocks. Remember: NO third-party dependencies!`;
 }
 
 // Section 4: PRD Prompt
@@ -357,7 +450,15 @@ export function getPRDPrompt(
     ? `\n## Researcher's Notes & Insights\n\n${project.notes}\n`
     : '';
 
-  return `You are a senior product manager creating a Product Requirements Document (PRD) for a new iOS app. Synthesize all the previous sections into a comprehensive PRD.
+  return `You are a senior product manager creating a Product Requirements Document (PRD) for a new native iOS app. Synthesize all the previous sections into a comprehensive PRD.
+
+**IMPORTANT: Native-Pure Development**
+This app uses ONLY native Apple frameworks - no third-party dependencies. All technical references should reflect:
+- StoreKit 2 for payments (not RevenueCat)
+- SwiftData + CloudKit for data (not Firebase/Supabase)
+- MetricKit for crash reporting (not Sentry/Crashlytics)
+- App Store Connect for analytics (not Mixpanel/Amplitude)
+- Sign in with Apple for auth (not Auth0/Firebase Auth)
 
 ## App Context
 
@@ -432,11 +533,11 @@ Create a comprehensive PRD that synthesizes ALL the above information:
 
 | Metric | Target | Measurement Method |
 |--------|--------|-------------------|
-| DAU/MAU | ... | Analytics |
-| Retention (D1/D7/D30) | ... | Analytics |
-| Conversion Rate | ... | RevenueCat |
+| DAU/MAU | ... | App Store Connect Analytics |
+| Retention (D1/D7/D30) | ... | App Store Connect Analytics |
+| Conversion Rate | ... | App Store Connect + StoreKit 2 |
 | App Store Rating | ... | App Store Connect |
-| Crash-free Rate | ... | Sentry |
+| Crash-free Rate | ... | MetricKit + Xcode Organizer |
 
 ### 6. Launch Timeline
 
