@@ -12,7 +12,7 @@ import { getBlueprintPrompt, getBuildManifestPrompt } from '@/lib/blueprint-prom
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 120; // 2 minutes for AI generation
+export const maxDuration = 300; // 5 minutes for Build Manifest generation
 
 // POST /api/blueprint/generate - Stream-generate a section
 export async function POST(request: NextRequest) {
@@ -105,6 +105,8 @@ export async function POST(request: NextRequest) {
         };
 
         let fullContent = '';
+        let lastSaveTime = Date.now();
+        const SAVE_INTERVAL = 30000; // Save every 30 seconds as backup
 
         try {
           // Call Claude API with streaming
@@ -160,6 +162,13 @@ export async function POST(request: NextRequest) {
                     const text = parsed.delta.text;
                     fullContent += text;
                     sendEvent('chunk', { text });
+
+                    // Periodic backup save for long generations (Build Manifest)
+                    if (section === 'manifest' && Date.now() - lastSaveTime > SAVE_INTERVAL) {
+                      await updateBlueprintSection(blueprintId, section, fullContent, 'generating');
+                      lastSaveTime = Date.now();
+                      console.log(`[Generate] Backup saved ${fullContent.length} chars for manifest`);
+                    }
                   }
                 } catch {
                   // Ignore parse errors for incomplete JSON
