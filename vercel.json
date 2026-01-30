@@ -16,7 +16,7 @@
   "crons": [
     {
       "path": "/api/cron/process-keyword-jobs",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 3 * * *"
     },
     {
       "path": "/api/cron/rescore-keywords",
