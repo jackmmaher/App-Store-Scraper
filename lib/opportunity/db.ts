@@ -60,6 +60,9 @@ export async function upsertOpportunity(
 
   if (error) {
     console.error('Error upserting opportunity:', error);
+    console.error('Error code:', error.code);
+    console.error('Error message:', error.message);
+    console.error('Error details:', error.details);
     return null;
   }
 
@@ -472,6 +475,12 @@ export async function createDailyRun(
 
   if (error) {
     console.error('Error creating daily run:', error);
+    console.error('Error details:', JSON.stringify(error, null, 2));
+    // If it's a unique constraint violation, try to get existing run
+    if (error.code === '23505') {
+      console.log('Daily run already exists for today, fetching existing...');
+      return getTodaysDailyRun();
+    }
     return null;
   }
 

@@ -12,6 +12,45 @@ import {
 } from '@/lib/opportunity';
 import { expandSeedKeyword } from '@/lib/keywords/autosuggest';
 
+// iTunes Search API for keyword discovery
+const ITUNES_SEARCH_URL = 'https://itunes.apple.com/search';
+
+async function searchITunesForKeywords(
+  seed: string,
+  country: string
+): Promise<string[]> {
+  try {
+    const url = `${ITUNES_SEARCH_URL}?term=${encodeURIComponent(seed)}&country=${country}&entity=software&limit=50`;
+    const response = await fetch(url);
+    if (!response.ok) return [];
+
+    const data = await response.json();
+    const apps = data.results || [];
+
+    // Extract keywords from app names
+    const keywords = new Set<string>();
+    for (const app of apps) {
+      const name = app.trackName?.toLowerCase() || '';
+      // Extract meaningful words from app names (2+ chars, not common words)
+      const words = name.split(/[\s\-\:\.]+/).filter((w: string) =>
+        w.length >= 2 &&
+        !['the', 'and', 'for', 'app', 'pro', 'free', 'lite', 'plus', 'with'].includes(w)
+      );
+      words.forEach((w: string) => keywords.add(w));
+
+      // Also add 2-word combinations
+      for (let i = 0; i < words.length - 1; i++) {
+        keywords.add(`${words[i]} ${words[i + 1]}`);
+      }
+    }
+
+    return Array.from(keywords);
+  } catch (error) {
+    console.error('Error searching iTunes for keywords:', error);
+    return [];
+  }
+}
+
 // POST /api/opportunity/discover - Discover and rank opportunities in a category
 export async function POST(request: NextRequest) {
   const authed = await isAuthenticated();
@@ -44,33 +83,70 @@ export async function POST(request: NextRequest) {
     // If no seeds provided, use category name and common variations
     const keywordSeeds = seeds.length > 0 ? seeds : getCategorySeeds(category);
 
-    // Discover keywords using autosuggest expansion (depth 1 for speed)
+    // Discover keywords using autosuggest + iTunes search fallback
     const discoveredKeywords = new Set<string>();
 
-    for (const seed of keywordSeeds.slice(0, 3)) { // Limit to 3 seeds for speed
-      const expanded = await expandSeedKeyword(seed, country, 1); // Depth 1 for faster discovery
-      for (const hint of expanded) {
-        discoveredKeywords.add(hint.term.toLowerCase());
+    console.log(`Starting discovery for category: ${category} with seeds:`, keywordSeeds.slice(0, 3));
+
+    // First try autosuggest
+    for (const seed of keywordSeeds.slice(0, 3)) {
+      try {
+        console.log(`Expanding seed via autosuggest: ${seed}`);
+        const expanded = await expandSeedKeyword(seed, country, 1);
+        console.log(`Seed "${seed}" returned ${expanded.length} keywords from autosuggest`);
+        for (const hint of expanded) {
+          discoveredKeywords.add(hint.term.toLowerCase());
+        }
+      } catch (err) {
+        console.error(`Error expanding seed "${seed}":`, err);
       }
     }
 
+    // If autosuggest returned nothing, use iTunes search fallback
+    if (discoveredKeywords.size === 0) {
+      console.log('Autosuggest returned no results, using iTunes search fallback...');
+      for (const seed of keywordSeeds.slice(0, 3)) {
+        try {
+          const keywords = await searchITunesForKeywords(seed, country);
+          console.log(`iTunes search for "${seed}" found ${keywords.length} keywords`);
+          keywords.forEach(kw => discoveredKeywords.add(kw));
+        } catch (err) {
+          console.error(`Error searching iTunes for "${seed}":`, err);
+        }
+      }
+    }
+
+    // Also add the seed keywords themselves as they're valid opportunities
+    keywordSeeds.slice(0, 5).forEach(seed => discoveredKeywords.add(seed.toLowerCase()));
+
     const keywordsToScore = Array.from(discoveredKeywords).slice(0, DEFAULT_CONFIG.KEYWORDS_PER_CATEGORY);
 
-    console.log(`Discovered ${discoveredKeywords.size} keywords, scoring ${keywordsToScore.length}`);
+    console.log(`Discovered ${discoveredKeywords.size} keywords, will score ${keywordsToScore.length}:`, keywordsToScore);
 
     // Score all discovered keywords
+    console.log(`Starting to score ${keywordsToScore.length} keywords...`);
     const scoredResults = await scoreOpportunities(
       keywordsToScore.map(keyword => ({ keyword, category })),
       country
     );
+    console.log(`Scored ${scoredResults.length} opportunities`);
 
     // Save all to database
+    let savedCount = 0;
     for (const result of scoredResults) {
-      const saved = await upsertOpportunity(result);
-      if (saved) {
-        await recordOpportunityHistory(saved.id, result);
+      try {
+        const saved = await upsertOpportunity(result);
+        if (saved) {
+          savedCount++;
+          await recordOpportunityHistory(saved.id, result);
+        } else {
+          console.error(`Failed to save opportunity: ${result.keyword}`);
+        }
+      } catch (err) {
+        console.error(`Error saving opportunity ${result.keyword}:`, err);
       }
     }
+    console.log(`Saved ${savedCount}/${scoredResults.length} opportunities to database`);
 
     // Rank and prepare response
     const ranked = rankOpportunities(scoredResults);
