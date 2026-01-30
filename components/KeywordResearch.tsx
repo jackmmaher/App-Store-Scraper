@@ -129,7 +129,7 @@ export default function KeywordResearch() {
     setSelectedKeyword(null);
 
     try {
-      const res = await fetch(`/api/keywords/${keyword.id}`);
+      const res = await fetch(`/api/keywords/detail?id=${keyword.id}`);
       const data = await res.json();
 
       if (data.success && data.data) {
