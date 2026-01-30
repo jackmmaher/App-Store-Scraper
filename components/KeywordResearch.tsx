@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Keyword, KeywordScoreResult, DiscoveryMethod, KeywordJob, KeywordRanking } from '@/lib/keywords/types';
 import type { AppResult } from '@/lib/supabase';
+import { ensureAppInMasterDb } from '@/lib/supabase';
 import AppDetailModal from './AppDetailModal';
 
 // Tooltip component for metric explanations
@@ -140,6 +141,14 @@ export default function KeywordResearch() {
   // App detail modal state
   const [selectedApp, setSelectedApp] = useState<AppResult | null>(null);
   const [loadingApp, setLoadingApp] = useState(false);
+
+  // Batch add competitors to database state
+  const [addingAllToDb, setAddingAllToDb] = useState(false);
+  const [addedToDbCount, setAddedToDbCount] = useState(0);
+
+  // Tracking which ranking apps are being added / have been added to DB
+  const [addingRankingApp, setAddingRankingApp] = useState<string | null>(null);
+  const [addedRankingApps, setAddedRankingApps] = useState<Set<string>>(new Set());
 
   // Fetch stats
   useEffect(() => {
@@ -308,6 +317,117 @@ export default function KeywordResearch() {
       console.error('Error fetching app details:', error);
     } finally {
       setLoadingApp(false);
+    }
+  };
+
+  // Batch add all score result competitors to database
+  const handleAddAllCompetitorsToDb = async () => {
+    if (!scoreResult || scoreResult.top_10_apps.length === 0) return;
+
+    setAddingAllToDb(true);
+    setAddedToDbCount(0);
+
+    const appsToAdd = scoreResult.top_10_apps.slice(0, 5);
+
+    for (let i = 0; i < appsToAdd.length; i++) {
+      const app = appsToAdd[i];
+      try {
+        // Fetch full app data from iTunes
+        const res = await fetch(
+          `https://itunes.apple.com/lookup?id=${app.id}&country=${filters.country}`
+        );
+        const data = await res.json();
+
+        if (data.results && data.results.length > 0) {
+          const itunesApp = data.results[0];
+          const appResult: AppResult = {
+            id: itunesApp.trackId.toString(),
+            name: itunesApp.trackName,
+            bundle_id: itunesApp.bundleId || '',
+            developer: itunesApp.artistName || '',
+            developer_id: itunesApp.artistId?.toString() || '',
+            price: itunesApp.price || 0,
+            currency: itunesApp.currency || 'USD',
+            rating: itunesApp.averageUserRating || 0,
+            rating_current_version: itunesApp.averageUserRatingForCurrentVersion || 0,
+            review_count: itunesApp.userRatingCount || 0,
+            review_count_current_version: itunesApp.userRatingCountForCurrentVersion || 0,
+            version: itunesApp.version || '',
+            release_date: itunesApp.releaseDate || '',
+            current_version_release_date: itunesApp.currentVersionReleaseDate || '',
+            min_os_version: itunesApp.minimumOsVersion || '',
+            file_size_bytes: itunesApp.fileSizeBytes || '0',
+            content_rating: itunesApp.contentAdvisoryRating || '',
+            genres: itunesApp.genres || [],
+            primary_genre: itunesApp.primaryGenreName || '',
+            primary_genre_id: itunesApp.primaryGenreId?.toString() || '',
+            url: itunesApp.trackViewUrl || '',
+            icon_url: itunesApp.artworkUrl100 || '',
+            description: itunesApp.description || '',
+          };
+
+          await ensureAppInMasterDb(appResult, filters.country);
+          setAddedToDbCount(i + 1);
+        }
+      } catch (error) {
+        console.error('Error adding app to database:', app.name, error);
+      }
+
+      // Rate limiting
+      await new Promise(r => setTimeout(r, 200));
+    }
+
+    setAddingAllToDb(false);
+  };
+
+  // Add a single ranking app to database
+  const handleAddRankingAppToDb = async (ranking: KeywordRanking, e: React.MouseEvent) => {
+    e.stopPropagation(); // Don't trigger the row click
+    if (!ranking.app_id) return;
+
+    setAddingRankingApp(ranking.app_id);
+    try {
+      // Fetch full app data from iTunes
+      const res = await fetch(
+        `https://itunes.apple.com/lookup?id=${ranking.app_id}&country=${filters.country}`
+      );
+      const data = await res.json();
+
+      if (data.results && data.results.length > 0) {
+        const itunesApp = data.results[0];
+        const appResult: AppResult = {
+          id: itunesApp.trackId.toString(),
+          name: itunesApp.trackName,
+          bundle_id: itunesApp.bundleId || '',
+          developer: itunesApp.artistName || '',
+          developer_id: itunesApp.artistId?.toString() || '',
+          price: itunesApp.price || 0,
+          currency: itunesApp.currency || 'USD',
+          rating: itunesApp.averageUserRating || 0,
+          rating_current_version: itunesApp.averageUserRatingForCurrentVersion || 0,
+          review_count: itunesApp.userRatingCount || 0,
+          review_count_current_version: itunesApp.userRatingCountForCurrentVersion || 0,
+          version: itunesApp.version || '',
+          release_date: itunesApp.releaseDate || '',
+          current_version_release_date: itunesApp.currentVersionReleaseDate || '',
+          min_os_version: itunesApp.minimumOsVersion || '',
+          file_size_bytes: itunesApp.fileSizeBytes || '0',
+          content_rating: itunesApp.contentAdvisoryRating || '',
+          genres: itunesApp.genres || [],
+          primary_genre: itunesApp.primaryGenreName || '',
+          primary_genre_id: itunesApp.primaryGenreId?.toString() || '',
+          url: itunesApp.trackViewUrl || '',
+          icon_url: itunesApp.artworkUrl100 || '',
+          description: itunesApp.description || '',
+        };
+
+        await ensureAppInMasterDb(appResult, filters.country);
+        setAddedRankingApps(prev => new Set([...prev, ranking.app_id]));
+      }
+    } catch (error) {
+      console.error('Error adding ranking app to database:', error);
+    } finally {
+      setAddingRankingApp(null);
     }
   };
 
@@ -721,6 +841,32 @@ export default function KeywordResearch() {
                     Loading app details...
                   </div>
                 )}
+
+                {/* Batch add to database */}
+                <div className="mt-3 pt-3 border-t border-gray-200">
+                  <button
+                    onClick={handleAddAllCompetitorsToDb}
+                    disabled={addingAllToDb}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm bg-green-600 hover:bg-green-700 text-white rounded transition-colors disabled:opacity-50"
+                  >
+                    {addingAllToDb ? (
+                      <>
+                        <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
+                        Adding {addedToDbCount}/{Math.min(5, scoreResult.top_10_apps.length)}...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                        </svg>
+                        Add All {Math.min(5, scoreResult.top_10_apps.length)} to Database
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -1025,44 +1171,77 @@ export default function KeywordResearch() {
                     Top {selectedKeyword.rankings.length} Ranking Apps
                   </h3>
                   <div className="space-y-3">
-                    {selectedKeyword.rankings.map((ranking) => (
-                      <div
-                        key={ranking.id}
-                        className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg hover:bg-blue-50 cursor-pointer transition-colors"
-                        onClick={() => handleAppClick(ranking)}
-                      >
-                        <div className="flex-shrink-0 w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold text-sm">
-                          {ranking.rank_position}
-                        </div>
-                        {ranking.app_icon_url && (
-                          <img
-                            src={ranking.app_icon_url}
-                            alt=""
-                            className="w-12 h-12 rounded-xl"
-                          />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium text-gray-900 truncate">
-                            {ranking.app_name}
-                            {ranking.has_keyword_in_title && (
-                              <span className="ml-2 text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">
-                                In Title
-                              </span>
-                            )}
+                    {selectedKeyword.rankings.map((ranking) => {
+                      const isAdded = addedRankingApps.has(ranking.app_id);
+                      const isAdding = addingRankingApp === ranking.app_id;
+
+                      return (
+                        <div
+                          key={ranking.id}
+                          className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg hover:bg-blue-50 cursor-pointer transition-colors"
+                          onClick={() => handleAppClick(ranking)}
+                        >
+                          <div className="flex-shrink-0 w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold text-sm">
+                            {ranking.rank_position}
                           </div>
-                          <div className="text-sm text-gray-500">
-                            <span className="text-yellow-500">★</span> {ranking.app_rating?.toFixed(1) || '-'}
-                            <span className="mx-2">•</span>
-                            {ranking.app_review_count?.toLocaleString() || '0'} reviews
+                          {ranking.app_icon_url && (
+                            <img
+                              src={ranking.app_icon_url}
+                              alt=""
+                              className="w-12 h-12 rounded-xl"
+                            />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-gray-900 truncate">
+                              {ranking.app_name}
+                              {ranking.has_keyword_in_title && (
+                                <span className="ml-2 text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">
+                                  In Title
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-sm text-gray-500">
+                              <span className="text-yellow-500">★</span> {ranking.app_rating?.toFixed(1) || '-'}
+                              <span className="mx-2">•</span>
+                              {ranking.app_review_count?.toLocaleString() || '0'} reviews
+                            </div>
+                          </div>
+                          {/* Add to DB button */}
+                          {isAdded ? (
+                            <span className="flex items-center gap-1 text-xs text-green-600 px-2 py-1 bg-green-50 rounded">
+                              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                              Added
+                            </span>
+                          ) : (
+                            <button
+                              onClick={(e) => handleAddRankingAppToDb(ranking, e)}
+                              disabled={isAdding}
+                              className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 px-2 py-1 hover:bg-blue-100 rounded transition-colors disabled:opacity-50"
+                              title="Add to Apps Database"
+                            >
+                              {isAdding ? (
+                                <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                </svg>
+                              ) : (
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                                </svg>
+                              )}
+                              Add
+                            </button>
+                          )}
+                          <div className="text-gray-400">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
                           </div>
                         </div>
-                        <div className="text-gray-400">
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                          </svg>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               ) : (

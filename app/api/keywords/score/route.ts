@@ -12,9 +12,11 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { keyword, country = 'us' } = body as {
+    const { keyword, country = 'us', source_app_id, discovered_via } = body as {
       keyword: string;
       country?: string;
+      source_app_id?: string;
+      discovered_via?: string;
     };
 
     if (!keyword || typeof keyword !== 'string') {
@@ -35,8 +37,11 @@ export async function POST(request: NextRequest) {
     // Score the keyword
     const scores = await scoreKeyword(normalizedKeyword, country);
 
-    // Save to database
-    const savedKeyword = await upsertKeyword(normalizedKeyword, country, scores);
+    // Save to database with discovery metadata
+    const savedKeyword = await upsertKeyword(normalizedKeyword, country, scores, {
+      discovered_via: discovered_via || 'manual',
+      source_app_id,
+    });
 
     // Save rankings if we have a keyword ID
     if (savedKeyword && scores.top_10_apps.length > 0) {
