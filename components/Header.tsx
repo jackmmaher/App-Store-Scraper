@@ -112,6 +112,17 @@ export default function Header() {
               >
                 Gap Analysis
               </Link>
+              <Link
+                href="/keywords"
+                className={clsx(
+                  'px-3 py-2 rounded-md text-sm font-medium transition-colors',
+                  pathname?.startsWith('/keywords')
+                    ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
+                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                )}
+              >
+                Keywords
+              </Link>
             </nav>
           </div>
 
@@ -205,6 +216,18 @@ export default function Header() {
                 )}
               >
                 Gap Analysis
+              </Link>
+              <Link
+                href="/keywords"
+                onClick={() => setMobileMenuOpen(false)}
+                className={clsx(
+                  'px-3 py-2 rounded-md text-sm font-medium transition-colors',
+                  pathname?.startsWith('/keywords')
+                    ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
+                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                )}
+              >
+                Keywords
               </Link>
               <button
                 onClick={() => {

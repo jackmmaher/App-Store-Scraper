@@ -5,6 +5,22 @@
     },
     "api/py-reviews.py": {
       "maxDuration": 300
+    },
+    "app/api/keywords/discover/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/cron/process-keyword-jobs/route.ts": {
+      "maxDuration": 300
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/process-keyword-jobs",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/rescore-keywords",
+      "schedule": "0 4 * * *"
+    }
+  ]
 }
