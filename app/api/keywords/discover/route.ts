@@ -8,6 +8,7 @@ import {
 import { scoreKeyword } from '@/lib/keywords/scoring';
 import {
   upsertKeyword,
+  saveKeywordRankings,
   createKeywordJob,
   getKeywordJob,
   updateJobProgress,
@@ -157,12 +158,26 @@ export async function POST(request: NextRequest) {
             for (const kw of keywords) {
               try {
                 const scores = await scoreKeyword(kw.keyword, country);
-                await upsertKeyword(kw.keyword, country, scores, {
+                const savedKeyword = await upsertKeyword(kw.keyword, country, scores, {
                   discovered_via: kw.discovered_via,
                   source_app_id: kw.source_app_id,
                   source_category: kw.source_category,
                   source_seed: kw.source_seed,
                 });
+
+                // Save rankings if we have them
+                if (savedKeyword && scores.top_10_apps && scores.top_10_apps.length > 0) {
+                  const rankingsToSave = scores.top_10_apps.map((app, index) => ({
+                    app_id: app.id,
+                    rank_position: index + 1,
+                    has_keyword_in_title: app.has_keyword_in_title,
+                    app_name: app.name,
+                    app_review_count: app.reviews,
+                    app_rating: app.rating,
+                    app_icon_url: app.icon_url || null,
+                  }));
+                  await saveKeywordRankings(savedKeyword.id, rankingsToSave);
+                }
 
                 scored++;
                 await updateJobProgress(job.id, {
