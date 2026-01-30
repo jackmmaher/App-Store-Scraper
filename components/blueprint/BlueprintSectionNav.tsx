@@ -14,6 +14,7 @@ const SECTIONS: SectionInfo[] = [
   { id: 'wireframes', label: 'Wireframes', shortLabel: 'UI', number: 2 },
   { id: 'tech_stack', label: 'Tech Stack', shortLabel: 'Tech', number: 3 },
   { id: 'prd', label: 'PRD', shortLabel: 'PRD', number: 4 },
+  { id: 'manifest', label: 'Build Manifest', shortLabel: 'Build', number: 5 },
 ];
 
 interface BlueprintSectionNavProps {

@@ -8,7 +8,7 @@ import {
   getBlueprintSectionAttachments,
   type BlueprintSection,
 } from '@/lib/supabase';
-import { getBlueprintPrompt } from '@/lib/blueprint-prompts';
+import { getBlueprintPrompt, getBuildManifestPrompt } from '@/lib/blueprint-prompts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'blueprintId and section required' }, { status: 400 });
     }
 
-    const validSections: BlueprintSection[] = ['pareto', 'wireframes', 'tech_stack', 'prd'];
+    const validSections: BlueprintSection[] = ['pareto', 'wireframes', 'tech_stack', 'prd', 'manifest'];
     if (!validSections.includes(section)) {
       return NextResponse.json({ error: 'Invalid section' }, { status: 400 });
     }
@@ -64,23 +64,33 @@ export async function POST(request: NextRequest) {
     if (section === 'prd' && (!blueprint.pareto_strategy || !blueprint.ui_wireframes || !blueprint.tech_stack)) {
       return NextResponse.json({ error: 'Generate all previous sections first' }, { status: 400 });
     }
+    if (section === 'manifest' && (!blueprint.pareto_strategy || !blueprint.ui_wireframes || !blueprint.tech_stack || !blueprint.prd_content)) {
+      return NextResponse.json({ error: 'Generate all previous sections (including PRD) first' }, { status: 400 });
+    }
 
     // Get attachments for wireframes section
     const attachments = section === 'wireframes'
       ? await getBlueprintSectionAttachments(blueprintId, 'wireframes')
       : [];
 
-    // Build prompt
-    const prompt = getBlueprintPrompt(
-      section,
-      project,
-      {
-        paretoStrategy: blueprint.pareto_strategy || undefined,
-        uiWireframes: blueprint.ui_wireframes || undefined,
-        techStack: blueprint.tech_stack || undefined,
-      },
-      attachments
-    );
+    // Build prompt - manifest uses a different prompt function
+    const prompt = section === 'manifest'
+      ? getBuildManifestPrompt(
+          project.app_name,
+          blueprint.pareto_strategy!,
+          blueprint.ui_wireframes!,
+          blueprint.tech_stack!
+        )
+      : getBlueprintPrompt(
+          section,
+          project,
+          {
+            paretoStrategy: blueprint.pareto_strategy || undefined,
+            uiWireframes: blueprint.ui_wireframes || undefined,
+            techStack: blueprint.tech_stack || undefined,
+          },
+          attachments
+        );
 
     // Update status to generating
     await updateBlueprintSectionStatus(blueprintId, section, 'generating');
@@ -107,7 +117,7 @@ export async function POST(request: NextRequest) {
             },
             body: JSON.stringify({
               model: 'claude-sonnet-4-20250514',
-              max_tokens: 8000,
+              max_tokens: section === 'manifest' ? 16000 : 8000,
               stream: true,
               messages: [
                 { role: 'user', content: prompt }

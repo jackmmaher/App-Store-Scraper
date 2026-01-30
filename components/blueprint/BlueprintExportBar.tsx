@@ -16,13 +16,8 @@ export default function BlueprintExportBar({ blueprint, exportUrl }: BlueprintEx
     blueprint.ui_wireframes_status,
     blueprint.tech_stack_status,
     blueprint.prd_status,
+    blueprint.build_manifest_status,
   ].filter((s) => s === 'completed').length;
-
-  // Check if BUILD_MANIFEST will be generated (requires all 3 source docs)
-  const willGenerateBuildManifest =
-    blueprint.pareto_status === 'completed' &&
-    blueprint.ui_wireframes_status === 'completed' &&
-    blueprint.tech_stack_status === 'completed';
 
   const handleExport = async () => {
     if (!exportUrl || isExporting) return;
@@ -63,6 +58,7 @@ export default function BlueprintExportBar({ blueprint, exportUrl }: BlueprintEx
               blueprint.ui_wireframes_status,
               blueprint.tech_stack_status,
               blueprint.prd_status,
+              blueprint.build_manifest_status,
             ].map((status, idx) => (
               <div
                 key={idx}
@@ -79,17 +75,12 @@ export default function BlueprintExportBar({ blueprint, exportUrl }: BlueprintEx
             ))}
           </div>
           <span className="text-sm text-gray-600 dark:text-gray-300 font-medium">
-            {completedCount}/4 sections
+            {completedCount}/5 sections
           </span>
         </div>
       </div>
 
       <div className="flex items-center gap-3">
-        {isExporting && willGenerateBuildManifest && (
-          <span className="text-sm text-blue-600 dark:text-blue-400 animate-pulse">
-            Generating BUILD_MANIFEST...
-          </span>
-        )}
         <button
           onClick={handleExport}
           disabled={completedCount === 0 || isExporting}

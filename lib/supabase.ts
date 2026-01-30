@@ -1325,7 +1325,7 @@ export async function clearGapChatMessages(sessionId: string): Promise<boolean> 
 // ============================================
 
 export type BlueprintSectionStatus = 'pending' | 'generating' | 'completed' | 'error';
-export type BlueprintSection = 'pareto' | 'wireframes' | 'tech_stack' | 'prd';
+export type BlueprintSection = 'pareto' | 'wireframes' | 'tech_stack' | 'prd' | 'manifest';
 
 export interface ProjectBlueprint {
   id: string;
@@ -1350,6 +1350,11 @@ export interface ProjectBlueprint {
   prd_content: string | null;
   prd_status: BlueprintSectionStatus;
   prd_generated_at: string | null;
+
+  // Section 5: Build Manifest
+  build_manifest: string | null;
+  build_manifest_status: BlueprintSectionStatus;
+  build_manifest_generated_at: string | null;
 
   created_at: string;
   updated_at: string;
@@ -1433,6 +1438,7 @@ export async function updateBlueprintSection(
     wireframes: { content: 'ui_wireframes', status: 'ui_wireframes_status', timestamp: 'ui_wireframes_generated_at' },
     tech_stack: { content: 'tech_stack', status: 'tech_stack_status', timestamp: 'tech_stack_generated_at' },
     prd: { content: 'prd_content', status: 'prd_status', timestamp: 'prd_generated_at' },
+    manifest: { content: 'build_manifest', status: 'build_manifest_status', timestamp: 'build_manifest_generated_at' },
   };
 
   const columns = columnMap[section];
@@ -1472,6 +1478,7 @@ export async function updateBlueprintSectionStatus(
     wireframes: 'ui_wireframes_status',
     tech_stack: 'tech_stack_status',
     prd: 'prd_status',
+    manifest: 'build_manifest_status',
   }[section];
 
   const { error } = await supabase

@@ -34,6 +34,11 @@ const SECTION_META: Record<BlueprintSectionType, SectionMeta> = {
     description: 'Complete PRD synthesizing all previous sections into executive summary, requirements, metrics, and timeline.',
     dependencies: ['pareto', 'wireframes', 'tech_stack'],
   },
+  manifest: {
+    title: 'Build Manifest',
+    description: '50-100 atomic tasks for an AI assistant to build the complete app step-by-step. Each task produces one file or change.',
+    dependencies: ['pareto', 'wireframes', 'tech_stack', 'prd'],
+  },
 };
 
 interface BlueprintSectionProps {

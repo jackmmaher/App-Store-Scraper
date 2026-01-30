@@ -95,6 +95,8 @@ export default function BlueprintTab({ projectId }: BlueprintTabProps) {
         return blueprint.tech_stack;
       case 'prd':
         return blueprint.prd_content;
+      case 'manifest':
+        return blueprint.build_manifest;
       default:
         return null;
     }
@@ -110,6 +112,8 @@ export default function BlueprintTab({ projectId }: BlueprintTabProps) {
         return blueprint.tech_stack_generated_at;
       case 'prd':
         return blueprint.prd_generated_at;
+      case 'manifest':
+        return blueprint.build_manifest_generated_at;
       default:
         return null;
     }
@@ -120,6 +124,7 @@ export default function BlueprintTab({ projectId }: BlueprintTabProps) {
     wireframes: blueprint.ui_wireframes_status,
     tech_stack: blueprint.tech_stack_status,
     prd: blueprint.prd_status,
+    manifest: blueprint.build_manifest_status,
   };
 
   return (
