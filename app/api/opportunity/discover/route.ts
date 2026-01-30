@@ -44,17 +44,19 @@ export async function POST(request: NextRequest) {
     // If no seeds provided, use category name and common variations
     const keywordSeeds = seeds.length > 0 ? seeds : getCategorySeeds(category);
 
-    // Discover keywords using autosuggest expansion
+    // Discover keywords using autosuggest expansion (depth 1 for speed)
     const discoveredKeywords = new Set<string>();
 
-    for (const seed of keywordSeeds.slice(0, 5)) { // Limit to 5 seeds
-      const expanded = await expandSeedKeyword(seed, country, 2);
+    for (const seed of keywordSeeds.slice(0, 3)) { // Limit to 3 seeds for speed
+      const expanded = await expandSeedKeyword(seed, country, 1); // Depth 1 for faster discovery
       for (const hint of expanded) {
         discoveredKeywords.add(hint.term.toLowerCase());
       }
     }
 
     const keywordsToScore = Array.from(discoveredKeywords).slice(0, DEFAULT_CONFIG.KEYWORDS_PER_CATEGORY);
+
+    console.log(`Discovered ${discoveredKeywords.size} keywords, scoring ${keywordsToScore.length}`);
 
     // Score all discovered keywords
     const scoredResults = await scoreOpportunities(

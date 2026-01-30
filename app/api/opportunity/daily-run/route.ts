@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
     // Parse optional config from body
     let config = {
       categories: [...DEFAULT_CRAWL_CATEGORIES],
-      keywords_per_category: DEFAULT_CONFIG.KEYWORDS_PER_CATEGORY,
+      keywords_per_category: DEFAULT_CONFIG.KEYWORDS_PER_CATEGORY_DAILY,
       country: 'us',
     };
 

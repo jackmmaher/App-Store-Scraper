@@ -634,6 +634,8 @@ export default function OpportunityDashboard() {
   const [discovering, setDiscovering] = useState(false);
   const [discoveryCategory, setDiscoveryCategory] = useState('productivity');
   const [runningDailyRun, setRunningDailyRun] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Filters
   const [filters, setFilters] = useState<DashboardFilters>({
@@ -693,6 +695,8 @@ export default function OpportunityDashboard() {
   // Discover opportunities for a category
   const handleDiscover = async () => {
     setDiscovering(true);
+    setError(null);
+    setSuccessMessage(null);
     try {
       const res = await fetch('/api/opportunity/discover', {
         method: 'POST',
@@ -707,14 +711,18 @@ export default function OpportunityDashboard() {
       const data = await res.json();
 
       if (data.success) {
+        setSuccessMessage(`Found ${data.data.total_scored} opportunities in ${discoveryCategory}`);
         // Refresh the list
         await fetchOpportunities();
         await fetchStats();
       } else {
+        setError(data.error || 'Discovery failed');
         console.error('Discovery failed:', data.error);
       }
-    } catch (error) {
-      console.error('Error discovering opportunities:', error);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Network error';
+      setError(`Error: ${message}`);
+      console.error('Error discovering opportunities:', err);
     } finally {
       setDiscovering(false);
     }
@@ -723,6 +731,8 @@ export default function OpportunityDashboard() {
   // Run daily autonomous discovery
   const handleDailyRun = async () => {
     setRunningDailyRun(true);
+    setError(null);
+    setSuccessMessage(null);
     try {
       const res = await fetch('/api/opportunity/daily-run', {
         method: 'POST',
@@ -735,14 +745,24 @@ export default function OpportunityDashboard() {
       const data = await res.json();
 
       if (data.success) {
+        if (data.data.winner) {
+          setSuccessMessage(`Daily run complete! Winner: "${data.data.winner.keyword}" (${data.data.winner.opportunity_score})`);
+        } else if (data.data.status === 'already_completed') {
+          setSuccessMessage('Daily run already completed today');
+        } else {
+          setSuccessMessage(`Scored ${data.data.total_scored} opportunities`);
+        }
         // Refresh everything
         await fetchStats();
         await fetchOpportunities();
       } else {
+        setError(data.error || 'Daily run failed');
         console.error('Daily run failed:', data.error);
       }
-    } catch (error) {
-      console.error('Error running daily discovery:', error);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Network error';
+      setError(`Error: ${message}`);
+      console.error('Error running daily discovery:', err);
     } finally {
       setRunningDailyRun(false);
     }
@@ -768,13 +788,27 @@ export default function OpportunityDashboard() {
         <div className="flex gap-3">
           <button
             onClick={handleDailyRun}
-            disabled={runningDailyRun}
+            disabled={runningDailyRun || discovering}
             className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
           >
-            {runningDailyRun ? 'Running...' : 'Run Daily Discovery'}
+            {runningDailyRun ? 'Running... (this takes a few minutes)' : 'Run Daily Discovery'}
           </button>
         </div>
       </div>
+
+      {/* Error/Success Messages */}
+      {error && (
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex justify-between items-center">
+          <span className="text-red-800">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-600 hover:text-red-800">&times;</button>
+        </div>
+      )}
+      {successMessage && (
+        <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg flex justify-between items-center">
+          <span className="text-green-800">{successMessage}</span>
+          <button onClick={() => setSuccessMessage(null)} className="text-green-600 hover:text-green-800">&times;</button>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <StatsCards stats={stats} />
@@ -863,10 +897,10 @@ export default function OpportunityDashboard() {
               </div>
               <button
                 onClick={handleDiscover}
-                disabled={discovering}
+                disabled={discovering || runningDailyRun}
                 className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
               >
-                {discovering ? 'Discovering...' : 'Discover Opportunities'}
+                {discovering ? 'Scoring keywords... (30-60 sec)' : 'Discover Opportunities'}
               </button>
             </div>
           </div>

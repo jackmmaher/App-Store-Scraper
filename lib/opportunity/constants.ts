@@ -246,7 +246,8 @@ export const CATEGORY_SUBREDDITS: Record<string, string[]> = {
 // ============================================================================
 
 export const DEFAULT_CONFIG = {
-  KEYWORDS_PER_CATEGORY: 50,
+  KEYWORDS_PER_CATEGORY: 10,        // Reduced for faster discovery (was 50)
+  KEYWORDS_PER_CATEGORY_DAILY: 25,  // More for daily cron (has 5 min timeout)
   TOP_OPPORTUNITIES_LIMIT: 20,
   RATE_LIMIT_MS: 200,
   MAX_RETRIES: 3,
