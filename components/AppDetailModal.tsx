@@ -141,6 +141,7 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
   // Master database state
   const [masterApp, setMasterApp] = useState<MasterApp | null>(null);
   const [loadingMasterData, setLoadingMasterData] = useState(true);
+  const [addingToDb, setAddingToDb] = useState(false);
 
   // Toggle filter enabled state
   const toggleFilter = (sort: FilterConfig['sort']) => {
@@ -391,6 +392,21 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
     loadMasterData();
   }, [app.id]);
 
+  // Add app to database
+  const addToDatabase = async () => {
+    setAddingToDb(true);
+    try {
+      const result = await ensureAppInMasterDb(app, country);
+      if (result) {
+        setMasterApp(result);
+      }
+    } catch (err) {
+      console.error('Error adding app to database:', err);
+    } finally {
+      setAddingToDb(false);
+    }
+  };
+
   // Track if we just finished scraping (to trigger save to master DB)
   const [justScraped, setJustScraped] = useState(false);
 
@@ -626,6 +642,46 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
                     </svg>
                   </a>
                 </>
+              )}
+              <span className="hidden sm:inline text-gray-300 dark:text-gray-600">|</span>
+              {loadingMasterData ? (
+                <span className="text-sm text-gray-400 flex items-center gap-1">
+                  <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                </span>
+              ) : masterApp ? (
+                <span className="text-sm text-green-600 dark:text-green-400 flex items-center gap-1">
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  <span className="hidden sm:inline">In Database</span>
+                </span>
+              ) : (
+                <button
+                  onClick={addToDatabase}
+                  disabled={addingToDb}
+                  className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 flex items-center gap-1 disabled:opacity-50"
+                >
+                  {addingToDb ? (
+                    <>
+                      <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Adding...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                      </svg>
+                      <span className="hidden sm:inline">Add to Database</span>
+                      <span className="sm:hidden">Add</span>
+                    </>
+                  )}
+                </button>
               )}
             </div>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2">
