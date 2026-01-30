@@ -11,6 +11,12 @@
     },
     "app/api/cron/process-keyword-jobs/route.ts": {
       "maxDuration": 300
+    },
+    "app/api/opportunity/discover/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/opportunity/daily-run/route.ts": {
+      "maxDuration": 300
     }
   },
   "crons": [
@@ -21,6 +27,10 @@
     {
       "path": "/api/cron/rescore-keywords",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/opportunity/daily-run",
+      "schedule": "0 6 * * *"
     }
   ]
 }

@@ -123,6 +123,17 @@ export default function Header() {
               >
                 Keywords
               </Link>
+              <Link
+                href="/opportunities"
+                className={clsx(
+                  'px-3 py-2 rounded-md text-sm font-medium transition-colors',
+                  pathname?.startsWith('/opportunities')
+                    ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
+                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                )}
+              >
+                Opportunities
+              </Link>
             </nav>
           </div>
 
@@ -228,6 +239,18 @@ export default function Header() {
                 )}
               >
                 Keywords
+              </Link>
+              <Link
+                href="/opportunities"
+                onClick={() => setMobileMenuOpen(false)}
+                className={clsx(
+                  'px-3 py-2 rounded-md text-sm font-medium transition-colors',
+                  pathname?.startsWith('/opportunities')
+                    ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
+                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                )}
+              >
+                Opportunities
               </Link>
               <button
                 onClick={() => {

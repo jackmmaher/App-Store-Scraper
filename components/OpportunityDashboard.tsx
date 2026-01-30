@@ -1,0 +1,899 @@
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import {
+  Opportunity,
+  OpportunityStats,
+  RankedOpportunity,
+  DailyRun,
+} from '@/lib/opportunity/types';
+import { CATEGORY_NAMES } from '@/lib/constants';
+import { getScoreColor } from '@/lib/opportunity/constants';
+
+// ============================================================================
+// Tooltip Component
+// ============================================================================
+
+function Tooltip({ children, content }: { children: React.ReactNode; content: React.ReactNode }) {
+  const [show, setShow] = useState(false);
+
+  return (
+    <span
+      className="relative inline-flex items-center cursor-help"
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+    >
+      {children}
+      {show && (
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50">
+          <div className="bg-gray-900 text-white text-xs rounded-lg px-3 py-2 w-72 shadow-lg">
+            {content}
+          </div>
+          <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1">
+            <div className="border-4 border-transparent border-t-gray-900" />
+          </div>
+        </div>
+      )}
+    </span>
+  );
+}
+
+// ============================================================================
+// Score Badge Component
+// ============================================================================
+
+function ScoreBadge({ score, size = 'md' }: { score: number | null; size?: 'sm' | 'md' | 'lg' }) {
+  if (score === null) return <span className="text-gray-400">-</span>;
+
+  const { color, label } = getScoreColor(score);
+  const sizeClasses = {
+    sm: 'text-xs px-1.5 py-0.5',
+    md: 'text-sm px-2 py-1',
+    lg: 'text-base px-3 py-1.5',
+  };
+
+  const colorClasses: Record<string, string> = {
+    emerald: 'bg-emerald-100 text-emerald-800',
+    green: 'bg-green-100 text-green-800',
+    yellow: 'bg-yellow-100 text-yellow-800',
+    orange: 'bg-orange-100 text-orange-800',
+    red: 'bg-red-100 text-red-800',
+  };
+
+  return (
+    <span
+      className={`inline-flex items-center rounded-full font-medium ${sizeClasses[size]} ${colorClasses[color]}`}
+      title={label}
+    >
+      {score.toFixed(1)}
+    </span>
+  );
+}
+
+// ============================================================================
+// Metric Tooltips
+// ============================================================================
+
+const DIMENSION_TOOLTIPS = {
+  competition_gap: (
+    <div className="space-y-1">
+      <div className="font-semibold">Competition Gap (0-100)</div>
+      <div>How beatable the current competition is. Higher = weaker competition.</div>
+      <div className="pt-1 text-gray-300 text-[10px]">
+        <div className="font-medium">Components:</div>
+        <div>• Title keyword saturation (30%)</div>
+        <div>• Review count strength (35%)</div>
+        <div>• Rating penalty (20%)</div>
+        <div>• Feature density (15%)</div>
+      </div>
+    </div>
+  ),
+  market_demand: (
+    <div className="space-y-1">
+      <div className="font-semibold">Market Demand (0-100)</div>
+      <div>How many people are searching for this. Higher = more demand.</div>
+      <div className="pt-1 text-gray-300 text-[10px]">
+        <div className="font-medium">Components:</div>
+        <div>• Autosuggest priority (40%)</div>
+        <div>• Google Trends interest (30%)</div>
+        <div>• Reddit mention velocity (20%)</div>
+        <div>• Search result count (10%)</div>
+      </div>
+    </div>
+  ),
+  revenue_potential: (
+    <div className="space-y-1">
+      <div className="font-semibold">Revenue Potential (0-100)</div>
+      <div>Whether money flows in this category. Higher = better monetization.</div>
+      <div className="pt-1 text-gray-300 text-[10px]">
+        <div className="font-medium">Components:</div>
+        <div>• Category average price (25%)</div>
+        <div>• IAP presence ratio (35%)</div>
+        <div>• Subscription presence (25%)</div>
+        <div>• Review count proxy (15%)</div>
+      </div>
+    </div>
+  ),
+  trend_momentum: (
+    <div className="space-y-1">
+      <div className="font-semibold">Trend Momentum (0-100)</div>
+      <div>Is the market growing or dying? Higher = growing market.</div>
+      <div className="pt-1 text-gray-300 text-[10px]">
+        <div className="font-medium">Components:</div>
+        <div>• Google Trends slope (50%)</div>
+        <div>• New apps launched 90d (25%)</div>
+        <div>• Reddit growth rate (25%)</div>
+      </div>
+    </div>
+  ),
+  execution_feasibility: (
+    <div className="space-y-1">
+      <div className="font-semibold">Execution Feasibility (0-100)</div>
+      <div>How easy to build a competitive MVP. Higher = simpler to build.</div>
+      <div className="pt-1 text-gray-300 text-[10px]">
+        <div className="font-medium">Components:</div>
+        <div>• Average feature count (40%)</div>
+        <div>• API dependency score (30%)</div>
+        <div>• Hardware requirement (30%)</div>
+      </div>
+    </div>
+  ),
+  opportunity_score: (
+    <div className="space-y-1">
+      <div className="font-semibold">Opportunity Score (0-100)</div>
+      <div>Final weighted score combining all dimensions.</div>
+      <div className="pt-1 text-gray-300 text-[10px]">
+        <div className="font-medium">Weights:</div>
+        <div>• Competition Gap: 30%</div>
+        <div>• Market Demand: 25%</div>
+        <div>• Revenue Potential: 20%</div>
+        <div>• Trend Momentum: 15%</div>
+        <div>• Execution Feasibility: 10%</div>
+      </div>
+    </div>
+  ),
+};
+
+// ============================================================================
+// Stats Cards Component
+// ============================================================================
+
+function StatsCards({ stats }: { stats: OpportunityStats | null }) {
+  if (!stats) {
+    return (
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="bg-white rounded-lg p-4 shadow animate-pulse">
+            <div className="h-4 bg-gray-200 rounded w-1/2 mb-2" />
+            <div className="h-8 bg-gray-200 rounded w-3/4" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="bg-white rounded-lg p-4 shadow">
+        <div className="text-sm text-gray-500">Total Opportunities</div>
+        <div className="text-2xl font-bold text-gray-900">{stats.total_opportunities}</div>
+      </div>
+      <div className="bg-white rounded-lg p-4 shadow">
+        <div className="text-sm text-gray-500">High Opportunity (60+)</div>
+        <div className="text-2xl font-bold text-green-600">{stats.high_opportunity_count}</div>
+      </div>
+      <div className="bg-white rounded-lg p-4 shadow">
+        <div className="text-sm text-gray-500">Average Score</div>
+        <div className="text-2xl font-bold text-gray-900">{stats.avg_score}</div>
+      </div>
+      <div className="bg-white rounded-lg p-4 shadow">
+        <div className="text-sm text-gray-500">Top Category</div>
+        <div className="text-lg font-bold text-gray-900">
+          {CATEGORY_NAMES[stats.top_category || ''] || stats.top_category || 'N/A'}
+        </div>
+        {stats.top_category_avg_score && (
+          <div className="text-sm text-gray-500">Avg: {stats.top_category_avg_score}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Daily Winner Card Component
+// ============================================================================
+
+function DailyWinnerCard({ winner }: { winner: Opportunity | null }) {
+  if (!winner) {
+    return (
+      <div className="bg-gradient-to-r from-purple-500 to-indigo-600 rounded-lg p-6 text-white shadow-lg mb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm opacity-80">Today&apos;s Winner</div>
+            <div className="text-xl font-bold mt-1">No winner selected yet</div>
+            <div className="text-sm opacity-80 mt-2">Run daily discovery to find opportunities</div>
+          </div>
+          <div className="text-5xl opacity-50">?</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-gradient-to-r from-purple-500 to-indigo-600 rounded-lg p-6 text-white shadow-lg mb-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-sm opacity-80">Today&apos;s Winner</div>
+          <div className="text-2xl font-bold mt-1">{winner.keyword}</div>
+          <div className="flex items-center gap-3 mt-2">
+            <span className="bg-white/20 px-2 py-1 rounded text-sm">
+              {CATEGORY_NAMES[winner.category] || winner.category}
+            </span>
+            <span className="text-sm opacity-80">
+              Status: {winner.status}
+            </span>
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="text-5xl font-bold">{winner.opportunity_score?.toFixed(1)}</div>
+          <div className="text-sm opacity-80">Score</div>
+        </div>
+      </div>
+      {winner.suggested_differentiator && (
+        <div className="mt-4 pt-4 border-t border-white/20 text-sm">
+          <span className="opacity-80">Strategy:</span> {winner.suggested_differentiator}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// Category Heatmap Component
+// ============================================================================
+
+function CategoryHeatmap({ categoryStats }: { categoryStats: { category: string; count: number; avg_score: number }[] }) {
+  if (!categoryStats || categoryStats.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="bg-white rounded-lg p-4 shadow mb-6">
+      <h3 className="font-semibold mb-3">Opportunity Density by Category</h3>
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2">
+        {categoryStats.map((cat) => {
+          const { color } = getScoreColor(cat.avg_score);
+          const bgClass =
+            color === 'emerald' ? 'bg-emerald-100' :
+            color === 'green' ? 'bg-green-100' :
+            color === 'yellow' ? 'bg-yellow-100' :
+            color === 'orange' ? 'bg-orange-100' : 'bg-red-100';
+
+          return (
+            <div
+              key={cat.category}
+              className={`${bgClass} rounded p-2 text-center`}
+            >
+              <div className="text-xs font-medium truncate">
+                {CATEGORY_NAMES[cat.category] || cat.category}
+              </div>
+              <div className="text-lg font-bold">{cat.avg_score.toFixed(0)}</div>
+              <div className="text-xs text-gray-600">{cat.count} opps</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Opportunities Table Component
+// ============================================================================
+
+function OpportunitiesTable({
+  opportunities,
+  loading,
+  onSelect,
+  selectedId,
+}: {
+  opportunities: Opportunity[];
+  loading: boolean;
+  onSelect: (opp: Opportunity) => void;
+  selectedId?: string;
+}) {
+  if (loading) {
+    return (
+      <div className="bg-white rounded-lg shadow overflow-hidden">
+        <div className="animate-pulse p-4 space-y-3">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="h-12 bg-gray-200 rounded" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (opportunities.length === 0) {
+    return (
+      <div className="bg-white rounded-lg shadow p-8 text-center">
+        <div className="text-gray-400 text-lg mb-2">No opportunities found</div>
+        <div className="text-sm text-gray-500">
+          Run discovery to find new opportunities
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                Keyword
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                Category
+              </th>
+              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
+                <Tooltip content={DIMENSION_TOOLTIPS.opportunity_score}>
+                  <span>Score</span>
+                </Tooltip>
+              </th>
+              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
+                <Tooltip content={DIMENSION_TOOLTIPS.competition_gap}>
+                  <span>Gap</span>
+                </Tooltip>
+              </th>
+              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
+                <Tooltip content={DIMENSION_TOOLTIPS.market_demand}>
+                  <span>Demand</span>
+                </Tooltip>
+              </th>
+              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
+                <Tooltip content={DIMENSION_TOOLTIPS.revenue_potential}>
+                  <span>Revenue</span>
+                </Tooltip>
+              </th>
+              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
+                <Tooltip content={DIMENSION_TOOLTIPS.trend_momentum}>
+                  <span>Trend</span>
+                </Tooltip>
+              </th>
+              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
+                <Tooltip content={DIMENSION_TOOLTIPS.execution_feasibility}>
+                  <span>Easy</span>
+                </Tooltip>
+              </th>
+              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">
+                Status
+              </th>
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {opportunities.map((opp) => (
+              <tr
+                key={opp.id}
+                className={`hover:bg-gray-50 cursor-pointer ${
+                  selectedId === opp.id ? 'bg-blue-50' : ''
+                }`}
+                onClick={() => onSelect(opp)}
+              >
+                <td className="px-4 py-3">
+                  <div className="font-medium text-gray-900">{opp.keyword}</div>
+                </td>
+                <td className="px-4 py-3 text-sm text-gray-500">
+                  {CATEGORY_NAMES[opp.category] || opp.category}
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <ScoreBadge score={opp.opportunity_score} size="md" />
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <ScoreBadge score={opp.competition_gap_score} size="sm" />
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <ScoreBadge score={opp.market_demand_score} size="sm" />
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <ScoreBadge score={opp.revenue_potential_score} size="sm" />
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <ScoreBadge score={opp.trend_momentum_score} size="sm" />
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <ScoreBadge score={opp.execution_feasibility_score} size="sm" />
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <span
+                    className={`inline-flex px-2 py-1 text-xs rounded-full ${
+                      opp.status === 'blueprinted'
+                        ? 'bg-purple-100 text-purple-800'
+                        : opp.status === 'selected'
+                        ? 'bg-blue-100 text-blue-800'
+                        : 'bg-gray-100 text-gray-800'
+                    }`}
+                  >
+                    {opp.status}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Opportunity Detail Modal
+// ============================================================================
+
+function OpportunityDetailModal({
+  opportunity,
+  onClose,
+  onGenerateBlueprint,
+}: {
+  opportunity: Opportunity;
+  onClose: () => void;
+  onGenerateBlueprint: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6">
+          {/* Header */}
+          <div className="flex justify-between items-start mb-4">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">{opportunity.keyword}</h2>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-sm text-gray-500">
+                  {CATEGORY_NAMES[opportunity.category] || opportunity.category}
+                </span>
+                <span className="text-sm text-gray-400">|</span>
+                <span className="text-sm text-gray-500">
+                  Scored {new Date(opportunity.scored_at).toLocaleDateString()}
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+            >
+              &times;
+            </button>
+          </div>
+
+          {/* Main Score */}
+          <div className="bg-gradient-to-r from-purple-500 to-indigo-600 rounded-lg p-4 text-white mb-6">
+            <div className="flex justify-between items-center">
+              <div>
+                <div className="text-sm opacity-80">Opportunity Score</div>
+                <div className="text-4xl font-bold">
+                  {opportunity.opportunity_score?.toFixed(1)}
+                </div>
+              </div>
+              <div className="text-right">
+                <span
+                  className={`px-3 py-1 rounded-full text-sm ${
+                    opportunity.status === 'blueprinted'
+                      ? 'bg-purple-400/30'
+                      : opportunity.status === 'selected'
+                      ? 'bg-blue-400/30'
+                      : 'bg-white/20'
+                  }`}
+                >
+                  {opportunity.status}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Dimension Scores */}
+          <div className="grid grid-cols-5 gap-3 mb-6">
+            {[
+              { key: 'competition_gap', label: 'Competition Gap', score: opportunity.competition_gap_score },
+              { key: 'market_demand', label: 'Market Demand', score: opportunity.market_demand_score },
+              { key: 'revenue_potential', label: 'Revenue', score: opportunity.revenue_potential_score },
+              { key: 'trend_momentum', label: 'Trend', score: opportunity.trend_momentum_score },
+              { key: 'execution_feasibility', label: 'Feasibility', score: opportunity.execution_feasibility_score },
+            ].map(({ key, label, score }) => (
+              <div key={key} className="bg-gray-50 rounded-lg p-3 text-center">
+                <div className="text-xs text-gray-500 mb-1">{label}</div>
+                <ScoreBadge score={score} size="lg" />
+              </div>
+            ))}
+          </div>
+
+          {/* Reasoning */}
+          {opportunity.reasoning && (
+            <div className="mb-6">
+              <h3 className="font-semibold text-gray-900 mb-2">Analysis</h3>
+              <p className="text-sm text-gray-600">{opportunity.reasoning}</p>
+            </div>
+          )}
+
+          {/* Competitor Weaknesses */}
+          {opportunity.top_competitor_weaknesses && opportunity.top_competitor_weaknesses.length > 0 && (
+            <div className="mb-6">
+              <h3 className="font-semibold text-gray-900 mb-2">Competitor Weaknesses</h3>
+              <ul className="space-y-1">
+                {opportunity.top_competitor_weaknesses.map((weakness, idx) => (
+                  <li key={idx} className="text-sm text-gray-600 flex items-start">
+                    <span className="text-green-500 mr-2">+</span>
+                    {weakness}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Suggested Differentiator */}
+          {opportunity.suggested_differentiator && (
+            <div className="mb-6 bg-blue-50 rounded-lg p-4">
+              <h3 className="font-semibold text-blue-900 mb-1">Suggested Strategy</h3>
+              <p className="text-sm text-blue-800">{opportunity.suggested_differentiator}</p>
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-3 pt-4 border-t">
+            <button
+              onClick={onGenerateBlueprint}
+              className="flex-1 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors"
+            >
+              Generate Blueprint
+            </button>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Recent Runs Component
+// ============================================================================
+
+function RecentRuns({ runs }: { runs: DailyRun[] }) {
+  if (!runs || runs.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="bg-white rounded-lg p-4 shadow">
+      <h3 className="font-semibold mb-3">Recent Daily Runs</h3>
+      <div className="space-y-2">
+        {runs.map((run) => (
+          <div
+            key={run.id}
+            className="flex items-center justify-between py-2 border-b last:border-0"
+          >
+            <div>
+              <div className="text-sm font-medium">
+                {new Date(run.run_date).toLocaleDateString()}
+              </div>
+              {run.winner_keyword && (
+                <div className="text-xs text-gray-500">
+                  Winner: {run.winner_keyword}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {run.winner_score && (
+                <ScoreBadge score={run.winner_score} size="sm" />
+              )}
+              <span
+                className={`text-xs px-2 py-0.5 rounded ${
+                  run.status === 'completed'
+                    ? 'bg-green-100 text-green-800'
+                    : run.status === 'failed'
+                    ? 'bg-red-100 text-red-800'
+                    : 'bg-yellow-100 text-yellow-800'
+                }`}
+              >
+                {run.status}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Main Dashboard Component
+// ============================================================================
+
+interface DashboardFilters {
+  category: string;
+  country: string;
+  minScore: number | undefined;
+  sort: string;
+}
+
+export default function OpportunityDashboard() {
+  // State
+  const [stats, setStats] = useState<OpportunityStats | null>(null);
+  const [todaysWinner, setTodaysWinner] = useState<Opportunity | null>(null);
+  const [recentRuns, setRecentRuns] = useState<DailyRun[]>([]);
+  const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null);
+
+  // Discovery state
+  const [discovering, setDiscovering] = useState(false);
+  const [discoveryCategory, setDiscoveryCategory] = useState('productivity');
+  const [runningDailyRun, setRunningDailyRun] = useState(false);
+
+  // Filters
+  const [filters, setFilters] = useState<DashboardFilters>({
+    category: '',
+    country: 'us',
+    minScore: undefined,
+    sort: 'opportunity_score',
+  });
+
+  // Fetch stats and overview data
+  const fetchStats = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/opportunity/stats?country=${filters.country}`);
+      const data = await res.json();
+
+      if (data.success) {
+        setStats(data.data.stats);
+        setTodaysWinner(data.data.todays_winner);
+        setRecentRuns(data.data.recent_runs || []);
+      }
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+    }
+  }, [filters.country]);
+
+  // Fetch opportunities list
+  const fetchOpportunities = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      params.set('country', filters.country);
+      params.set('sort', filters.sort);
+      params.set('sort_dir', 'desc');
+      if (filters.category) params.set('category', filters.category);
+      if (filters.minScore) params.set('min_score', filters.minScore.toString());
+      params.set('limit', '50');
+
+      const res = await fetch(`/api/opportunity/search?${params.toString()}`);
+      const data = await res.json();
+
+      if (data.success) {
+        setOpportunities(data.data.opportunities || []);
+      }
+    } catch (error) {
+      console.error('Error fetching opportunities:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [filters]);
+
+  // Initial load
+  useEffect(() => {
+    fetchStats();
+    fetchOpportunities();
+  }, [fetchStats, fetchOpportunities]);
+
+  // Discover opportunities for a category
+  const handleDiscover = async () => {
+    setDiscovering(true);
+    try {
+      const res = await fetch('/api/opportunity/discover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          category: discoveryCategory,
+          country: filters.country,
+          limit: 20,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        // Refresh the list
+        await fetchOpportunities();
+        await fetchStats();
+      } else {
+        console.error('Discovery failed:', data.error);
+      }
+    } catch (error) {
+      console.error('Error discovering opportunities:', error);
+    } finally {
+      setDiscovering(false);
+    }
+  };
+
+  // Run daily autonomous discovery
+  const handleDailyRun = async () => {
+    setRunningDailyRun(true);
+    try {
+      const res = await fetch('/api/opportunity/daily-run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          country: filters.country,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        // Refresh everything
+        await fetchStats();
+        await fetchOpportunities();
+      } else {
+        console.error('Daily run failed:', data.error);
+      }
+    } catch (error) {
+      console.error('Error running daily discovery:', error);
+    } finally {
+      setRunningDailyRun(false);
+    }
+  };
+
+  // Generate blueprint for opportunity
+  const handleGenerateBlueprint = () => {
+    if (!selectedOpportunity) return;
+    // TODO: Integrate with blueprint generation system
+    // For now, just close the modal
+    alert(`Blueprint generation for "${selectedOpportunity.keyword}" would be triggered here.`);
+    setSelectedOpportunity(null);
+  };
+
+  return (
+    <div className="p-6 max-w-7xl mx-auto">
+      {/* Header */}
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Opportunity Ranker</h1>
+          <p className="text-gray-500">Discover and rank app opportunities autonomously</p>
+        </div>
+        <div className="flex gap-3">
+          <button
+            onClick={handleDailyRun}
+            disabled={runningDailyRun}
+            className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
+          >
+            {runningDailyRun ? 'Running...' : 'Run Daily Discovery'}
+          </button>
+        </div>
+      </div>
+
+      {/* Stats Cards */}
+      <StatsCards stats={stats} />
+
+      {/* Today's Winner */}
+      <DailyWinnerCard winner={todaysWinner} />
+
+      {/* Category Heatmap */}
+      {stats && <CategoryHeatmap categoryStats={stats.by_category} />}
+
+      {/* Main Content Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {/* Filters & Discovery - Sidebar */}
+        <div className="space-y-4">
+          {/* Filters */}
+          <div className="bg-white rounded-lg p-4 shadow">
+            <h3 className="font-semibold mb-3">Filters</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">Category</label>
+                <select
+                  value={filters.category}
+                  onChange={(e) => setFilters((f) => ({ ...f, category: e.target.value }))}
+                  className="w-full border rounded px-3 py-2"
+                >
+                  <option value="">All Categories</option>
+                  {Object.entries(CATEGORY_NAMES).map(([key, name]) => (
+                    <option key={key} value={key}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">Min Score</label>
+                <input
+                  type="number"
+                  value={filters.minScore || ''}
+                  onChange={(e) =>
+                    setFilters((f) => ({
+                      ...f,
+                      minScore: e.target.value ? parseInt(e.target.value) : undefined,
+                    }))
+                  }
+                  placeholder="0"
+                  className="w-full border rounded px-3 py-2"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">Sort By</label>
+                <select
+                  value={filters.sort}
+                  onChange={(e) => setFilters((f) => ({ ...f, sort: e.target.value }))}
+                  className="w-full border rounded px-3 py-2"
+                >
+                  <option value="opportunity_score">Opportunity Score</option>
+                  <option value="competition_gap">Competition Gap</option>
+                  <option value="market_demand">Market Demand</option>
+                  <option value="revenue_potential">Revenue Potential</option>
+                  <option value="trend_momentum">Trend Momentum</option>
+                  <option value="scored_at">Recently Scored</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Discover */}
+          <div className="bg-white rounded-lg p-4 shadow">
+            <h3 className="font-semibold mb-3">Quick Discover</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">Category</label>
+                <select
+                  value={discoveryCategory}
+                  onChange={(e) => setDiscoveryCategory(e.target.value)}
+                  className="w-full border rounded px-3 py-2"
+                >
+                  {Object.entries(CATEGORY_NAMES)
+                    .filter(([key]) => !key.includes('games'))
+                    .map(([key, name]) => (
+                      <option key={key} value={key}>
+                        {name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <button
+                onClick={handleDiscover}
+                disabled={discovering}
+                className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                {discovering ? 'Discovering...' : 'Discover Opportunities'}
+              </button>
+            </div>
+          </div>
+
+          {/* Recent Runs */}
+          <RecentRuns runs={recentRuns} />
+        </div>
+
+        {/* Opportunities Table - Main Content */}
+        <div className="lg:col-span-3">
+          <OpportunitiesTable
+            opportunities={opportunities}
+            loading={loading}
+            onSelect={setSelectedOpportunity}
+            selectedId={selectedOpportunity?.id}
+          />
+        </div>
+      </div>
+
+      {/* Detail Modal */}
+      {selectedOpportunity && (
+        <OpportunityDetailModal
+          opportunity={selectedOpportunity}
+          onClose={() => setSelectedOpportunity(null)}
+          onGenerateBlueprint={handleGenerateBlueprint}
+        />
+      )}
+    </div>
+  );
+}
