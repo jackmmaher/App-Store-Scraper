@@ -108,6 +108,11 @@ export async function POST(request: NextRequest) {
         let lastSaveTime = Date.now();
         const SAVE_INTERVAL = 30000; // Save every 30 seconds as backup
 
+        // Send heartbeat to keep connection alive during long Claude processing
+        const heartbeatInterval = setInterval(() => {
+          sendEvent('heartbeat', { timestamp: Date.now() });
+        }, 10000); // Every 10 seconds
+
         try {
           // Call Claude API with streaming
           const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -178,10 +183,12 @@ export async function POST(request: NextRequest) {
           }
 
           // Save completed content
+          clearInterval(heartbeatInterval);
           await updateBlueprintSection(blueprintId, section, fullContent, 'completed');
 
           sendEvent('complete', { content: fullContent });
         } catch (error) {
+          clearInterval(heartbeatInterval);
           console.error('[Generate] Error:', error);
 
           await updateBlueprintSectionStatus(blueprintId, section, 'error');
