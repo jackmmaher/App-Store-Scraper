@@ -4,10 +4,48 @@ import {
   getOrCreateBlueprint,
   getBlueprint,
   updateBlueprintSection,
+  updateBlueprintSectionStatus,
   deleteBlueprint,
   type BlueprintSection,
   type BlueprintSectionStatus,
+  type ProjectBlueprint,
 } from '@/lib/supabase';
+
+// Auto-recover stuck 'generating' statuses (older than 5 minutes)
+async function recoverStuckGenerating(blueprint: ProjectBlueprint): Promise<ProjectBlueprint> {
+  const STUCK_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+  const now = Date.now();
+  const updatedAt = new Date(blueprint.updated_at).getTime();
+
+  // If updated recently, don't touch it
+  if (now - updatedAt < STUCK_THRESHOLD_MS) {
+    return blueprint;
+  }
+
+  const sectionsToCheck: Array<{ key: keyof ProjectBlueprint; section: BlueprintSection }> = [
+    { key: 'pareto_status', section: 'pareto' },
+    { key: 'ui_wireframes_status', section: 'wireframes' },
+    { key: 'tech_stack_status', section: 'tech_stack' },
+    { key: 'prd_status', section: 'prd' },
+    { key: 'build_manifest_status', section: 'manifest' },
+  ];
+
+  let needsRefresh = false;
+  for (const { key, section } of sectionsToCheck) {
+    if (blueprint[key] === 'generating') {
+      console.log(`[Blueprint] Auto-recovering stuck '${section}' status`);
+      await updateBlueprintSectionStatus(blueprint.id, section, 'error');
+      needsRefresh = true;
+    }
+  }
+
+  if (needsRefresh) {
+    const refreshed = await getBlueprint(blueprint.id);
+    return refreshed || blueprint;
+  }
+
+  return blueprint;
+}
 
 // GET /api/blueprint?projectId=xxx - Get or create blueprint for project
 // GET /api/blueprint?id=xxx - Get blueprint by ID
@@ -24,19 +62,23 @@ export async function GET(request: NextRequest) {
   try {
     if (blueprintId) {
       // Fetch by blueprint ID
-      const blueprint = await getBlueprint(blueprintId);
+      let blueprint = await getBlueprint(blueprintId);
       if (!blueprint) {
         return NextResponse.json({ error: 'Blueprint not found' }, { status: 404 });
       }
+      // Auto-recover stuck 'generating' statuses
+      blueprint = await recoverStuckGenerating(blueprint);
       return NextResponse.json({ blueprint });
     }
 
     if (projectId) {
       // Get or create blueprint for project
-      const blueprint = await getOrCreateBlueprint(projectId);
+      let blueprint = await getOrCreateBlueprint(projectId);
       if (!blueprint) {
         return NextResponse.json({ error: 'Failed to get or create blueprint' }, { status: 500 });
       }
+      // Auto-recover stuck 'generating' statuses
+      blueprint = await recoverStuckGenerating(blueprint);
       return NextResponse.json({ blueprint });
     }
 
@@ -71,7 +113,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'section and content required' }, { status: 400 });
     }
 
-    const validSections: BlueprintSection[] = ['pareto', 'wireframes', 'tech_stack', 'prd'];
+    const validSections: BlueprintSection[] = ['pareto', 'wireframes', 'tech_stack', 'prd', 'manifest'];
     if (!validSections.includes(section)) {
       return NextResponse.json({ error: 'Invalid section' }, { status: 400 });
     }
