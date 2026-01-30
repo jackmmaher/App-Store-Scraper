@@ -67,6 +67,8 @@ export default function KeywordResearch() {
   // Keyword detail modal state
   const [selectedKeyword, setSelectedKeyword] = useState<KeywordDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [keywordModalOpen, setKeywordModalOpen] = useState(false);
+  const [keywordError, setKeywordError] = useState<string | null>(null);
 
   // App detail modal state
   const [selectedApp, setSelectedApp] = useState<AppResult | null>(null);
@@ -121,18 +123,33 @@ export default function KeywordResearch() {
 
   // Fetch keyword detail with rankings
   const handleKeywordClick = async (keyword: Keyword) => {
+    setKeywordModalOpen(true);
     setLoadingDetail(true);
+    setKeywordError(null);
+    setSelectedKeyword(null);
+
     try {
       const res = await fetch(`/api/keywords/${keyword.id}`);
       const data = await res.json();
-      if (data.success) {
+
+      if (data.success && data.data) {
         setSelectedKeyword(data.data);
+      } else {
+        setKeywordError(data.error || 'Failed to load keyword details');
       }
     } catch (error) {
       console.error('Error fetching keyword detail:', error);
+      setKeywordError(error instanceof Error ? error.message : 'Network error');
     } finally {
       setLoadingDetail(false);
     }
+  };
+
+  // Close keyword modal
+  const closeKeywordModal = () => {
+    setKeywordModalOpen(false);
+    setSelectedKeyword(null);
+    setKeywordError(null);
   };
 
   // Fetch app detail and open modal
@@ -738,14 +755,14 @@ export default function KeywordResearch() {
       </div>
 
       {/* Keyword Detail Modal */}
-      {(selectedKeyword || loadingDetail) && (
+      {keywordModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             {/* Modal Header */}
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold text-gray-900">
-                  {loadingDetail ? 'Loading...' : `"${selectedKeyword?.keyword.keyword}"`}
+                  {loadingDetail ? 'Loading...' : selectedKeyword ? `"${selectedKeyword.keyword.keyword}"` : 'Keyword Details'}
                 </h2>
                 {selectedKeyword && (
                   <div className="flex items-center gap-4 mt-1 text-sm">
@@ -762,7 +779,7 @@ export default function KeywordResearch() {
                 )}
               </div>
               <button
-                onClick={() => setSelectedKeyword(null)}
+                onClick={closeKeywordModal}
                 className="text-gray-400 hover:text-gray-600"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -776,6 +793,11 @@ export default function KeywordResearch() {
               {loadingDetail ? (
                 <div className="flex items-center justify-center py-12">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+              ) : keywordError ? (
+                <div className="text-center py-12">
+                  <div className="text-red-500 mb-2">Error loading keyword details</div>
+                  <div className="text-sm text-gray-500">{keywordError}</div>
                 </div>
               ) : selectedKeyword?.rankings && selectedKeyword.rankings.length > 0 ? (
                 <div>
