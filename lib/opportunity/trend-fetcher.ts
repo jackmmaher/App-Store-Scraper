@@ -14,34 +14,34 @@ interface GoogleTrendsResult {
   average_interest: number;
   slope: number;
   related_queries: string[];
+  source: 'serpapi' | 'simulated';
 }
 
 /**
  * Fetch Google Trends data for a keyword
- * Uses a simple approach that works without the full pytrends library
+ * Uses SerpAPI if SERPAPI_KEY is available, otherwise falls back to simulation
  */
 export async function fetchGoogleTrends(
   keyword: string,
   _timeframe: string = DEFAULT_CONFIG.GOOGLE_TRENDS_TIMEFRAME
 ): Promise<GoogleTrendsResult | null> {
+  const serpApiKey = process.env.SERPAPI_KEY;
+
+  // Try SerpAPI first if key is available
+  if (serpApiKey) {
+    try {
+      const realData = await fetchGoogleTrendsSerpAPI(keyword, serpApiKey);
+      if (realData) {
+        return realData;
+      }
+    } catch (error) {
+      console.error('SerpAPI Google Trends error, falling back to simulation:', error);
+    }
+  }
+
+  // Fall back to simulation
   try {
-    // Google Trends embed endpoint for basic data
-    // This is a lightweight approach that doesn't require authentication
-    const encodedKeyword = encodeURIComponent(keyword);
-    const url = `https://trends.google.com/trends/api/dailytrends?hl=en-US&tz=-300&geo=US&ns=15`;
-
-    // Note: Full Google Trends integration requires either:
-    // 1. pytrends Python library via a microservice
-    // 2. SerpAPI or similar paid service
-    // 3. Manual scraping (unreliable)
-
-    // For now, we'll use a simulated/cached approach for MVP
-    // and mark this as requiring enhancement
-
-    // Simulate trends data based on keyword characteristics
-    // This will be replaced with real API integration
     const simulatedData = simulateGoogleTrends(keyword);
-
     return simulatedData;
   } catch (error) {
     console.error('Error fetching Google Trends:', error);
@@ -50,8 +50,67 @@ export async function fetchGoogleTrends(
 }
 
 /**
- * Simulate Google Trends data for MVP
- * TODO: Replace with real API integration (pytrends microservice or SerpAPI)
+ * Fetch real Google Trends data via SerpAPI
+ */
+async function fetchGoogleTrendsSerpAPI(
+  keyword: string,
+  apiKey: string
+): Promise<GoogleTrendsResult | null> {
+  const url = new URL('https://serpapi.com/search.json');
+  url.searchParams.set('engine', 'google_trends');
+  url.searchParams.set('q', keyword);
+  url.searchParams.set('data_type', 'TIMESERIES');
+  url.searchParams.set('date', 'today 12-m');
+  url.searchParams.set('geo', 'US');
+  url.searchParams.set('api_key', apiKey);
+
+  const response = await fetch(url.toString());
+
+  if (!response.ok) {
+    console.error(`SerpAPI error: ${response.status} ${response.statusText}`);
+    return null;
+  }
+
+  const data = await response.json();
+
+  // Parse interest over time
+  const timelineData = data.interest_over_time?.timeline_data || [];
+  const interestOverTime: number[] = timelineData.map((point: { values?: Array<{ extracted_value?: number }> }) => {
+    return point.values?.[0]?.extracted_value || 0;
+  });
+
+  // Calculate average interest
+  const avgInterest = interestOverTime.length > 0
+    ? interestOverTime.reduce((a, b) => a + b, 0) / interestOverTime.length
+    : 50;
+
+  // Calculate slope
+  const slope = calculateSlope(interestOverTime);
+
+  // Extract related queries
+  const relatedQueries: string[] = [];
+  const risingQueries = data.related_queries?.rising || [];
+  const topQueries = data.related_queries?.top || [];
+
+  risingQueries.slice(0, 3).forEach((q: { query?: string }) => {
+    if (q.query) relatedQueries.push(q.query);
+  });
+  topQueries.slice(0, 2).forEach((q: { query?: string }) => {
+    if (q.query && !relatedQueries.includes(q.query)) relatedQueries.push(q.query);
+  });
+
+  return {
+    interest_over_time: interestOverTime,
+    average_interest: Math.round(avgInterest),
+    slope: Math.round(slope * 100) / 100,
+    related_queries: relatedQueries,
+    source: 'serpapi',
+  };
+}
+
+/**
+ * Simulate Google Trends data as fallback
+ * Used when SerpAPI is not configured
  */
 function simulateGoogleTrends(keyword: string): GoogleTrendsResult {
   // Generate pseudo-random but consistent data based on keyword
@@ -80,6 +139,7 @@ function simulateGoogleTrends(keyword: string): GoogleTrendsResult {
     average_interest: Math.round(average_interest),
     slope: Math.round(slope * 100) / 100,
     related_queries,
+    source: 'simulated',
   };
 }
 
@@ -286,12 +346,10 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
- * Check if Google Trends integration is available
- * For now, returns false until real integration is set up
+ * Check if Google Trends integration is available (via SerpAPI)
  */
 export function isGoogleTrendsAvailable(): boolean {
-  // TODO: Check for pytrends microservice or SerpAPI key
-  return false; // Using simulation
+  return !!process.env.SERPAPI_KEY;
 }
 
 /**

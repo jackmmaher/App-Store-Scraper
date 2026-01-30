@@ -108,6 +108,7 @@ export interface OpportunityRawData {
     average_interest: number;
     slope: number;  // positive = growing
     related_queries: string[];
+    source?: 'serpapi' | 'simulated';  // data source indicator
   } | null;
 
   // Reddit data

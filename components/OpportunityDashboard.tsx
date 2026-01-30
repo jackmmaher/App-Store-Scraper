@@ -6,7 +6,9 @@ import {
   OpportunityStats,
   RankedOpportunity,
   DailyRun,
+  OpportunityRawData,
 } from '@/lib/opportunity/types';
+import { useRouter } from 'next/navigation';
 import { CATEGORY_NAMES } from '@/lib/constants';
 import { getScoreColor } from '@/lib/opportunity/constants';
 
@@ -203,7 +205,15 @@ function StatsCards({ stats }: { stats: OpportunityStats | null }) {
 // Daily Winner Card Component
 // ============================================================================
 
-function DailyWinnerCard({ winner }: { winner: Opportunity | null }) {
+function DailyWinnerCard({
+  winner,
+  onViewDetails,
+  onCreateProject,
+}: {
+  winner: Opportunity | null;
+  onViewDetails: (opp: Opportunity) => void;
+  onCreateProject: (opp: Opportunity) => void;
+}) {
   if (!winner) {
     return (
       <div className="bg-gradient-to-r from-purple-500 to-indigo-600 rounded-lg p-6 text-white shadow-lg mb-6">
@@ -223,7 +233,12 @@ function DailyWinnerCard({ winner }: { winner: Opportunity | null }) {
     <div className="bg-gradient-to-r from-purple-500 to-indigo-600 rounded-lg p-6 text-white shadow-lg mb-6">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-sm opacity-80">Today&apos;s Winner</div>
+          <div className="text-sm opacity-80 flex items-center gap-2">
+            Today&apos;s Winner
+            {winner.status === 'blueprinted' && (
+              <span className="bg-white/30 px-2 py-0.5 rounded text-xs">Blueprinted</span>
+            )}
+          </div>
           <div className="text-2xl font-bold mt-1">{winner.keyword}</div>
           <div className="flex items-center gap-3 mt-2">
             <span className="bg-white/20 px-2 py-1 rounded text-sm">
@@ -244,6 +259,30 @@ function DailyWinnerCard({ winner }: { winner: Opportunity | null }) {
           <span className="opacity-80">Strategy:</span> {winner.suggested_differentiator}
         </div>
       )}
+      <div className="mt-4 pt-4 border-t border-white/20 flex gap-2">
+        <button
+          onClick={() => onViewDetails(winner)}
+          className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded text-sm transition-colors"
+        >
+          View Details
+        </button>
+        {winner.status !== 'blueprinted' && (
+          <button
+            onClick={() => onCreateProject(winner)}
+            className="px-3 py-1.5 bg-white hover:bg-gray-100 text-purple-700 rounded text-sm transition-colors font-medium"
+          >
+            Create Blueprint
+          </button>
+        )}
+        {winner.status === 'blueprinted' && winner.blueprint_id && (
+          <a
+            href={`/projects?blueprint=${winner.blueprint_id}`}
+            className="px-3 py-1.5 bg-white hover:bg-gray-100 text-purple-700 rounded text-sm transition-colors font-medium"
+          >
+            View Blueprint
+          </a>
+        )}
+      </div>
     </div>
   );
 }
@@ -428,6 +467,144 @@ function OpportunitiesTable({
 }
 
 // ============================================================================
+// Top Apps Table Component (for Opportunity Modal)
+// ============================================================================
+
+interface TopAppData {
+  id: string;
+  name: string;
+  rating: number;
+  reviews: number;
+  price: number;
+  currency: string;
+  has_keyword_in_title: boolean;
+  has_iap: boolean;
+  has_subscription: boolean;
+  icon_url: string;
+  release_date: string;
+  description_length: number;
+  feature_count: number;
+  requires_hardware: string[];
+}
+
+function TopAppsTable({
+  apps,
+  keyword,
+  onSelectApp,
+  selectedAppId,
+}: {
+  apps: TopAppData[];
+  keyword: string;
+  onSelectApp: (app: TopAppData) => void;
+  selectedAppId: string | null;
+}) {
+  if (!apps || apps.length === 0) {
+    return (
+      <div className="text-sm text-gray-500 text-center py-4">
+        No ranking apps data available
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full text-sm">
+        <thead>
+          <tr className="border-b">
+            <th className="text-left py-2 px-2 font-medium text-gray-600">#</th>
+            <th className="text-left py-2 px-2 font-medium text-gray-600">App</th>
+            <th className="text-center py-2 px-2 font-medium text-gray-600">Rating</th>
+            <th className="text-center py-2 px-2 font-medium text-gray-600">Reviews</th>
+            <th className="text-center py-2 px-2 font-medium text-gray-600">Price</th>
+            <th className="text-center py-2 px-2 font-medium text-gray-600">Signals</th>
+            <th className="text-center py-2 px-2 font-medium text-gray-600">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {apps.map((app, idx) => (
+            <tr
+              key={app.id}
+              className={`border-b hover:bg-gray-50 ${
+                selectedAppId === app.id ? 'bg-purple-50' : ''
+              }`}
+            >
+              <td className="py-2 px-2 text-gray-500">{idx + 1}</td>
+              <td className="py-2 px-2">
+                <div className="flex items-center gap-2">
+                  {app.icon_url && (
+                    <img
+                      src={app.icon_url}
+                      alt=""
+                      className="w-8 h-8 rounded-lg"
+                    />
+                  )}
+                  <div className="min-w-0">
+                    <div className="font-medium text-gray-900 truncate max-w-[180px]" title={app.name}>
+                      {app.name}
+                    </div>
+                    {app.has_keyword_in_title && (
+                      <span className="text-xs text-orange-600">
+                        Has "{keyword}" in title
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </td>
+              <td className="py-2 px-2 text-center">
+                <span className={app.rating >= 4.5 ? 'text-green-600' : app.rating >= 4.0 ? 'text-yellow-600' : 'text-red-600'}>
+                  {app.rating?.toFixed(1) || '-'}
+                </span>
+              </td>
+              <td className="py-2 px-2 text-center text-gray-600">
+                {app.reviews?.toLocaleString() || '-'}
+              </td>
+              <td className="py-2 px-2 text-center">
+                {app.price === 0 ? (
+                  <span className="text-green-600">Free</span>
+                ) : (
+                  <span>${app.price}</span>
+                )}
+              </td>
+              <td className="py-2 px-2 text-center">
+                <div className="flex gap-1 justify-center">
+                  {app.has_iap && (
+                    <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded" title="Has In-App Purchases">
+                      IAP
+                    </span>
+                  )}
+                  {app.has_subscription && (
+                    <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 text-xs rounded" title="Has Subscription">
+                      SUB
+                    </span>
+                  )}
+                  {app.requires_hardware && app.requires_hardware.length > 0 && (
+                    <span className="px-1.5 py-0.5 bg-gray-100 text-gray-700 text-xs rounded" title={`Requires: ${app.requires_hardware.join(', ')}`}>
+                      HW
+                    </span>
+                  )}
+                </div>
+              </td>
+              <td className="py-2 px-2 text-center">
+                <button
+                  onClick={() => onSelectApp(app)}
+                  className={`px-2 py-1 text-xs rounded transition-colors ${
+                    selectedAppId === app.id
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {selectedAppId === app.id ? 'Selected' : 'Select'}
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ============================================================================
 // Opportunity Detail Modal
 // ============================================================================
 
@@ -435,14 +612,32 @@ function OpportunityDetailModal({
   opportunity,
   onClose,
   onGenerateBlueprint,
+  onExportCSV,
 }: {
   opportunity: Opportunity;
   onClose: () => void;
-  onGenerateBlueprint: () => void;
+  onGenerateBlueprint: (competitorApp?: TopAppData) => void;
+  onExportCSV: () => void;
 }) {
+  const [selectedCompetitor, setSelectedCompetitor] = useState<TopAppData | null>(null);
+  const [showApps, setShowApps] = useState(true);
+  const [creatingProject, setCreatingProject] = useState(false);
+
+  // Extract top apps from raw_data
+  const topApps: TopAppData[] = opportunity.raw_data?.itunes?.top_10_apps || [];
+
+  const handleGenerateBlueprint = async () => {
+    setCreatingProject(true);
+    try {
+      await onGenerateBlueprint(selectedCompetitor || undefined);
+    } finally {
+      setCreatingProject(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
         <div className="p-6">
           {/* Header */}
           <div className="flex justify-between items-start mb-4">
@@ -507,6 +702,50 @@ function OpportunityDetailModal({
             ))}
           </div>
 
+          {/* Data Source Indicator */}
+          {opportunity.raw_data?.google_trends && (
+            <div className="mb-4 flex items-center gap-2 text-xs text-gray-500">
+              <span>Data sources:</span>
+              <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded">iTunes API</span>
+              <span className={`px-2 py-0.5 rounded ${
+                opportunity.raw_data.google_trends.source === 'serpapi'
+                  ? 'bg-green-100 text-green-700'
+                  : 'bg-yellow-100 text-yellow-700'
+              }`}>
+                Trends: {opportunity.raw_data.google_trends.source === 'serpapi' ? 'Real' : 'Estimated'}
+              </span>
+              {opportunity.raw_data.reddit && (
+                <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded">Reddit API</span>
+              )}
+            </div>
+          )}
+
+          {/* Top Ranking Apps Section */}
+          <div className="mb-6">
+            <button
+              onClick={() => setShowApps(!showApps)}
+              className="flex items-center justify-between w-full text-left"
+            >
+              <h3 className="font-semibold text-gray-900">
+                Apps Ranking for "{opportunity.keyword}" ({topApps.length})
+              </h3>
+              <span className="text-gray-400">{showApps ? '▼' : '▶'}</span>
+            </button>
+            {showApps && (
+              <div className="mt-3 border rounded-lg p-3">
+                <div className="text-xs text-gray-500 mb-2">
+                  Select a competitor app to analyze for blueprint generation:
+                </div>
+                <TopAppsTable
+                  apps={topApps}
+                  keyword={opportunity.keyword}
+                  onSelectApp={setSelectedCompetitor}
+                  selectedAppId={selectedCompetitor?.id || null}
+                />
+              </div>
+            )}
+          </div>
+
           {/* Reasoning */}
           {opportunity.reasoning && (
             <div className="mb-6">
@@ -541,10 +780,18 @@ function OpportunityDetailModal({
           {/* Actions */}
           <div className="flex gap-3 pt-4 border-t">
             <button
-              onClick={onGenerateBlueprint}
-              className="flex-1 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors"
+              onClick={handleGenerateBlueprint}
+              disabled={creatingProject}
+              className="flex-1 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
             >
-              Generate Blueprint
+              {creatingProject ? 'Creating Project...' : selectedCompetitor ? `Blueprint from "${selectedCompetitor.name}"` : 'Generate Blueprint'}
+            </button>
+            <button
+              onClick={onExportCSV}
+              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              title="Export opportunity data"
+            >
+              Export
             </button>
             <button
               onClick={onClose}
@@ -794,13 +1041,126 @@ export default function OpportunityDashboard() {
     }
   };
 
+  // Router for navigation
+  const router = useRouter();
+
   // Generate blueprint for opportunity
-  const handleGenerateBlueprint = () => {
+  const handleGenerateBlueprint = async (competitorApp?: TopAppData) => {
     if (!selectedOpportunity) return;
-    // TODO: Integrate with blueprint generation system
-    // For now, just close the modal
-    alert(`Blueprint generation for "${selectedOpportunity.keyword}" would be triggered here.`);
-    setSelectedOpportunity(null);
+
+    try {
+      // Call API to create project from opportunity
+      const res = await fetch(`/api/opportunity/${selectedOpportunity.id}/create-project`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          competitor_app_id: competitorApp?.id,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.success && data.data.project_id) {
+        // Navigate to the project blueprint page
+        setSelectedOpportunity(null);
+        router.push(`/projects/${data.data.project_id}/blueprint`);
+      } else {
+        setError(data.error || 'Failed to create project from opportunity');
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Network error';
+      setError(`Error: ${message}`);
+      console.error('Error creating project from opportunity:', err);
+    }
+  };
+
+  // Export opportunity to CSV
+  const handleExportCSV = () => {
+    if (!selectedOpportunity) return;
+
+    const opp = selectedOpportunity;
+    const topApps = opp.raw_data?.itunes?.top_10_apps || [];
+
+    // Build CSV content
+    let csv = 'Opportunity Report\n';
+    csv += `Keyword,${opp.keyword}\n`;
+    csv += `Category,${CATEGORY_NAMES[opp.category] || opp.category}\n`;
+    csv += `Country,${opp.country}\n`;
+    csv += `Scored At,${new Date(opp.scored_at).toLocaleDateString()}\n\n`;
+
+    csv += 'Scores\n';
+    csv += `Opportunity Score,${opp.opportunity_score}\n`;
+    csv += `Competition Gap,${opp.competition_gap_score}\n`;
+    csv += `Market Demand,${opp.market_demand_score}\n`;
+    csv += `Revenue Potential,${opp.revenue_potential_score}\n`;
+    csv += `Trend Momentum,${opp.trend_momentum_score}\n`;
+    csv += `Execution Feasibility,${opp.execution_feasibility_score}\n\n`;
+
+    csv += 'Analysis\n';
+    csv += `"${opp.reasoning?.replace(/"/g, '""') || ''}"\n\n`;
+
+    csv += 'Suggested Strategy\n';
+    csv += `"${opp.suggested_differentiator?.replace(/"/g, '""') || ''}"\n\n`;
+
+    if (opp.top_competitor_weaknesses && opp.top_competitor_weaknesses.length > 0) {
+      csv += 'Competitor Weaknesses\n';
+      opp.top_competitor_weaknesses.forEach((w) => {
+        csv += `"${w.replace(/"/g, '""')}"\n`;
+      });
+      csv += '\n';
+    }
+
+    if (topApps.length > 0) {
+      csv += 'Top Ranking Apps\n';
+      csv += 'Rank,Name,Rating,Reviews,Price,Has IAP,Has Subscription\n';
+      topApps.forEach((app, idx) => {
+        csv += `${idx + 1},"${app.name.replace(/"/g, '""')}",${app.rating},${app.reviews},${app.price},${app.has_iap},${app.has_subscription}\n`;
+      });
+    }
+
+    // Download
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `opportunity-${opp.keyword.replace(/\s+/g, '-')}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // Export all visible opportunities to CSV
+  const handleExportAllCSV = () => {
+    if (opportunities.length === 0) return;
+
+    let csv = 'Keyword,Category,Score,Competition Gap,Market Demand,Revenue Potential,Trend Momentum,Feasibility,Status,Scored At,Strategy\n';
+
+    opportunities.forEach((opp) => {
+      csv += [
+        `"${opp.keyword.replace(/"/g, '""')}"`,
+        CATEGORY_NAMES[opp.category] || opp.category,
+        opp.opportunity_score?.toFixed(1) || '',
+        opp.competition_gap_score?.toFixed(1) || '',
+        opp.market_demand_score?.toFixed(1) || '',
+        opp.revenue_potential_score?.toFixed(1) || '',
+        opp.trend_momentum_score?.toFixed(1) || '',
+        opp.execution_feasibility_score?.toFixed(1) || '',
+        opp.status,
+        new Date(opp.scored_at).toLocaleDateString(),
+        `"${(opp.suggested_differentiator || '').replace(/"/g, '""')}"`,
+      ].join(',') + '\n';
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `opportunities-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -812,6 +1172,14 @@ export default function OpportunityDashboard() {
           <p className="text-gray-500">Discover and rank app opportunities autonomously</p>
         </div>
         <div className="flex gap-3">
+          <button
+            onClick={handleExportAllCSV}
+            disabled={opportunities.length === 0}
+            className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            title="Export all visible opportunities to CSV"
+          >
+            Export All
+          </button>
           <button
             onClick={handleDailyRun}
             disabled={runningDailyRun || discovering}
@@ -840,7 +1208,27 @@ export default function OpportunityDashboard() {
       <StatsCards stats={stats} />
 
       {/* Today's Winner */}
-      <DailyWinnerCard winner={todaysWinner} />
+      <DailyWinnerCard
+        winner={todaysWinner}
+        onViewDetails={(opp) => setSelectedOpportunity(opp)}
+        onCreateProject={async (opp) => {
+          try {
+            const res = await fetch(`/api/opportunity/${opp.id}/create-project`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({}),
+            });
+            const data = await res.json();
+            if (data.success && data.data.project_id) {
+              router.push(`/projects/${data.data.project_id}/blueprint`);
+            } else {
+              setError(data.error || 'Failed to create project');
+            }
+          } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to create project');
+          }
+        }}
+      />
 
       {/* Category Heatmap */}
       {stats && <CategoryHeatmap categoryStats={stats.by_category} />}
@@ -952,6 +1340,7 @@ export default function OpportunityDashboard() {
           opportunity={selectedOpportunity}
           onClose={() => setSelectedOpportunity(null)}
           onGenerateBlueprint={handleGenerateBlueprint}
+          onExportCSV={handleExportCSV}
         />
       )}
     </div>
