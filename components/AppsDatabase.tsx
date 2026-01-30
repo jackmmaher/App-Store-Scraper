@@ -245,6 +245,9 @@ export default function AppsDatabase() {
                   >
                     Scrapes<SortIndicator column="scrapes" />
                   </th>
+                  <th className="hidden lg:table-cell px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Keywords
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -303,6 +306,19 @@ export default function AppsDatabase() {
                     </td>
                     <td className="hidden xl:table-cell px-4 py-3 text-sm text-right text-gray-500">
                       {app.scrape_count}
+                    </td>
+                    <td className="hidden lg:table-cell px-4 py-3 text-center">
+                      <a
+                        href={`/keywords?q=${encodeURIComponent(app.name.split(/[:-]/)[0].trim())}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 hover:underline"
+                        title={`Research keywords related to "${app.name}"`}
+                      >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        Research
+                      </a>
                     </td>
                   </tr>
                 ))}

@@ -100,7 +100,12 @@ interface KeywordDetail {
   rankings: KeywordRanking[];
 }
 
-export default function KeywordResearch() {
+interface KeywordResearchProps {
+  initialQuery?: string;
+  initialCountry?: string;
+}
+
+export default function KeywordResearch({ initialQuery, initialCountry }: KeywordResearchProps = {}) {
   // State
   const [keywords, setKeywords] = useState<Keyword[]>([]);
   const [totalKeywords, setTotalKeywords] = useState(0);
@@ -108,8 +113,8 @@ export default function KeywordResearch() {
   const [stats, setStats] = useState<KeywordStats | null>(null);
   const [recentJobs, setRecentJobs] = useState<KeywordJob[]>([]);
   const [filters, setFilters] = useState<Filters>({
-    q: '',
-    country: 'us',
+    q: initialQuery || '',
+    country: initialCountry || 'us',
     sort: 'opportunity',
     sort_dir: 'desc',
     page: 1,

@@ -3,12 +3,18 @@ import { isAuthenticated } from '@/lib/auth';
 import Header from '@/components/Header';
 import KeywordResearch from '@/components/KeywordResearch';
 
-export default async function KeywordsPage() {
+interface Props {
+  searchParams: Promise<{ q?: string; country?: string }>;
+}
+
+export default async function KeywordsPage({ searchParams }: Props) {
   const authed = await isAuthenticated();
 
   if (!authed) {
     redirect('/login');
   }
+
+  const params = await searchParams;
 
   return (
     <div className="min-h-screen bg-gray-50 overflow-x-hidden">
@@ -20,7 +26,7 @@ export default async function KeywordsPage() {
             Discover high-opportunity keywords with low competition and high search volume.
           </p>
         </div>
-        <KeywordResearch />
+        <KeywordResearch initialQuery={params.q} initialCountry={params.country} />
       </main>
     </div>
   );
