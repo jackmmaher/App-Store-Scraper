@@ -5,6 +5,73 @@ import { Keyword, KeywordScoreResult, DiscoveryMethod, KeywordJob, KeywordRankin
 import type { AppResult } from '@/lib/supabase';
 import AppDetailModal from './AppDetailModal';
 
+// Tooltip component for metric explanations
+function Tooltip({ children, content }: { children: React.ReactNode; content: React.ReactNode }) {
+  const [show, setShow] = useState(false);
+
+  return (
+    <span
+      className="relative inline-flex items-center cursor-help"
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+    >
+      {children}
+      {show && (
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50">
+          <div className="bg-gray-900 text-white text-xs rounded-lg px-3 py-2 w-64 shadow-lg">
+            {content}
+          </div>
+          <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1">
+            <div className="border-4 border-transparent border-t-gray-900" />
+          </div>
+        </div>
+      )}
+    </span>
+  );
+}
+
+// Metric explanations
+const METRIC_TOOLTIPS = {
+  volume: (
+    <div className="space-y-1">
+      <div className="font-semibold">Volume Score (0-100)</div>
+      <div>Estimated search popularity. Higher = more people searching for this keyword.</div>
+      <div className="pt-1 text-gray-300 text-[10px]">
+        <div className="font-medium">How it&apos;s calculated:</div>
+        <div>• Autosuggest priority from Apple (40%)</div>
+        <div>• Position in suggestions (20%)</div>
+        <div>• Market size / total results (25%)</div>
+        <div>• Trigger length bonus (15%)</div>
+      </div>
+    </div>
+  ),
+  difficulty: (
+    <div className="space-y-1">
+      <div className="font-semibold">Difficulty Score (0-100)</div>
+      <div>How hard it is to rank in the top 10. Higher = more competition.</div>
+      <div className="pt-1 text-gray-300 text-[10px]">
+        <div className="font-medium">How it&apos;s calculated:</div>
+        <div>• Apps with keyword in title (30%)</div>
+        <div>• Review count strength (35%)</div>
+        <div>• Average ratings (10%)</div>
+        <div>• Market saturation (10%)</div>
+        <div>• Market maturity (15%)</div>
+      </div>
+    </div>
+  ),
+  opportunity: (
+    <div className="space-y-1">
+      <div className="font-semibold">Opportunity Score (0-100)</div>
+      <div>Best keywords to target. Higher = high volume with low competition.</div>
+      <div className="pt-1 text-gray-300 text-[10px]">
+        <div className="font-medium">Formula:</div>
+        <div>Volume × (100 - Difficulty) / 100</div>
+        <div className="pt-1">A score of 40+ is considered a good opportunity.</div>
+      </div>
+    </div>
+  ),
+};
+
 interface KeywordStats {
   total: number;
   scored: number;
@@ -384,15 +451,36 @@ export default function KeywordResearch() {
           </div>
           <div className="bg-white rounded-lg border border-gray-200 p-4">
             <div className="text-2xl font-bold text-green-600">{stats.avgVolume.toFixed(1)}</div>
-            <div className="text-sm text-gray-500">Avg Volume</div>
+            <Tooltip content={METRIC_TOOLTIPS.volume}>
+              <div className="text-sm text-gray-500 flex items-center gap-1">
+                Avg Volume
+                <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+            </Tooltip>
           </div>
           <div className="bg-white rounded-lg border border-gray-200 p-4">
             <div className="text-2xl font-bold text-yellow-600">{stats.avgDifficulty.toFixed(1)}</div>
-            <div className="text-sm text-gray-500">Avg Difficulty</div>
+            <Tooltip content={METRIC_TOOLTIPS.difficulty}>
+              <div className="text-sm text-gray-500 flex items-center gap-1">
+                Avg Difficulty
+                <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+            </Tooltip>
           </div>
           <div className="bg-white rounded-lg border border-gray-200 p-4">
             <div className="text-2xl font-bold text-orange-600">{stats.avgOpportunity.toFixed(1)}</div>
-            <div className="text-sm text-gray-500">Avg Opportunity</div>
+            <Tooltip content={METRIC_TOOLTIPS.opportunity}>
+              <div className="text-sm text-gray-500 flex items-center gap-1">
+                Avg Opportunity
+                <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+            </Tooltip>
           </div>
           <div className="bg-white rounded-lg border border-gray-200 p-4">
             <div className="text-2xl font-bold text-emerald-600">{stats.highOpportunity}</div>
@@ -511,15 +599,30 @@ export default function KeywordResearch() {
           <div className="mt-4 p-4 bg-gray-50 rounded-md">
             <div className="flex items-center gap-6 mb-3">
               <span className="text-lg font-semibold">&quot;{scoreResult.keyword}&quot;</span>
-              <span className={`text-lg font-bold ${getScoreColor(scoreResult.volume_score, 'volume')}`}>
-                Vol: {scoreResult.volume_score}
-              </span>
-              <span className={`text-lg font-bold ${getScoreColor(scoreResult.difficulty_score, 'difficulty')}`}>
-                Diff: {scoreResult.difficulty_score}
-              </span>
-              <span className={`text-lg font-bold ${getScoreColor(scoreResult.opportunity_score, 'opportunity')}`}>
-                Opp: {scoreResult.opportunity_score}
-              </span>
+              <Tooltip content={METRIC_TOOLTIPS.volume}>
+                <span className={`text-lg font-bold ${getScoreColor(scoreResult.volume_score, 'volume')} flex items-center gap-1`}>
+                  Vol: {scoreResult.volume_score}
+                  <svg className="w-4 h-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </span>
+              </Tooltip>
+              <Tooltip content={METRIC_TOOLTIPS.difficulty}>
+                <span className={`text-lg font-bold ${getScoreColor(scoreResult.difficulty_score, 'difficulty')} flex items-center gap-1`}>
+                  Diff: {scoreResult.difficulty_score}
+                  <svg className="w-4 h-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </span>
+              </Tooltip>
+              <Tooltip content={METRIC_TOOLTIPS.opportunity}>
+                <span className={`text-lg font-bold ${getScoreColor(scoreResult.opportunity_score, 'opportunity')} flex items-center gap-1`}>
+                  Opp: {scoreResult.opportunity_score}
+                  <svg className="w-4 h-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </span>
+              </Tooltip>
             </div>
             <div className="text-sm text-gray-600">
               Results: {scoreResult.raw.total_results} |
@@ -666,19 +769,43 @@ export default function KeywordResearch() {
                     className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                     onClick={() => handleSort('volume')}
                   >
-                    Volume <SortIndicator column="volume" />
+                    <Tooltip content={METRIC_TOOLTIPS.volume}>
+                      <span className="flex items-center gap-1">
+                        Volume
+                        <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </span>
+                    </Tooltip>
+                    <SortIndicator column="volume" />
                   </th>
                   <th
                     className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                     onClick={() => handleSort('difficulty')}
                   >
-                    Difficulty <SortIndicator column="difficulty" />
+                    <Tooltip content={METRIC_TOOLTIPS.difficulty}>
+                      <span className="flex items-center gap-1">
+                        Difficulty
+                        <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </span>
+                    </Tooltip>
+                    <SortIndicator column="difficulty" />
                   </th>
                   <th
                     className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
                     onClick={() => handleSort('opportunity')}
                   >
-                    Opportunity <SortIndicator column="opportunity" />
+                    <Tooltip content={METRIC_TOOLTIPS.opportunity}>
+                      <span className="flex items-center gap-1">
+                        Opportunity
+                        <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </span>
+                    </Tooltip>
+                    <SortIndicator column="opportunity" />
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Results
@@ -766,15 +893,30 @@ export default function KeywordResearch() {
                 </h2>
                 {selectedKeyword && (
                   <div className="flex items-center gap-4 mt-1 text-sm">
-                    <span className={getScoreColor(selectedKeyword.keyword.volume_score, 'volume')}>
-                      Volume: {selectedKeyword.keyword.volume_score?.toFixed(1)}
-                    </span>
-                    <span className={getScoreColor(selectedKeyword.keyword.difficulty_score, 'difficulty')}>
-                      Difficulty: {selectedKeyword.keyword.difficulty_score?.toFixed(1)}
-                    </span>
-                    <span className={getScoreColor(selectedKeyword.keyword.opportunity_score, 'opportunity')}>
-                      Opportunity: {selectedKeyword.keyword.opportunity_score?.toFixed(1)}
-                    </span>
+                    <Tooltip content={METRIC_TOOLTIPS.volume}>
+                      <span className={`${getScoreColor(selectedKeyword.keyword.volume_score, 'volume')} flex items-center gap-1`}>
+                        Volume: {selectedKeyword.keyword.volume_score?.toFixed(1)}
+                        <svg className="w-3.5 h-3.5 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </span>
+                    </Tooltip>
+                    <Tooltip content={METRIC_TOOLTIPS.difficulty}>
+                      <span className={`${getScoreColor(selectedKeyword.keyword.difficulty_score, 'difficulty')} flex items-center gap-1`}>
+                        Difficulty: {selectedKeyword.keyword.difficulty_score?.toFixed(1)}
+                        <svg className="w-3.5 h-3.5 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </span>
+                    </Tooltip>
+                    <Tooltip content={METRIC_TOOLTIPS.opportunity}>
+                      <span className={`${getScoreColor(selectedKeyword.keyword.opportunity_score, 'opportunity')} flex items-center gap-1`}>
+                        Opportunity: {selectedKeyword.keyword.opportunity_score?.toFixed(1)}
+                        <svg className="w-3.5 h-3.5 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </span>
+                    </Tooltip>
                   </div>
                 )}
               </div>
