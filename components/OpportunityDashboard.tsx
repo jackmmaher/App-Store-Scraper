@@ -712,9 +712,32 @@ export default function OpportunityDashboard() {
 
       if (data.success) {
         setSuccessMessage(`Found ${data.data.total_scored} opportunities in ${discoveryCategory}`);
-        // Refresh the list
-        await fetchOpportunities();
-        await fetchStats();
+        // Set filter to discovered category and explicitly refresh data
+        setFilters(f => ({ ...f, category: discoveryCategory }));
+        // Wait a tick for state to update, then force refresh
+        setTimeout(async () => {
+          await fetchStats();
+          // Manually fetch with discovered category to ensure fresh data
+          setLoading(true);
+          try {
+            const params = new URLSearchParams();
+            params.set('country', filters.country);
+            params.set('sort', filters.sort);
+            params.set('sort_dir', 'desc');
+            params.set('category', discoveryCategory);
+            params.set('limit', '50');
+            params.set('_t', Date.now().toString()); // Cache bust
+
+            const res = await fetch(`/api/opportunity/search?${params.toString()}`);
+            const result = await res.json();
+
+            if (result.success) {
+              setOpportunities(result.data.opportunities || []);
+            }
+          } finally {
+            setLoading(false);
+          }
+        }, 100);
       } else {
         setError(data.error || 'Discovery failed');
         console.error('Discovery failed:', data.error);
@@ -752,9 +775,12 @@ export default function OpportunityDashboard() {
         } else {
           setSuccessMessage(`Scored ${data.data.total_scored} opportunities`);
         }
-        // Refresh everything
-        await fetchStats();
-        await fetchOpportunities();
+        // Clear category filter to show all results and force refresh
+        setFilters(f => ({ ...f, category: '' }));
+        setTimeout(async () => {
+          await fetchStats();
+          await fetchOpportunities();
+        }, 100);
       } else {
         setError(data.error || 'Daily run failed');
         console.error('Daily run failed:', data.error);

@@ -18,6 +18,45 @@ import {
 } from '@/lib/opportunity';
 import { expandSeedKeyword } from '@/lib/keywords/autosuggest';
 
+// iTunes Search API for keyword discovery (fallback when autosuggest fails)
+const ITUNES_SEARCH_URL = 'https://itunes.apple.com/search';
+
+async function searchITunesForKeywords(
+  seed: string,
+  country: string
+): Promise<string[]> {
+  try {
+    const url = `${ITUNES_SEARCH_URL}?term=${encodeURIComponent(seed)}&country=${country}&entity=software&limit=50`;
+    const response = await fetch(url);
+    if (!response.ok) return [];
+
+    const data = await response.json();
+    const apps = data.results || [];
+
+    // Extract keywords from app names
+    const keywords = new Set<string>();
+    for (const app of apps) {
+      const name = app.trackName?.toLowerCase() || '';
+      // Extract meaningful words from app names (2+ chars, not common words)
+      const words = name.split(/[\s\-\:\.]+/).filter((w: string) =>
+        w.length >= 2 &&
+        !['the', 'and', 'for', 'app', 'pro', 'free', 'lite', 'plus', 'with'].includes(w)
+      );
+      words.forEach((w: string) => keywords.add(w));
+
+      // Also add 2-word combinations
+      for (let i = 0; i < words.length - 1; i++) {
+        keywords.add(`${words[i]} ${words[i + 1]}`);
+      }
+    }
+
+    return Array.from(keywords);
+  } catch (error) {
+    console.error('Error searching iTunes for keywords:', error);
+    return [];
+  }
+}
+
 // Verify cron secret for Vercel Cron
 function verifyCronAuth(request: NextRequest): boolean {
   // For Vercel Cron, check the Authorization header
@@ -43,27 +82,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // Check if already ran today
-    const existingRun = await getTodaysDailyRun();
-    if (existingRun && existingRun.status === 'completed') {
-      return NextResponse.json({
-        success: true,
-        data: {
-          run_id: existingRun.id,
-          status: 'already_completed',
-          winner: existingRun.winner_keyword
-            ? {
-                keyword: existingRun.winner_keyword,
-                category: existingRun.winner_category,
-                opportunity_score: existingRun.winner_score,
-                blueprint_triggered: existingRun.blueprint_triggered,
-              }
-            : null,
-        },
-      });
-    }
-
-    // Parse optional config from body
+    // Parse optional config from body first
     let config = {
       categories: [...DEFAULT_CRAWL_CATEGORIES],
       keywords_per_category: DEFAULT_CONFIG.KEYWORDS_PER_CATEGORY_DAILY,
@@ -79,13 +98,50 @@ export async function POST(request: NextRequest) {
       // No body or invalid JSON - use defaults
     }
 
-    // Create daily run record
-    const dailyRun = await createDailyRun(config.categories);
+    // Check if already ran today
+    let existingRun = await getTodaysDailyRun();
+
+    if (existingRun) {
+      if (existingRun.status === 'completed') {
+        return NextResponse.json({
+          success: true,
+          data: {
+            run_id: existingRun.id,
+            status: 'already_completed',
+            winner: existingRun.winner_keyword
+              ? {
+                  keyword: existingRun.winner_keyword,
+                  category: existingRun.winner_category,
+                  opportunity_score: existingRun.winner_score,
+                  blueprint_triggered: existingRun.blueprint_triggered,
+                }
+              : null,
+          },
+        });
+      }
+
+      // If previous run was 'failed' or 'running', reset it and continue
+      console.log(`Found existing daily run with status '${existingRun.status}', resetting...`);
+      await updateDailyRunProgress(existingRun.id, {
+        total_keywords_discovered: 0,
+        total_keywords_scored: 0,
+      });
+    }
+
+    // Create daily run record (or use existing one)
+    let dailyRun = existingRun;
     if (!dailyRun) {
-      return NextResponse.json(
-        { error: 'Failed to create daily run record' },
-        { status: 500 }
-      );
+      dailyRun = await createDailyRun(config.categories);
+      if (!dailyRun) {
+        // One more try - race condition may have created it
+        dailyRun = await getTodaysDailyRun();
+        if (!dailyRun) {
+          return NextResponse.json(
+            { error: 'Failed to create daily run record' },
+            { status: 500 }
+          );
+        }
+      }
     }
 
     // Track all scored opportunities
@@ -100,14 +156,40 @@ export async function POST(request: NextRequest) {
 
         // Discover keywords using autosuggest expansion
         const discoveredKeywords = new Set<string>();
+        console.log(`Processing category: ${category} with seeds:`, seeds.slice(0, 3));
+
+        // First try autosuggest
         for (const seed of seeds.slice(0, 3)) {
-          const expanded = await expandSeedKeyword(seed, config.country, 2);
-          for (const hint of expanded) {
-            discoveredKeywords.add(hint.term.toLowerCase());
+          try {
+            const expanded = await expandSeedKeyword(seed, config.country, 2);
+            console.log(`Seed "${seed}" returned ${expanded.length} keywords from autosuggest`);
+            for (const hint of expanded) {
+              discoveredKeywords.add(hint.term.toLowerCase());
+            }
+          } catch (err) {
+            console.error(`Error expanding seed "${seed}":`, err);
           }
         }
 
+        // If autosuggest returned nothing, use iTunes search fallback
+        if (discoveredKeywords.size === 0) {
+          console.log(`Autosuggest empty for ${category}, using iTunes fallback...`);
+          for (const seed of seeds.slice(0, 3)) {
+            try {
+              const keywords = await searchITunesForKeywords(seed, config.country);
+              console.log(`iTunes search for "${seed}" found ${keywords.length} keywords`);
+              keywords.forEach(kw => discoveredKeywords.add(kw));
+            } catch (err) {
+              console.error(`Error searching iTunes for "${seed}":`, err);
+            }
+          }
+        }
+
+        // Also add the seed keywords themselves as they're valid opportunities
+        seeds.slice(0, 5).forEach(seed => discoveredKeywords.add(seed.toLowerCase()));
+
         totalDiscovered += discoveredKeywords.size;
+        console.log(`Category ${category}: discovered ${discoveredKeywords.size} total keywords`);
 
         // Take limited keywords per category
         const keywordsToScore = Array.from(discoveredKeywords).slice(
