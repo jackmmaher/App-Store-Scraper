@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Keyword, KeywordScoreResult, DiscoveryMethod, KeywordJob } from '@/lib/keywords/types';
+import { Keyword, KeywordScoreResult, DiscoveryMethod, KeywordJob, KeywordRanking } from '@/lib/keywords/types';
+import type { AppResult } from '@/lib/supabase';
+import AppDetailModal from './AppDetailModal';
 
 interface KeywordStats {
   total: number;
@@ -23,6 +25,11 @@ interface Filters {
   discovered_via?: DiscoveryMethod;
   page: number;
   limit: number;
+}
+
+interface KeywordDetail {
+  keyword: Keyword;
+  rankings: KeywordRanking[];
 }
 
 export default function KeywordResearch() {
@@ -56,6 +63,14 @@ export default function KeywordResearch() {
   const [scoreKeyword, setScoreKeyword] = useState('');
   const [scoring, setScoring] = useState(false);
   const [scoreResult, setScoreResult] = useState<KeywordScoreResult | null>(null);
+
+  // Keyword detail modal state
+  const [selectedKeyword, setSelectedKeyword] = useState<KeywordDetail | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+
+  // App detail modal state
+  const [selectedApp, setSelectedApp] = useState<AppResult | null>(null);
+  const [loadingApp, setLoadingApp] = useState(false);
 
   // Fetch stats
   useEffect(() => {
@@ -103,6 +118,69 @@ export default function KeywordResearch() {
   useEffect(() => {
     fetchKeywords();
   }, [fetchKeywords]);
+
+  // Fetch keyword detail with rankings
+  const handleKeywordClick = async (keyword: Keyword) => {
+    setLoadingDetail(true);
+    try {
+      const res = await fetch(`/api/keywords/${keyword.id}`);
+      const data = await res.json();
+      if (data.success) {
+        setSelectedKeyword(data.data);
+      }
+    } catch (error) {
+      console.error('Error fetching keyword detail:', error);
+    } finally {
+      setLoadingDetail(false);
+    }
+  };
+
+  // Fetch app detail and open modal
+  const handleAppClick = async (ranking: KeywordRanking) => {
+    setLoadingApp(true);
+    try {
+      // Fetch full app details from iTunes
+      const res = await fetch(
+        `https://itunes.apple.com/lookup?id=${ranking.app_id}&country=${filters.country}`
+      );
+      const data = await res.json();
+
+      if (data.results && data.results.length > 0) {
+        const app = data.results[0];
+        // Map iTunes response to AppResult format
+        const appResult: AppResult = {
+          id: app.trackId.toString(),
+          name: app.trackName,
+          bundle_id: app.bundleId || '',
+          developer: app.artistName || '',
+          developer_id: app.artistId?.toString() || '',
+          price: app.price || 0,
+          currency: app.currency || 'USD',
+          rating: app.averageUserRating || 0,
+          rating_current_version: app.averageUserRatingForCurrentVersion || 0,
+          review_count: app.userRatingCount || 0,
+          review_count_current_version: app.userRatingCountForCurrentVersion || 0,
+          version: app.version || '',
+          release_date: app.releaseDate || '',
+          current_version_release_date: app.currentVersionReleaseDate || '',
+          min_os_version: app.minimumOsVersion || '',
+          file_size_bytes: app.fileSizeBytes || '0',
+          content_rating: app.contentAdvisoryRating || '',
+          genres: app.genres || [],
+          primary_genre: app.primaryGenreName || '',
+          primary_genre_id: app.primaryGenreId?.toString() || '',
+          url: app.trackViewUrl || '',
+          icon_url: app.artworkUrl100 || '',
+          description: app.description || '',
+        };
+        setSelectedApp(appResult);
+      }
+    } catch (error) {
+      console.error('Error fetching app details:', error);
+    } finally {
+      setLoadingApp(false);
+    }
+  };
 
   // Start discovery
   const handleDiscover = async () => {
@@ -529,6 +607,7 @@ export default function KeywordResearch() {
         <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
           <div className="text-sm text-gray-600">
             Showing {keywords.length} of {totalKeywords.toLocaleString()} keywords
+            <span className="text-gray-400 ml-2">• Click a row to see ranking apps</span>
           </div>
           <div className="flex gap-2">
             <button
@@ -594,7 +673,11 @@ export default function KeywordResearch() {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {keywords.map((kw) => (
-                  <tr key={kw.id} className="hover:bg-gray-50">
+                  <tr
+                    key={kw.id}
+                    className="hover:bg-blue-50 cursor-pointer transition-colors"
+                    onClick={() => handleKeywordClick(kw)}
+                  >
                     <td className="px-4 py-3 whitespace-nowrap">
                       <span className="font-medium text-gray-900">{kw.keyword}</span>
                     </td>
@@ -653,6 +736,125 @@ export default function KeywordResearch() {
           </div>
         )}
       </div>
+
+      {/* Keyword Detail Modal */}
+      {(selectedKeyword || loadingDetail) && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">
+                  {loadingDetail ? 'Loading...' : `"${selectedKeyword?.keyword.keyword}"`}
+                </h2>
+                {selectedKeyword && (
+                  <div className="flex items-center gap-4 mt-1 text-sm">
+                    <span className={getScoreColor(selectedKeyword.keyword.volume_score, 'volume')}>
+                      Volume: {selectedKeyword.keyword.volume_score?.toFixed(1)}
+                    </span>
+                    <span className={getScoreColor(selectedKeyword.keyword.difficulty_score, 'difficulty')}>
+                      Difficulty: {selectedKeyword.keyword.difficulty_score?.toFixed(1)}
+                    </span>
+                    <span className={getScoreColor(selectedKeyword.keyword.opportunity_score, 'opportunity')}>
+                      Opportunity: {selectedKeyword.keyword.opportunity_score?.toFixed(1)}
+                    </span>
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => setSelectedKeyword(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {loadingDetail ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+              ) : selectedKeyword?.rankings && selectedKeyword.rankings.length > 0 ? (
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                    Top {selectedKeyword.rankings.length} Ranking Apps
+                  </h3>
+                  <div className="space-y-3">
+                    {selectedKeyword.rankings.map((ranking) => (
+                      <div
+                        key={ranking.id}
+                        className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg hover:bg-blue-50 cursor-pointer transition-colors"
+                        onClick={() => handleAppClick(ranking)}
+                      >
+                        <div className="flex-shrink-0 w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold text-sm">
+                          {ranking.rank_position}
+                        </div>
+                        {ranking.app_icon_url && (
+                          <img
+                            src={ranking.app_icon_url}
+                            alt=""
+                            className="w-12 h-12 rounded-xl"
+                          />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-gray-900 truncate">
+                            {ranking.app_name}
+                            {ranking.has_keyword_in_title && (
+                              <span className="ml-2 text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">
+                                In Title
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-sm text-gray-500">
+                            <span className="text-yellow-500">★</span> {ranking.app_rating?.toFixed(1) || '-'}
+                            <span className="mx-2">•</span>
+                            {ranking.app_review_count?.toLocaleString() || '0'} reviews
+                          </div>
+                        </div>
+                        <div className="text-gray-400">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-12 text-gray-500">
+                  <p>No ranking data available for this keyword.</p>
+                  <p className="text-sm mt-1">Rankings are captured when the keyword is scored.</p>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
+              <div className="flex items-center justify-between text-sm text-gray-500">
+                <span>Click an app to view details, scrape reviews, and analyze</span>
+                {loadingApp && (
+                  <span className="flex items-center gap-2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                    Loading app...
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* App Detail Modal */}
+      {selectedApp && (
+        <AppDetailModal
+          app={selectedApp}
+          country={filters.country}
+          onClose={() => setSelectedApp(null)}
+        />
+      )}
     </div>
   );
 }
