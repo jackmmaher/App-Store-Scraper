@@ -170,6 +170,11 @@ export interface MasterApp {
   first_seen_at: string;
   last_updated_at: string;
   scrape_count: number;
+  // AI Analysis - centralized storage
+  ai_analysis: string | null;
+  analysis_date: string | null;
+  reviews: Review[];
+  review_stats: ReviewStats | null;
 }
 
 export interface AppFilters {
@@ -436,6 +441,126 @@ export async function getAppsStats(): Promise<{
     avgRating: Math.round(avgRating * 100) / 100,
     avgReviews: Math.round(avgReviews),
   };
+}
+
+// Get app from master database by app_store_id
+export async function getMasterApp(appStoreId: string): Promise<MasterApp | null> {
+  const { data, error } = await supabase
+    .from('apps')
+    .select('*')
+    .eq('app_store_id', appStoreId)
+    .single();
+
+  if (error) {
+    if (error.code !== 'PGRST116') {
+      console.error('Error fetching master app:', error);
+    }
+    return null;
+  }
+
+  return data;
+}
+
+// Save or update app analysis in master database
+export async function saveAppAnalysis(
+  appStoreId: string,
+  analysis: string,
+  reviews: Review[],
+  reviewStats: ReviewStats | null
+): Promise<MasterApp | null> {
+  const { data, error } = await supabase
+    .from('apps')
+    .update({
+      ai_analysis: analysis,
+      analysis_date: new Date().toISOString(),
+      reviews: reviews,
+      review_stats: reviewStats,
+      last_updated_at: new Date().toISOString(),
+    })
+    .eq('app_store_id', appStoreId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error saving app analysis:', error);
+    return null;
+  }
+
+  return data;
+}
+
+// Save reviews to master database (without analysis)
+export async function saveAppReviews(
+  appStoreId: string,
+  reviews: Review[],
+  reviewStats: ReviewStats | null
+): Promise<MasterApp | null> {
+  const { data, error } = await supabase
+    .from('apps')
+    .update({
+      reviews: reviews,
+      review_stats: reviewStats,
+      last_updated_at: new Date().toISOString(),
+    })
+    .eq('app_store_id', appStoreId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error saving app reviews:', error);
+    return null;
+  }
+
+  return data;
+}
+
+// Create app in master database if it doesn't exist
+export async function ensureAppInMasterDb(app: AppResult, country: string): Promise<MasterApp | null> {
+  // Check if app exists
+  const existing = await getMasterApp(app.id);
+  if (existing) {
+    return existing;
+  }
+
+  // Insert new app
+  const { data, error } = await supabase
+    .from('apps')
+    .insert({
+      app_store_id: app.id,
+      name: app.name,
+      bundle_id: app.bundle_id,
+      developer: app.developer,
+      developer_id: app.developer_id,
+      price: app.price,
+      currency: app.currency,
+      rating: app.rating,
+      rating_current_version: app.rating_current_version,
+      review_count: app.review_count,
+      review_count_current_version: app.review_count_current_version,
+      version: app.version,
+      release_date: app.release_date || null,
+      current_version_release_date: app.current_version_release_date || null,
+      min_os_version: app.min_os_version,
+      file_size_bytes: parseInt(app.file_size_bytes) || null,
+      content_rating: app.content_rating,
+      genres: app.genres,
+      primary_genre: app.primary_genre,
+      primary_genre_id: app.primary_genre_id,
+      url: app.url,
+      icon_url: app.icon_url,
+      description: app.description,
+      countries_found: [country],
+      categories_found: [app.primary_genre],
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error creating app in master db:', error);
+    return null;
+  }
+
+  return data;
 }
 
 // ============================================

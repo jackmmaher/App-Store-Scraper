@@ -10,6 +10,7 @@ import StarRating from './StarRating';
 import ChatPanel from './ChatPanel';
 import BlueprintTab from './blueprint/BlueprintTab';
 import type { AppProject, Review } from '@/lib/supabase';
+import { saveAppAnalysis, getMasterApp } from '@/lib/supabase';
 import { useKeywordRanking } from '@/hooks/useKeywordRanking';
 import { useKeywordExtraction } from '@/hooks/useKeywordExtraction';
 import { formatDateTime, formatNumber } from '@/lib/formatting';
@@ -48,6 +49,43 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
   useEffect(() => {
     fetchProject();
   }, [projectId]);
+
+  // Sync analysis from master database if newer
+  useEffect(() => {
+    const syncFromMasterDb = async () => {
+      if (!project?.app_store_id) return;
+
+      try {
+        const masterApp = await getMasterApp(project.app_store_id);
+        if (!masterApp?.ai_analysis) return;
+
+        // If master has analysis and project doesn't, or master is newer, use master's
+        const masterDate = masterApp.analysis_date ? new Date(masterApp.analysis_date) : null;
+        const projectDate = project.analysis_date ? new Date(project.analysis_date) : null;
+
+        const shouldSync = !project.ai_analysis ||
+          (masterDate && (!projectDate || masterDate > projectDate));
+
+        if (shouldSync) {
+          console.log('[MasterDB] Syncing newer analysis from master database');
+          // Update project with master's analysis
+          const updateRes = await fetch(`/api/projects?id=${projectId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ai_analysis: masterApp.ai_analysis }),
+          });
+          if (updateRes.ok) {
+            const updateData = await updateRes.json();
+            setProject(updateData.project);
+          }
+        }
+      } catch (err) {
+        console.error('Error syncing from master DB:', err);
+      }
+    };
+
+    syncFromMasterDb();
+  }, [project?.app_store_id, project?.ai_analysis, project?.analysis_date, projectId]);
 
   const fetchProject = async () => {
     setLoading(true);
@@ -139,7 +177,20 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
 
       const data = await res.json();
 
-      // Save the new analysis
+      // Save to master database (centralized storage)
+      try {
+        await saveAppAnalysis(
+          project.app_store_id,
+          data.analysis,
+          project.reviews,
+          project.review_stats
+        );
+        console.log('[MasterDB] Saved analysis for', project.app_name);
+      } catch (masterErr) {
+        console.error('Error saving to master DB:', masterErr);
+      }
+
+      // Also save to project record for backwards compatibility
       const updateRes = await fetch(`/api/projects?id=${projectId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },

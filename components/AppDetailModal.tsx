@@ -3,7 +3,8 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { AppResult, Review, ReviewStats } from '@/lib/supabase';
+import type { AppResult, Review, ReviewStats, MasterApp } from '@/lib/supabase';
+import { getMasterApp, saveAppAnalysis, saveAppReviews, ensureAppInMasterDb } from '@/lib/supabase';
 import { COUNTRY_CODES } from '@/lib/constants';
 import { useKeywordRanking } from '@/hooks/useKeywordRanking';
 import { useKeywordExtraction } from '@/hooks/useKeywordExtraction';
@@ -136,6 +137,10 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
   const [savingProject, setSavingProject] = useState(false);
   const [projectSaved, setProjectSaved] = useState(false);
   const [savedProjectId, setSavedProjectId] = useState<string | null>(null);
+
+  // Master database state
+  const [masterApp, setMasterApp] = useState<MasterApp | null>(null);
+  const [loadingMasterData, setLoadingMasterData] = useState(true);
 
   // Toggle filter enabled state
   const toggleFilter = (sort: FilterConfig['sort']) => {
@@ -340,6 +345,7 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
         setReviews(event.reviews as Review[]);
         setStats(event.stats as ReviewStats);
         setProgress(null);
+        setJustScraped(true); // Trigger save to master DB
         break;
     }
   }, []);
@@ -355,6 +361,60 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
       abortControllerRef.current?.abort();
     };
   }, []);
+
+  // Load existing data from master database on mount
+  useEffect(() => {
+    const loadMasterData = async () => {
+      setLoadingMasterData(true);
+      try {
+        const masterData = await getMasterApp(app.id);
+        if (masterData) {
+          setMasterApp(masterData);
+          // Load existing reviews if available
+          if (masterData.reviews && masterData.reviews.length > 0) {
+            setReviews(masterData.reviews);
+            setStats(masterData.review_stats);
+            setHasScraped(true);
+          }
+          // Load existing analysis if available
+          if (masterData.ai_analysis) {
+            setAnalysis(masterData.ai_analysis);
+          }
+        }
+      } catch (err) {
+        console.error('Error loading master app data:', err);
+      } finally {
+        setLoadingMasterData(false);
+      }
+    };
+
+    loadMasterData();
+  }, [app.id]);
+
+  // Track if we just finished scraping (to trigger save to master DB)
+  const [justScraped, setJustScraped] = useState(false);
+
+  // Save reviews to master database after scraping completes
+  useEffect(() => {
+    if (justScraped && reviews.length > 0 && !isScraping) {
+      const saveToMaster = async () => {
+        try {
+          // Ensure app exists in master DB first
+          await ensureAppInMasterDb(app, country);
+          // Save reviews
+          const updated = await saveAppReviews(app.id, reviews, stats);
+          if (updated) {
+            setMasterApp(updated);
+            console.log('[MasterDB] Saved reviews for', app.name);
+          }
+        } catch (err) {
+          console.error('Error saving reviews to master DB:', err);
+        }
+        setJustScraped(false);
+      };
+      saveToMaster();
+    }
+  }, [justScraped, reviews, stats, isScraping, app, country]);
 
   const analyzeReviews = async () => {
     if (reviews.length === 0) return;
@@ -402,6 +462,18 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
 
       const data = await res.json();
       setAnalysis(data.analysis);
+
+      // Save analysis to master database
+      try {
+        await ensureAppInMasterDb(app, country);
+        const updated = await saveAppAnalysis(app.id, data.analysis, reviews, stats);
+        if (updated) {
+          setMasterApp(updated);
+          console.log('[MasterDB] Saved analysis for', app.name);
+        }
+      } catch (saveErr) {
+        console.error('Error saving analysis to master DB:', saveErr);
+      }
     } catch (err) {
       setAnalysis(`Error: ${err instanceof Error ? err.message : 'Analysis failed'}`);
     } finally {
