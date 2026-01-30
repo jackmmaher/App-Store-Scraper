@@ -50,6 +50,15 @@ const SECTION_STAGES: Record<BlueprintSection, Stage[]> = {
     { label: 'Planning timeline and risks...', duration: 4 },
     { label: 'Final review and polish...', duration: 5 },
   ],
+  manifest: [
+    { label: 'Reading blueprint sections...', duration: 2 },
+    { label: 'Extracting app metadata...', duration: 3 },
+    { label: 'Compiling feature list...', duration: 4 },
+    { label: 'Mapping technology requirements...', duration: 4 },
+    { label: 'Generating file structure...', duration: 5 },
+    { label: 'Creating build configuration...', duration: 4 },
+    { label: 'Finalizing manifest...', duration: 3 },
+  ],
 };
 
 export default function BlueprintProgressTracker({
