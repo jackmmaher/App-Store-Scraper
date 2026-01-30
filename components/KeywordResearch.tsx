@@ -266,6 +266,51 @@ export default function KeywordResearch() {
     }
   };
 
+  // Fetch app detail from ranked app (score results)
+  const handleRankedAppClick = async (appId: string) => {
+    setLoadingApp(true);
+    try {
+      const res = await fetch(
+        `https://itunes.apple.com/lookup?id=${appId}&country=${filters.country}`
+      );
+      const data = await res.json();
+
+      if (data.results && data.results.length > 0) {
+        const app = data.results[0];
+        const appResult: AppResult = {
+          id: app.trackId.toString(),
+          name: app.trackName,
+          bundle_id: app.bundleId || '',
+          developer: app.artistName || '',
+          developer_id: app.artistId?.toString() || '',
+          price: app.price || 0,
+          currency: app.currency || 'USD',
+          rating: app.averageUserRating || 0,
+          rating_current_version: app.averageUserRatingForCurrentVersion || 0,
+          review_count: app.userRatingCount || 0,
+          review_count_current_version: app.userRatingCountForCurrentVersion || 0,
+          version: app.version || '',
+          release_date: app.releaseDate || '',
+          current_version_release_date: app.currentVersionReleaseDate || '',
+          min_os_version: app.minimumOsVersion || '',
+          file_size_bytes: app.fileSizeBytes || '0',
+          content_rating: app.contentAdvisoryRating || '',
+          genres: app.genres || [],
+          primary_genre: app.primaryGenreName || '',
+          primary_genre_id: app.primaryGenreId?.toString() || '',
+          url: app.trackViewUrl || '',
+          icon_url: app.artworkUrl100 || '',
+          description: app.description || '',
+        };
+        setSelectedApp(appResult);
+      }
+    } catch (error) {
+      console.error('Error fetching app details:', error);
+    } finally {
+      setLoadingApp(false);
+    }
+  };
+
   // Start discovery
   const handleDiscover = async () => {
     if (discoveryMethod === 'autosuggest' && !seedKeyword.trim()) {
@@ -631,18 +676,51 @@ export default function KeywordResearch() {
             </div>
             {scoreResult.top_10_apps.length > 0 && (
               <div className="mt-3">
-                <div className="text-sm font-medium text-gray-700 mb-2">Top 10 Competitors:</div>
-                <div className="flex flex-wrap gap-2">
-                  {scoreResult.top_10_apps.slice(0, 5).map((app) => (
-                    <span
+                <div className="text-sm font-medium text-gray-700 mb-2">
+                  Top {Math.min(5, scoreResult.top_10_apps.length)} Competitors:
+                  <span className="font-normal text-gray-500 ml-1">(click to view details)</span>
+                </div>
+                <div className="space-y-2">
+                  {scoreResult.top_10_apps.slice(0, 5).map((app, index) => (
+                    <button
                       key={app.id}
-                      className="inline-flex items-center px-2 py-1 bg-white border border-gray-200 rounded text-sm"
+                      onClick={() => handleRankedAppClick(app.id)}
+                      className="w-full flex items-center gap-3 px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm hover:bg-blue-50 hover:border-blue-300 transition-colors text-left"
                     >
-                      {app.name.slice(0, 30)}{app.name.length > 30 ? '...' : ''}
-                      <span className="ml-1 text-yellow-500">★{app.rating}</span>
-                    </span>
+                      <div className="flex-shrink-0 w-6 h-6 bg-gray-100 text-gray-600 rounded-full flex items-center justify-center font-medium text-xs">
+                        {index + 1}
+                      </div>
+                      {app.icon_url && (
+                        <img src={app.icon_url} alt="" className="w-8 h-8 rounded-lg flex-shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-gray-900 truncate">
+                          {app.name}
+                          {app.has_keyword_in_title && (
+                            <span className="ml-1.5 text-xs bg-green-100 text-green-700 px-1 py-0.5 rounded">
+                              In Title
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 text-gray-500 flex-shrink-0">
+                        <span className="text-yellow-500">★</span>
+                        <span>{app.rating.toFixed(1)}</span>
+                        <span className="text-gray-300">|</span>
+                        <span>{app.reviews.toLocaleString()} reviews</span>
+                      </div>
+                      <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
                   ))}
                 </div>
+                {loadingApp && (
+                  <div className="mt-2 flex items-center gap-2 text-sm text-gray-500">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                    Loading app details...
+                  </div>
+                )}
               </div>
             )}
           </div>
