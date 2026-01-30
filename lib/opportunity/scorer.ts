@@ -31,6 +31,7 @@ import {
 } from './dimension-calculators';
 import { fetchTrendData } from './trend-fetcher';
 import { getAutosuggestData } from '../keywords/autosuggest';
+import { upsertApps, AppResult } from '../supabase';
 
 // ============================================================================
 // iTunes Search API
@@ -49,6 +50,21 @@ interface iTunesApp {
   currency: string;
   description: string;
   formattedPrice: string;
+  // Additional fields for full app data
+  bundleId?: string;
+  artistName?: string;
+  artistId?: number;
+  averageUserRatingForCurrentVersion?: number;
+  userRatingCountForCurrentVersion?: number;
+  version?: string;
+  currentVersionReleaseDate?: string;
+  minimumOsVersion?: string;
+  fileSizeBytes?: string;
+  contentAdvisoryRating?: string;
+  genres?: string[];
+  primaryGenreName?: string;
+  primaryGenreId?: number;
+  trackViewUrl?: string;
   // IAP detection from app metadata
   isGameCenterEnabled?: boolean;
 }
@@ -161,6 +177,61 @@ function detectHasSubscription(description: string): boolean {
 }
 
 // ============================================================================
+// Apps Database Integration
+// ============================================================================
+
+/**
+ * Convert iTunes app to AppResult format for database storage
+ */
+function convertToAppResult(app: iTunesApp): AppResult {
+  return {
+    id: app.trackId.toString(),
+    name: app.trackName,
+    bundle_id: app.bundleId || '',
+    developer: app.artistName || '',
+    developer_id: app.artistId?.toString() || '',
+    price: app.price || 0,
+    currency: app.currency || 'USD',
+    rating: app.averageUserRating || 0,
+    rating_current_version: app.averageUserRatingForCurrentVersion || 0,
+    review_count: app.userRatingCount || 0,
+    review_count_current_version: app.userRatingCountForCurrentVersion || 0,
+    version: app.version || '',
+    release_date: app.releaseDate || '',
+    current_version_release_date: app.currentVersionReleaseDate || '',
+    min_os_version: app.minimumOsVersion || '',
+    file_size_bytes: app.fileSizeBytes || '0',
+    content_rating: app.contentAdvisoryRating || '',
+    genres: app.genres || [],
+    primary_genre: app.primaryGenreName || '',
+    primary_genre_id: app.primaryGenreId?.toString() || '',
+    url: app.trackViewUrl || '',
+    icon_url: app.artworkUrl100 || '',
+    description: app.description || '',
+  };
+}
+
+/**
+ * Save top apps to the apps database
+ */
+async function saveAppsToDatabase(
+  apps: iTunesApp[],
+  country: string,
+  category: string
+): Promise<void> {
+  if (apps.length === 0) return;
+
+  try {
+    const appResults = apps.map(convertToAppResult);
+    await upsertApps(appResults, country, category);
+    console.log(`Saved ${apps.length} apps to database for category: ${category}`);
+  } catch (error) {
+    console.error('Error saving apps to database:', error);
+    // Don't throw - this is a non-critical operation
+  }
+}
+
+// ============================================================================
 // Category Data Extraction
 // ============================================================================
 
@@ -221,6 +292,9 @@ export async function scoreOpportunity(
   const top10Apps: TopAppData[] = top10iTunes.map(app =>
     extractTopAppData(app, normalizedKeyword)
   );
+
+  // Save top 10 apps to the apps database for cross-referencing
+  await saveAppsToDatabase(top10iTunes, country, category);
 
   // Extract category data
   const categoryData = extractCategoryData(top10Apps);
