@@ -90,6 +90,9 @@ export async function POST(request: NextRequest) {
     const sectionsNeedingEnrichment = ['pareto', 'design_system'];
     let prompt: string;
 
+    // Get stored color palette for color-related sections
+    const colorPalette = blueprint.color_palette;
+
     if (section === 'manifest') {
       prompt = getBuildManifestPrompt(
         project.app_name,
@@ -110,7 +113,8 @@ export async function POST(request: NextRequest) {
           techStack: blueprint.tech_stack || undefined,
           prd: blueprint.prd_content || undefined,
         },
-        attachments
+        attachments,
+        colorPalette
       );
     } else {
       prompt = getBlueprintPrompt(
@@ -124,7 +128,8 @@ export async function POST(request: NextRequest) {
           techStack: blueprint.tech_stack || undefined,
           prd: blueprint.prd_content || undefined,
         },
-        attachments
+        attachments,
+        colorPalette
       );
     }
 

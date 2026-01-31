@@ -1608,6 +1608,13 @@ export async function clearGapChatMessages(sessionId: string): Promise<boolean> 
 export type BlueprintSectionStatus = 'pending' | 'generating' | 'completed' | 'error';
 export type BlueprintSection = 'pareto' | 'identity' | 'design_system' | 'wireframes' | 'tech_stack' | 'xcode_setup' | 'prd' | 'aso' | 'manifest';
 
+// Color palette stored with blueprint - auto-selected or user-chosen
+export interface BlueprintColorPalette {
+  colors: string[]; // Array of hex codes without #, e.g., ["264653", "2A9D8F", "E9C46A"]
+  mood?: string; // professional, playful, calm, bold, warm, cool
+  source_url?: string; // Coolors URL if from there
+}
+
 export interface ProjectBlueprint {
   id: string;
   project_id: string;
@@ -1656,6 +1663,10 @@ export interface ProjectBlueprint {
   build_manifest: string | null;
   build_manifest_status: BlueprintSectionStatus;
   build_manifest_generated_at: string | null;
+
+  // Color Palette - selected for this blueprint
+  color_palette: BlueprintColorPalette | null;
+  color_palette_source: 'auto' | 'user_selected' | 'coolors' | null;
 
   created_at: string;
   updated_at: string;
@@ -1804,6 +1815,31 @@ export async function updateBlueprintSectionStatus(
   }
 
   return true;
+}
+
+// Update blueprint color palette
+export async function updateBlueprintPalette(
+  id: string,
+  palette: BlueprintColorPalette,
+  source: 'auto' | 'user_selected' | 'coolors' = 'user_selected'
+): Promise<ProjectBlueprint | null> {
+  const { data, error } = await supabase
+    .from('project_blueprints')
+    .update({
+      color_palette: palette,
+      color_palette_source: source,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error updating blueprint palette:', error);
+    return null;
+  }
+
+  return data;
 }
 
 // Delete blueprint

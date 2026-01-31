@@ -1,5 +1,29 @@
-import { AppProject, BlueprintAttachment, Review } from './supabase';
+import { AppProject, BlueprintAttachment, Review, BlueprintColorPalette } from './supabase';
 import { getEnrichmentForBlueprint, getColorPalettesForDesignSystem } from '@/lib/crawl';
+
+// Format stored palette for prompt injection
+function formatStoredPalette(palette: BlueprintColorPalette | null | undefined): string {
+  if (!palette?.colors?.length) return '';
+
+  const colorsFormatted = palette.colors.map(c => `#${c.toUpperCase()}`).join(', ');
+  const moodStr = palette.mood ? ` (${palette.mood} mood)` : '';
+
+  return `
+## Your Selected Color Palette${moodStr}
+
+**IMPORTANT:** Use ONLY these colors for your design. They have been specifically selected for this app.
+
+Colors: ${colorsFormatted}
+
+- **Primary**: #${palette.colors[0]} - Use for main actions, brand elements
+- **Secondary**: #${palette.colors[1] || palette.colors[0]} - Use for secondary actions, accents
+- **Accent**: #${palette.colors[2] || palette.colors[1] || palette.colors[0]} - Use for highlights, links
+- **Background/Neutral**: #${palette.colors[3] || 'FFFFFF'} - Use for backgrounds, cards
+- **Contrast**: #${palette.colors[4] || palette.colors[0]} - Use for emphasis, contrast elements
+
+Do NOT invent new colors. Derive all shades from this palette.
+`;
+}
 
 // =============================================================================
 // DESIGN PHILOSOPHY PREAMBLE
@@ -407,15 +431,19 @@ Format your response in clean Markdown with proper headings, tables, and bullet 
 // Section 2: App Identity Prompt
 export function getAppIdentityPrompt(
   project: AppProject,
-  paretoStrategy: string
+  paretoStrategy: string,
+  colorPalette?: BlueprintColorPalette | null
 ): string {
   const notesSection = project.notes && project.notes.trim()
     ? `\n## Researcher's Notes\n${project.notes}\n`
     : '';
 
+  const paletteSection = formatStoredPalette(colorPalette);
+
   return `You are a brand strategist specializing in iOS app naming and visual identity. Based on the Pareto Strategy below, create a comprehensive App Identity specification document.
 
 ${DESIGN_PHILOSOPHY}
+${paletteSection}
 
 ${ANTI_SLOP_ICON_GUIDANCE}
 
@@ -529,16 +557,20 @@ export function getDesignSystemPrompt(
   project: AppProject,
   paretoStrategy: string,
   appIdentity: string,
-  curatedPalettes?: string // Optional: Curated palettes from Coolors
+  colorPalette?: BlueprintColorPalette | null,
+  curatedPalettes?: string // Optional: Curated palettes from Coolors (fallback if no stored palette)
 ): string {
   const notesSection = project.notes && project.notes.trim()
     ? `\n## Researcher's Notes\n${project.notes}\n`
     : '';
 
-  // Palette section - use provided palettes or empty
-  const paletteSection = curatedPalettes
-    ? `\n${curatedPalettes}\n\n**IMPORTANT:** You MUST select colors from the curated palettes above. Do NOT invent generic colors. These palettes are professionally curated and matched to this app's category.\n`
-    : '';
+  // Use stored palette if available, otherwise use curated options
+  let paletteSection = '';
+  if (colorPalette?.colors?.length) {
+    paletteSection = formatStoredPalette(colorPalette);
+  } else if (curatedPalettes) {
+    paletteSection = `\n${curatedPalettes}\n\n**IMPORTANT:** You MUST select colors from the curated palettes above. Do NOT invent generic colors. These palettes are professionally curated and matched to this app's category.\n`;
+  }
 
   return `You are a senior UI/UX designer specializing in native iOS design systems. Based on the Pareto Strategy and App Identity below, create a comprehensive Design System specification.
 
@@ -1837,41 +1869,45 @@ export async function getBlueprintPromptWithEnrichment(
     techStack?: string;
     prd?: string;
   },
-  attachments: BlueprintAttachment[] = []
+  attachments: BlueprintAttachment[] = [],
+  colorPalette?: BlueprintColorPalette | null
 ): Promise<string> {
   // Pareto needs review/reddit enrichment
   if (section === 'pareto') {
     return getParetoStrategyPromptWithEnrichment(project);
   }
 
-  // Design System needs curated color palettes
+  // Design System needs curated color palettes (if no stored palette)
   if (section === 'design_system') {
     if (!previousSections.paretoStrategy || !previousSections.appIdentity) {
       throw new Error('Pareto Strategy and App Identity are required before generating Design System');
     }
 
-    // Fetch curated palettes based on app category
-    let palettes = '';
-    try {
-      palettes = await getColorPalettesForDesignSystem(
-        project.app_primary_genre || undefined,
-        undefined, // Let the system choose mood based on category
-        5
-      );
-    } catch (error) {
-      console.error('Error fetching palettes for design system:', error);
+    // Only fetch curated palettes if no stored palette
+    let curatedPalettes = '';
+    if (!colorPalette?.colors?.length) {
+      try {
+        curatedPalettes = await getColorPalettesForDesignSystem(
+          project.app_primary_genre || undefined,
+          undefined, // Let the system choose mood based on category
+          5
+        );
+      } catch (error) {
+        console.error('Error fetching palettes for design system:', error);
+      }
     }
 
     return getDesignSystemPrompt(
       project,
       previousSections.paretoStrategy,
       previousSections.appIdentity,
-      palettes
+      colorPalette,
+      curatedPalettes
     );
   }
 
   // For all other sections, use the standard sync function
-  return getBlueprintPrompt(section, project, previousSections, attachments);
+  return getBlueprintPrompt(section, project, previousSections, attachments, colorPalette);
 }
 
 // Helper to get the appropriate prompt for a section
@@ -1886,7 +1922,8 @@ export function getBlueprintPrompt(
     techStack?: string;
     prd?: string;
   },
-  attachments: BlueprintAttachment[] = []
+  attachments: BlueprintAttachment[] = [],
+  colorPalette?: BlueprintColorPalette | null
 ): string {
   switch (section) {
     case 'pareto':
@@ -1895,12 +1932,12 @@ export function getBlueprintPrompt(
       if (!previousSections.paretoStrategy) {
         throw new Error('Pareto Strategy is required before generating App Identity');
       }
-      return getAppIdentityPrompt(project, previousSections.paretoStrategy);
+      return getAppIdentityPrompt(project, previousSections.paretoStrategy, colorPalette);
     case 'design_system':
       if (!previousSections.paretoStrategy || !previousSections.appIdentity) {
         throw new Error('Pareto Strategy and App Identity are required before generating Design System');
       }
-      return getDesignSystemPrompt(project, previousSections.paretoStrategy, previousSections.appIdentity);
+      return getDesignSystemPrompt(project, previousSections.paretoStrategy, previousSections.appIdentity, colorPalette);
     case 'wireframes':
       if (!previousSections.paretoStrategy || !previousSections.designSystem) {
         throw new Error('Pareto Strategy and Design System are required before generating UI Wireframes');

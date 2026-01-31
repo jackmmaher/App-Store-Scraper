@@ -1,11 +1,11 @@
 'use client';
 
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import type { BlueprintSection as BlueprintSectionType, BlueprintSectionStatus, BlueprintAttachment } from '@/lib/supabase';
+import type { BlueprintSection as BlueprintSectionType, BlueprintSectionStatus, BlueprintAttachment, BlueprintColorPalette } from '@/lib/supabase';
 import BlueprintGenerateButton from './BlueprintGenerateButton';
 import BlueprintImageUpload from './BlueprintImageUpload';
 import BlueprintProgressTracker from './BlueprintProgressTracker';
+import { BlueprintMarkdown } from './BlueprintMarkdown';
+import { PaletteSwatches } from './ColorSwatch';
 
 interface SectionMeta {
   title: string;
@@ -61,6 +61,9 @@ const SECTION_META: Record<BlueprintSectionType, SectionMeta> = {
   },
 };
 
+// Sections that use color palette
+const COLOR_SECTIONS: BlueprintSectionType[] = ['identity', 'design_system', 'wireframes', 'aso'];
+
 interface BlueprintSectionProps {
   section: BlueprintSectionType;
   content: string | null;
@@ -70,10 +73,12 @@ interface BlueprintSectionProps {
   streamedContent: string;
   statuses: Record<BlueprintSectionType, BlueprintSectionStatus>;
   attachments: BlueprintAttachment[];
+  colorPalette?: BlueprintColorPalette | null;
   onGenerate: () => void;
   onCancel: () => void;
   onUploadAttachment: (file: File, screenLabel?: string) => Promise<BlueprintAttachment | null>;
   onDeleteAttachment: (attachmentId: string) => Promise<boolean>;
+  onChangePalette?: () => void;
 }
 
 export default function BlueprintSection({
@@ -85,12 +90,15 @@ export default function BlueprintSection({
   streamedContent,
   statuses,
   attachments,
+  colorPalette,
   onGenerate,
   onCancel,
   onUploadAttachment,
   onDeleteAttachment,
+  onChangePalette,
 }: BlueprintSectionProps) {
   const meta = SECTION_META[section];
+  const showPalette = COLOR_SECTIONS.includes(section) && colorPalette?.colors?.length;
 
   // Check if dependencies are met
   const dependenciesMet = meta.dependencies.every((dep) => statuses[dep] === 'completed');
@@ -121,15 +129,31 @@ export default function BlueprintSection({
             {meta.description}
           </p>
         </div>
-        <BlueprintGenerateButton
-          section={section}
-          status={status}
-          isGenerating={isGenerating}
-          canGenerate={dependenciesMet && !isGenerating}
-          disabledReason={disabledReason}
-          onGenerate={onGenerate}
-          onCancel={onCancel}
-        />
+        <div className="flex items-center gap-2">
+          {/* Color Palette Display */}
+          {showPalette && colorPalette && (
+            <button
+              type="button"
+              onClick={onChangePalette}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+              title="Change color palette"
+            >
+              <PaletteSwatches colors={colorPalette.colors} size="sm" />
+              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+              </svg>
+            </button>
+          )}
+          <BlueprintGenerateButton
+            section={section}
+            status={status}
+            isGenerating={isGenerating}
+            canGenerate={dependenciesMet && !isGenerating}
+            disabledReason={disabledReason}
+            onGenerate={onGenerate}
+            onCancel={onCancel}
+          />
+        </div>
       </div>
 
       {/* Dependencies Warning */}
@@ -164,9 +188,7 @@ export default function BlueprintSection({
         ) : displayContent ? (
           <div>
             <div className="analysis-report bg-gray-50 dark:bg-gray-900 rounded-lg p-4 sm:p-6 max-h-[50vh] sm:max-h-[600px] overflow-y-auto overflow-x-auto">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {displayContent}
-              </ReactMarkdown>
+              <BlueprintMarkdown content={displayContent} />
             </div>
             {generatedAt && (
               <p className="text-xs text-gray-400 mt-2">

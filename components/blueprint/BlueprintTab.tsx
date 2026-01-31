@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import type { BlueprintSection as BlueprintSectionType, BlueprintAttachment, ProjectBlueprint } from '@/lib/supabase';
+import type { BlueprintSection as BlueprintSectionType, BlueprintAttachment, ProjectBlueprint, BlueprintColorPalette } from '@/lib/supabase';
+import { updateBlueprintPalette } from '@/lib/supabase';
 import { useBlueprint } from '@/hooks/useBlueprint';
 import { useBlueprintGenerate } from '@/hooks/useBlueprintGenerate';
 import BlueprintSectionNav from './BlueprintSectionNav';
 import BlueprintSectionComponent from './BlueprintSection';
 import BlueprintExportBar from './BlueprintExportBar';
+import PalettePickerModal from './PalettePickerModal';
 
 interface BlueprintTabProps {
   projectId: string;
@@ -14,6 +16,7 @@ interface BlueprintTabProps {
 
 export default function BlueprintTab({ projectId }: BlueprintTabProps) {
   const [activeSection, setActiveSection] = useState<BlueprintSectionType>('pareto');
+  const [paletteModalOpen, setPaletteModalOpen] = useState(false);
 
   const {
     blueprint,
@@ -60,6 +63,27 @@ export default function BlueprintTab({ projectId }: BlueprintTabProps) {
   const handleUpload = useCallback(async (file: File, screenLabel?: string): Promise<BlueprintAttachment | null> => {
     return uploadAttachment(activeSection, file, screenLabel);
   }, [activeSection, uploadAttachment]);
+
+  // Handle palette change
+  const handlePaletteChange = useCallback(async (
+    palette: BlueprintColorPalette,
+    sectionsToRegenerate: BlueprintSectionType[]
+  ) => {
+    if (!blueprint) return;
+
+    // Update palette in database
+    const updated = await updateBlueprintPalette(blueprint.id, palette, 'user_selected');
+    if (updated) {
+      setBlueprint(updated);
+
+      // Regenerate selected sections
+      for (const section of sectionsToRegenerate) {
+        // Small delay between regenerations
+        await new Promise(resolve => setTimeout(resolve, 500));
+        generateSection(section, blueprint.id);
+      }
+    }
+  }, [blueprint, setBlueprint, generateSection]);
 
   if (loading) {
     return (
@@ -147,6 +171,11 @@ export default function BlueprintTab({ projectId }: BlueprintTabProps) {
     manifest: blueprint.build_manifest_status,
   };
 
+  // Get completed sections for palette modal
+  const completedSections = Object.entries(statuses)
+    .filter(([, status]) => status === 'completed')
+    .map(([section]) => section as BlueprintSectionType);
+
   return (
     <div className="flex flex-col h-full">
       {/* Section Navigation */}
@@ -175,15 +204,26 @@ export default function BlueprintTab({ projectId }: BlueprintTabProps) {
           streamedContent={currentSection === activeSection ? streamedContent : ''}
           statuses={statuses}
           attachments={attachments}
+          colorPalette={blueprint.color_palette}
           onGenerate={handleGenerate}
           onCancel={cancelGeneration}
           onUploadAttachment={handleUpload}
           onDeleteAttachment={deleteAttachment}
+          onChangePalette={() => setPaletteModalOpen(true)}
         />
       </div>
 
       {/* Export Bar */}
       <BlueprintExportBar blueprint={blueprint} exportUrl={getExportUrl()} />
+
+      {/* Palette Picker Modal */}
+      <PalettePickerModal
+        isOpen={paletteModalOpen}
+        currentPalette={blueprint.color_palette}
+        onClose={() => setPaletteModalOpen(false)}
+        onSelect={handlePaletteChange}
+        completedSections={completedSections}
+      />
     </div>
   );
 }
