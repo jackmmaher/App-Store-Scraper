@@ -464,9 +464,13 @@ export async function failOpportunityJob(
 export async function createDailyRun(
   categories: string[]
 ): Promise<DailyRun | null> {
+  // Use UTC date string for consistent date handling across timezones
+  const todayUTC = new Date().toISOString().split('T')[0];
+
   const { data, error } = await supabase
     .from('opportunity_daily_runs')
     .insert({
+      run_date: todayUTC, // Explicitly set date to avoid timezone issues
       categories_processed: categories,
       status: 'running',
     })
@@ -517,6 +521,7 @@ export async function updateDailyRunProgress(
   progress: {
     total_keywords_discovered?: number;
     total_keywords_scored?: number;
+    status?: string;
   }
 ): Promise<boolean> {
   const { error } = await supabase
@@ -683,14 +688,15 @@ export async function getOpportunityStats(country: string = 'us'): Promise<Oppor
  * Get today's winner (most recently selected opportunity today)
  */
 export async function getTodaysWinner(country: string = 'us'): Promise<Opportunity | null> {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // Use UTC date string for consistent comparison across timezones
+  const todayUTC = new Date().toISOString().split('T')[0];
+  const startOfDayUTC = `${todayUTC}T00:00:00.000Z`;
 
   const { data, error } = await supabase
     .from('opportunities')
     .select('*')
     .eq('country', country)
-    .gte('selected_at', today.toISOString())
+    .gte('selected_at', startOfDayUTC)
     .order('opportunity_score', { ascending: false })
     .limit(1)
     .single();

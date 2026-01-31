@@ -880,6 +880,13 @@ export default function OpportunityDashboard() {
   // Discovery state
   const [discovering, setDiscovering] = useState(false);
   const [discoveryCategory, setDiscoveryCategory] = useState('productivity');
+  const [discoveryProgress, setDiscoveryProgress] = useState<{
+    stage: 'idle' | 'discovering' | 'scoring' | 'saving' | 'complete';
+    message: string;
+    keywordsFound?: number;
+    keywordsScored?: number;
+    totalToScore?: number;
+  }>({ stage: 'idle', message: '' });
   const [runningDailyRun, setRunningDailyRun] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -941,16 +948,40 @@ export default function OpportunityDashboard() {
 
   // Discover opportunities for a category
   const handleDiscover = async () => {
+    // Capture current values to avoid closure issues
+    const categoryToDiscover = discoveryCategory;
+    const countryToUse = filters.country;
+    const sortToUse = filters.sort;
+
     setDiscovering(true);
     setError(null);
     setSuccessMessage(null);
+    setDiscoveryProgress({
+      stage: 'discovering',
+      message: `Discovering keywords for ${CATEGORY_NAMES[categoryToDiscover] || categoryToDiscover}...`
+    });
+
     try {
+      // Stage 1: Start discovery - show we're working
+      setDiscoveryProgress({
+        stage: 'discovering',
+        message: 'Expanding seed keywords via autosuggest...'
+      });
+
+      // Small delay to show the UI update before the long fetch
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      setDiscoveryProgress({
+        stage: 'scoring',
+        message: 'Scoring discovered keywords (this may take 30-60 seconds)...'
+      });
+
       const res = await fetch('/api/opportunity/discover', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          category: discoveryCategory,
-          country: filters.country,
+          category: categoryToDiscover,
+          country: countryToUse,
           limit: 20,
         }),
       });
@@ -958,38 +989,53 @@ export default function OpportunityDashboard() {
       const data = await res.json();
 
       if (data.success) {
-        setSuccessMessage(`Found ${data.data.total_scored} opportunities in ${discoveryCategory}`);
-        // Set filter to discovered category and explicitly refresh data
-        setFilters(f => ({ ...f, category: discoveryCategory }));
-        // Wait a tick for state to update, then force refresh
-        setTimeout(async () => {
-          await fetchStats();
-          // Manually fetch with discovered category to ensure fresh data
-          setLoading(true);
-          try {
-            const params = new URLSearchParams();
-            params.set('country', filters.country);
-            params.set('sort', filters.sort);
-            params.set('sort_dir', 'desc');
-            params.set('category', discoveryCategory);
-            params.set('limit', '50');
-            params.set('_t', Date.now().toString()); // Cache bust
+        // Stage 3: Saving/Complete
+        setDiscoveryProgress({
+          stage: 'complete',
+          message: `Found ${data.data.total_scored} opportunities!`,
+          keywordsScored: data.data.total_scored,
+        });
 
-            const res = await fetch(`/api/opportunity/search?${params.toString()}`);
-            const result = await res.json();
+        setSuccessMessage(`✓ Discovered ${data.data.total_scored} opportunities in ${CATEGORY_NAMES[categoryToDiscover] || categoryToDiscover}`);
 
-            if (result.success) {
-              setOpportunities(result.data.opportunities || []);
-            }
-          } finally {
-            setLoading(false);
+        // Update filter to show discovered category
+        setFilters(f => ({ ...f, category: categoryToDiscover }));
+
+        // Refresh stats
+        await fetchStats();
+
+        // Fetch opportunities for the discovered category
+        setLoading(true);
+        try {
+          const params = new URLSearchParams();
+          params.set('country', countryToUse);
+          params.set('sort', sortToUse);
+          params.set('sort_dir', 'desc');
+          params.set('category', categoryToDiscover);
+          params.set('limit', '50');
+          params.set('_t', Date.now().toString()); // Cache bust
+
+          const searchRes = await fetch(`/api/opportunity/search?${params.toString()}`);
+          const result = await searchRes.json();
+
+          if (result.success) {
+            setOpportunities(result.data.opportunities || []);
           }
-        }, 100);
+        } finally {
+          setLoading(false);
+        }
+
+        // Keep the complete state visible for a moment, then reset
+        setTimeout(() => {
+          setDiscoveryProgress({ stage: 'idle', message: '' });
+        }, 3000);
       } else {
+        setDiscoveryProgress({ stage: 'idle', message: '' });
         setError(data.error || 'Discovery failed');
         console.error('Discovery failed:', data.error);
       }
     } catch (err) {
+      setDiscoveryProgress({ stage: 'idle', message: '' });
       const message = err instanceof Error ? err.message : 'Network error';
       setError(`Error: ${message}`);
       console.error('Error discovering opportunities:', err);
@@ -1015,22 +1061,28 @@ export default function OpportunityDashboard() {
       const data = await res.json();
 
       if (data.success) {
-        if (data.data.winner) {
+        if (data.data.status === 'already_completed') {
+          // Already completed today - show appropriate message
+          if (data.data.winner) {
+            setSuccessMessage(`Already completed today! Winner: "${data.data.winner.keyword}" (${data.data.winner.opportunity_score})`);
+          } else {
+            setSuccessMessage('Daily run already completed today');
+          }
+        } else if (data.data.winner) {
+          // New run completed with winner
           setSuccessMessage(`Daily run complete! Winner: "${data.data.winner.keyword}" (${data.data.winner.opportunity_score})`);
-        } else if (data.data.status === 'already_completed') {
-          setSuccessMessage('Daily run already completed today');
         } else {
+          // Scored opportunities but no clear winner
           setSuccessMessage(`Scored ${data.data.total_scored} opportunities`);
         }
-        // Clear category filter to show all results and force refresh
+        // Clear category filter to show all results and refresh data
         setFilters(f => ({ ...f, category: '' }));
-        setTimeout(async () => {
-          await fetchStats();
-          await fetchOpportunities();
-        }, 100);
+        // Refresh data after a brief delay to allow state updates
+        await fetchStats();
+        await fetchOpportunities();
       } else {
         setError(data.error || 'Daily run failed');
-        console.error('Daily run failed:', data.error);
+        console.error('Daily run failed:', data.error, data);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Network error';
@@ -1298,7 +1350,8 @@ export default function OpportunityDashboard() {
                 <select
                   value={discoveryCategory}
                   onChange={(e) => setDiscoveryCategory(e.target.value)}
-                  className="w-full border rounded px-3 py-2"
+                  disabled={discovering}
+                  className="w-full border rounded px-3 py-2 disabled:bg-gray-100"
                 >
                   {Object.entries(CATEGORY_NAMES)
                     .filter(([key]) => !key.includes('games'))
@@ -1309,12 +1362,69 @@ export default function OpportunityDashboard() {
                     ))}
                 </select>
               </div>
+
+              {/* Progress indicator - show during discovery or when complete */}
+              {(discovering || discoveryProgress.stage === 'complete') && discoveryProgress.stage !== 'idle' && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    {discoveryProgress.stage === 'complete' ? (
+                      <div className="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center">
+                        <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                    ) : (
+                      <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                    )}
+                    <span className={`text-sm font-medium ${discoveryProgress.stage === 'complete' ? 'text-green-700' : 'text-blue-700'}`}>
+                      {discoveryProgress.stage === 'discovering' && 'Step 1/3: Discovering'}
+                      {discoveryProgress.stage === 'scoring' && 'Step 2/3: Scoring'}
+                      {discoveryProgress.stage === 'saving' && 'Step 3/3: Saving'}
+                      {discoveryProgress.stage === 'complete' && 'Complete!'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-600">{discoveryProgress.message}</p>
+                  {discoveryProgress.keywordsScored && (
+                    <p className="text-xs text-green-600 mt-1 font-medium">
+                      {discoveryProgress.keywordsScored} opportunities scored
+                    </p>
+                  )}
+
+                  {/* Progress bar */}
+                  {discoveryProgress.stage !== 'complete' && (
+                    <div className="mt-2 h-1.5 bg-blue-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                        style={{
+                          width: discoveryProgress.stage === 'discovering' ? '33%' :
+                                 discoveryProgress.stage === 'scoring' ? '66%' :
+                                 discoveryProgress.stage === 'saving' ? '90%' : '100%'
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
               <button
                 onClick={handleDiscover}
                 disabled={discovering || runningDailyRun}
-                className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                className={`w-full px-4 py-2 rounded-lg transition-colors ${
+                  discoveryProgress.stage === 'complete'
+                    ? 'bg-green-600 text-white'
+                    : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50'
+                }`}
               >
-                {discovering ? 'Scoring keywords... (30-60 sec)' : 'Discover Opportunities'}
+                {discovering ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Working...
+                  </span>
+                ) : discoveryProgress.stage === 'complete' ? (
+                  'Discover More'
+                ) : (
+                  'Discover Opportunities'
+                )}
               </button>
             </div>
           </div>

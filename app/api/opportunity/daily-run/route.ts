@@ -125,6 +125,7 @@ export async function POST(request: NextRequest) {
       await updateDailyRunProgress(existingRun.id, {
         total_keywords_discovered: 0,
         total_keywords_scored: 0,
+        status: 'running', // Reset status to running for retry
       });
     }
 
@@ -243,25 +244,37 @@ export async function POST(request: NextRequest) {
 
     // Mark winner as selected in database
     const savedWinner = await upsertOpportunity(winner);
-    if (savedWinner) {
-      await selectOpportunity(savedWinner.id);
-
-      // Complete the daily run
-      await completeDailyRun(
-        dailyRun.id,
-        {
-          opportunity_id: savedWinner.id,
-          keyword: winner.keyword,
-          category: winner.category,
-          score: winner.opportunity_score,
+    if (!savedWinner) {
+      // Failed to save winner - mark run as failed
+      await failDailyRun(dailyRun.id, 'Failed to save winner opportunity to database');
+      return NextResponse.json({
+        success: false,
+        error: 'Failed to save winner opportunity',
+        data: {
+          run_id: dailyRun.id,
+          categories_processed: config.categories,
+          total_scored: allScoredOpportunities.length,
         },
-        false // Blueprint trigger will be handled separately
-      );
-
-      // TODO: Trigger blueprint generation for winner
-      // This would integrate with the existing blueprint generation system
-      // await triggerBlueprintGeneration(savedWinner.id);
+      });
     }
+
+    await selectOpportunity(savedWinner.id);
+
+    // Complete the daily run
+    await completeDailyRun(
+      dailyRun.id,
+      {
+        opportunity_id: savedWinner.id,
+        keyword: winner.keyword,
+        category: winner.category,
+        score: winner.opportunity_score,
+      },
+      false // Blueprint trigger will be handled separately
+    );
+
+    // TODO: Trigger blueprint generation for winner
+    // This would integrate with the existing blueprint generation system
+    // await triggerBlueprintGeneration(savedWinner.id);
 
     return NextResponse.json({
       success: true,
