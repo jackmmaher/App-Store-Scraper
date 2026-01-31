@@ -33,6 +33,7 @@ export default function Header() {
 
   const toolsItems = [
     { href: '/search', label: 'New Search' },
+    { href: '/app-ideas', label: 'App Ideas' },
     { href: '/gap-analysis', label: 'Gap Analysis' },
     { href: '/keywords', label: 'Keywords' },
     { href: '/opportunities', label: 'Opportunities' },
