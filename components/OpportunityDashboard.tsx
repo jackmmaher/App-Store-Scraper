@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Opportunity,
   OpportunityStats,
@@ -13,32 +13,149 @@ import { CATEGORY_NAMES } from '@/lib/constants';
 import { getScoreColor } from '@/lib/opportunity/constants';
 
 // ============================================================================
-// Tooltip Component
+// Tooltip Component (Fixed position to escape overflow constraints)
 // ============================================================================
 
-function Tooltip({ children, content }: { children: React.ReactNode; content: React.ReactNode }) {
+function Tooltip({ children, content, position = 'top' }: {
+  children: React.ReactNode;
+  content: React.ReactNode;
+  position?: 'top' | 'bottom';
+}) {
   const [show, setShow] = useState(false);
+  const [coords, setCoords] = useState({ x: 0, y: 0 });
+  const triggerRef = useRef<HTMLSpanElement>(null);
+
+  const handleMouseEnter = () => {
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setCoords({
+        x: rect.left + rect.width / 2,
+        y: position === 'bottom' ? rect.bottom : rect.top,
+      });
+    }
+    setShow(true);
+  };
 
   return (
     <span
+      ref={triggerRef}
       className="relative inline-flex items-center cursor-help"
-      onMouseEnter={() => setShow(true)}
+      onMouseEnter={handleMouseEnter}
       onMouseLeave={() => setShow(false)}
     >
       {children}
       {show && (
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50">
+        <div
+          className="fixed z-[100]"
+          style={{
+            left: `${coords.x}px`,
+            top: position === 'bottom' ? `${coords.y + 8}px` : `${coords.y - 8}px`,
+            transform: position === 'bottom'
+              ? 'translateX(-50%)'
+              : 'translateX(-50%) translateY(-100%)',
+          }}
+        >
           <div className="bg-gray-900 text-white text-xs rounded-lg px-3 py-2 w-72 shadow-lg">
             {content}
           </div>
-          <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1">
-            <div className="border-4 border-transparent border-t-gray-900" />
+          {/* Arrow */}
+          <div
+            className="absolute left-1/2 -translate-x-1/2"
+            style={position === 'bottom' ? { top: '-6px' } : { bottom: '-6px' }}
+          >
+            <div className={`border-4 border-transparent ${
+              position === 'bottom' ? 'border-b-gray-900' : 'border-t-gray-900'
+            }`} />
           </div>
         </div>
       )}
     </span>
   );
 }
+
+// ============================================================================
+// Metric Tooltips for Opportunity Dashboard
+// ============================================================================
+
+const OPPORTUNITY_TOOLTIPS = {
+  updated: (
+    <div className="space-y-1">
+      <div className="font-semibold">Last Updated</div>
+      <div>When this competitor app was last updated on the App Store.</div>
+      <div className="pt-1 text-gray-300 text-[10px]">
+        <div className="font-medium">Why it matters:</div>
+        <div>• Apps not updated in 1+ years = stale, opportunity to compete</div>
+        <div>• STALE badge = app hasn&apos;t been updated in 365+ days</div>
+        <div>• Recent updates = active developer, harder competition</div>
+      </div>
+    </div>
+  ),
+  rev_mo: (
+    <div className="space-y-1">
+      <div className="font-semibold">Monthly Revenue Estimate</div>
+      <div>Estimated monthly revenue based on downloads and monetization model.</div>
+      <div className="pt-1 text-gray-300 text-[10px]">
+        <div className="font-medium">How it&apos;s calculated:</div>
+        <div>• Downloads = Reviews × 70 (industry benchmark)</div>
+        <div>• Monthly downloads = ~10% of total</div>
+        <div>• Subscription: 2-5% convert at $5-10/mo</div>
+        <div>• Paid: Direct price × downloads × 70-85%</div>
+        <div>• Freemium: 3-8% convert at $2-5 ARPU</div>
+      </div>
+    </div>
+  ),
+  pain_points: (
+    <div className="space-y-1">
+      <div className="font-semibold">Pain Point Signals</div>
+      <div>Reddit posts where users express frustration or desire for an app.</div>
+      <div className="pt-1 text-gray-300 text-[10px]">
+        <div className="font-medium">Signal types detected:</div>
+        <div>• &quot;Wish&quot; - &quot;I wish there was an app for...&quot;</div>
+        <div>• &quot;Looking for&quot; - &quot;Looking for an app that...&quot;</div>
+        <div>• &quot;Frustration&quot; - complaints about existing apps</div>
+        <div>• &quot;Recommendation request&quot; - asking for app suggestions</div>
+      </div>
+    </div>
+  ),
+  review_sentiment: (
+    <div className="space-y-1">
+      <div className="font-semibold">Competitor Review Analysis</div>
+      <div>Themes from 1-2★ reviews of top competing apps.</div>
+      <div className="pt-1 text-gray-300 text-[10px]">
+        <div className="font-medium">Complaint themes detected:</div>
+        <div>• High severity: Crashes, Performance, Sync, Updates</div>
+        <div>• Medium: Missing features, UX, Pricing, Ads</div>
+        <div>• Each theme = opportunity to differentiate</div>
+      </div>
+    </div>
+  ),
+  market_estimates: (
+    <div className="space-y-1">
+      <div className="font-semibold">Market Size Estimate</div>
+      <div>Total addressable market based on top 10 competitors.</div>
+      <div className="pt-1 text-gray-300 text-[10px]">
+        <div className="font-medium">Market tiers:</div>
+        <div>• Tiny: &lt;$1K/mo combined</div>
+        <div>• Small: $1K-10K/mo</div>
+        <div>• Medium: $10K-100K/mo</div>
+        <div>• Large: $100K-1M/mo</div>
+        <div>• Massive: &gt;$1M/mo</div>
+      </div>
+    </div>
+  ),
+  trend_data: (
+    <div className="space-y-1">
+      <div className="font-semibold">Trend Data Source</div>
+      <div>Where the search trend data comes from.</div>
+      <div className="pt-1 text-gray-300 text-[10px]">
+        <div className="font-medium">Sources:</div>
+        <div>• Real Data: Live Google Trends via SerpAPI</div>
+        <div>• Estimated: Simulated based on keyword characteristics</div>
+        <div className="pt-1">Newly scored keywords use real data if SerpAPI is configured.</div>
+      </div>
+    </div>
+  ),
+};
 
 // ============================================================================
 // Trend Chart Component (Simple SVG line chart)
@@ -142,7 +259,10 @@ function MarketEstimatesCard({
   return (
     <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-4">
       <h4 className="font-semibold text-green-900 mb-2 flex items-center gap-2">
-        <span>💰</span> Market Size Estimate
+        <span>💰</span>
+        <Tooltip content={OPPORTUNITY_TOOLTIPS.market_estimates} position="bottom">
+          <span className="border-b border-dashed border-green-600">Market Size Estimate</span>
+        </Tooltip>
       </h4>
       <div className="grid grid-cols-3 gap-3 text-center">
         <div>
@@ -183,7 +303,10 @@ function PainPointsCard({
     return (
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
         <h4 className="font-semibold text-gray-700 mb-1 flex items-center gap-2">
-          <span>🔍</span> Pain Point Signals
+          <span>🔍</span>
+          <Tooltip content={OPPORTUNITY_TOOLTIPS.pain_points} position="bottom">
+            <span className="border-b border-dashed border-gray-400">Pain Point Signals</span>
+          </Tooltip>
         </h4>
         <p className="text-sm text-gray-500">No pain point signals found on Reddit for this keyword.</p>
       </div>
@@ -197,7 +320,10 @@ function PainPointsCard({
     <div className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-lg p-4">
       <div className="flex justify-between items-start mb-2">
         <h4 className="font-semibold text-orange-900 flex items-center gap-2">
-          <span>🔥</span> Pain Point Signals
+          <span>🔥</span>
+          <Tooltip content={OPPORTUNITY_TOOLTIPS.pain_points} position="bottom">
+            <span className="border-b border-dashed border-gray-400">Pain Point Signals</span>
+          </Tooltip>
           <span className={`text-sm font-normal ${strengthColor}`}>
             ({painPoints.signal_strength}/100 strength)
           </span>
@@ -273,7 +399,10 @@ function ReviewSentimentCard({
     return (
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
         <h4 className="font-semibold text-gray-700 mb-1 flex items-center gap-2">
-          <span>⭐</span> Competitor Reviews Analysis
+          <span>⭐</span>
+          <Tooltip content={OPPORTUNITY_TOOLTIPS.review_sentiment} position="bottom">
+            <span className="border-b border-dashed border-gray-400">Competitor Reviews Analysis</span>
+          </Tooltip>
         </h4>
         <p className="text-sm text-gray-500">No critical reviews analyzed. Competitors may have strong ratings.</p>
       </div>
@@ -288,7 +417,10 @@ function ReviewSentimentCard({
     <div className="bg-gradient-to-r from-red-50 to-rose-50 border border-red-200 rounded-lg p-4">
       <div className="flex justify-between items-start mb-2">
         <h4 className="font-semibold text-red-900 flex items-center gap-2">
-          <span>⭐</span> Competitor Review Analysis
+          <span>⭐</span>
+          <Tooltip content={OPPORTUNITY_TOOLTIPS.review_sentiment} position="bottom">
+            <span className="border-b border-dashed border-gray-400">Competitor Review Analysis</span>
+          </Tooltip>
           <span className={`text-sm font-normal ${severityColor}`}>
             ({reviewSentiment.total_critical_reviews} critical reviews)
           </span>
@@ -1058,9 +1190,36 @@ function TopAppsTable({
             <th className="text-left py-2 px-2 font-medium text-gray-600">App</th>
             <th className="text-center py-2 px-2 font-medium text-gray-600">Rating</th>
             <th className="text-center py-2 px-2 font-medium text-gray-600">Reviews</th>
-            <th className="text-center py-2 px-2 font-medium text-gray-600" title="Days since last update">Updated</th>
-            <th className="text-center py-2 px-2 font-medium text-gray-600" title="Estimated monthly revenue">Rev/mo</th>
-            <th className="text-center py-2 px-2 font-medium text-gray-600">Signals</th>
+            <th className="text-center py-2 px-2 font-medium text-gray-600">
+              <Tooltip content={OPPORTUNITY_TOOLTIPS.updated} position="bottom">
+                <span className="border-b border-dashed border-gray-400">Updated</span>
+              </Tooltip>
+            </th>
+            <th className="text-center py-2 px-2 font-medium text-gray-600">
+              <Tooltip content={OPPORTUNITY_TOOLTIPS.rev_mo} position="bottom">
+                <span className="border-b border-dashed border-gray-400">Rev/mo</span>
+              </Tooltip>
+            </th>
+            <th className="text-center py-2 px-2 font-medium text-gray-600">
+              <Tooltip content={(
+                <div className="space-y-1">
+                  <div className="font-semibold">Competitive Signals</div>
+                  <div>Quick indicators of competitive advantage or weakness.</div>
+                  <div className="pt-1 text-gray-300 text-[10px]">
+                    <div className="font-medium">Signal meanings:</div>
+                    <div>• 🎯 = Keyword in app title (harder to outrank)</div>
+                    <div>• 💰 = Has in-app purchases (monetization proven)</div>
+                    <div>• 🔄 = Has subscriptions (recurring revenue)</div>
+                    <div>• 📍 = Uses GPS/location</div>
+                    <div>• 📷 = Uses camera</div>
+                    <div>• ⌚ = Apple Watch support</div>
+                    <div>• STALE = Not updated in 1+ year (opportunity!)</div>
+                  </div>
+                </div>
+              )} position="bottom">
+                <span className="border-b border-dashed border-gray-400">Signals</span>
+              </Tooltip>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -1353,13 +1512,15 @@ function OpportunityDetailModal({
             <div className="mb-4 flex items-center gap-2 text-xs text-gray-500">
               <span>Data sources:</span>
               <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded">iTunes API</span>
-              <span className={`px-2 py-0.5 rounded ${
-                opportunity.raw_data.google_trends.source === 'serpapi'
-                  ? 'bg-green-100 text-green-700'
-                  : 'bg-yellow-100 text-yellow-700'
-              }`}>
-                Trends: {opportunity.raw_data.google_trends.source === 'serpapi' ? 'Real' : 'Estimated'}
-              </span>
+              <Tooltip content={OPPORTUNITY_TOOLTIPS.trend_data} position="bottom">
+                <span className={`px-2 py-0.5 rounded cursor-help ${
+                  opportunity.raw_data.google_trends.source === 'serpapi'
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-yellow-100 text-yellow-700'
+                }`}>
+                  Trends: {opportunity.raw_data.google_trends.source === 'serpapi' ? 'Real' : 'Estimated'}
+                </span>
+              </Tooltip>
               {opportunity.raw_data.reddit && (
                 <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded">Reddit API</span>
               )}
@@ -1640,6 +1801,7 @@ export default function OpportunityDashboard() {
 
   // Discovery state
   const [discovering, setDiscovering] = useState(false);
+  const [runningDailyRun, setRunningDailyRun] = useState(false);
   const [discoveryCategory, setDiscoveryCategory] = useState('productivity');
   const [discoveryProgress, setDiscoveryProgress] = useState<{
     stage: 'idle' | 'discovering' | 'scoring' | 'saving' | 'complete';
@@ -1647,16 +1809,6 @@ export default function OpportunityDashboard() {
     keywordsFound?: number;
     keywordsScored?: number;
     totalToScore?: number;
-  }>({ stage: 'idle', message: '' });
-  const [runningDailyRun, setRunningDailyRun] = useState(false);
-  const [dailyRunProgress, setDailyRunProgress] = useState<{
-    stage: 'idle' | 'initializing' | 'discovering' | 'scoring' | 'selecting' | 'complete' | 'error';
-    message: string;
-    categoriesProcessed?: number;
-    totalCategories?: number;
-    keywordsDiscovered?: number;
-    keywordsScored?: number;
-    winner?: { keyword: string; score: number };
   }>({ stage: 'idle', message: '' });
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -1880,178 +2032,6 @@ export default function OpportunityDashboard() {
     }
   };
 
-  // Run daily autonomous discovery
-  const handleDailyRun = async () => {
-    const countryToUse = filters.country;
-    setRunningDailyRun(true);
-    setError(null);
-    setSuccessMessage(null);
-    setDailyRunProgress({
-      stage: 'initializing',
-      message: 'Starting daily discovery run...',
-    });
-
-    // Start polling for progress
-    let pollInterval: NodeJS.Timeout | null = null;
-    let lastKeywordsScored = 0;
-
-    const pollProgress = async () => {
-      try {
-        const res = await fetch(`/api/opportunity/daily-run?_t=${Date.now()}`);
-        if (!res.ok) return; // Silently skip if polling fails
-        const data = await res.json();
-
-        if (data.success && data.data) {
-          const run = data.data;
-
-          // Update progress based on current state
-          if (run.status === 'running') {
-            const keywordsDiscovered = run.total_keywords_discovered || 0;
-            const keywordsScored = run.total_keywords_scored || 0;
-
-            if (keywordsScored > lastKeywordsScored) {
-              lastKeywordsScored = keywordsScored;
-            }
-
-            if (keywordsDiscovered > 0 && keywordsScored === 0) {
-              setDailyRunProgress({
-                stage: 'discovering',
-                message: `Discovered ${keywordsDiscovered} keywords across categories...`,
-                keywordsDiscovered,
-              });
-            } else if (keywordsScored > 0) {
-              setDailyRunProgress({
-                stage: 'scoring',
-                message: `Scoring opportunities (${keywordsScored} scored so far)...`,
-                keywordsDiscovered,
-                keywordsScored,
-              });
-            }
-          }
-        }
-      } catch (e) {
-        // Polling errors are non-fatal
-        console.log('Progress poll error:', e);
-      }
-    };
-
-    // Start polling every 2 seconds
-    pollInterval = setInterval(pollProgress, 2000);
-
-    try {
-      // Small delay to show initializing state
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      setDailyRunProgress({
-        stage: 'discovering',
-        message: 'Expanding seed keywords across categories...',
-      });
-
-      const res = await fetch('/api/opportunity/daily-run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          country: countryToUse,
-        }),
-      });
-
-      // Stop polling
-      if (pollInterval) {
-        clearInterval(pollInterval);
-        pollInterval = null;
-      }
-
-      // Check if response is OK before parsing JSON
-      if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(`Server error (${res.status}): ${errorText.substring(0, 200)}`);
-      }
-
-      const data = await res.json();
-
-      if (data.success) {
-        if (data.data.status === 'already_completed') {
-          // Already completed today
-          setDailyRunProgress({
-            stage: 'complete',
-            message: 'Daily run already completed today',
-            winner: data.data.winner ? {
-              keyword: data.data.winner.keyword,
-              score: data.data.winner.opportunity_score,
-            } : undefined,
-          });
-          if (data.data.winner) {
-            setSuccessMessage(`Already completed today! Winner: "${data.data.winner.keyword}" (${data.data.winner.opportunity_score})`);
-          } else {
-            setSuccessMessage('Daily run already completed today');
-          }
-        } else if (data.data.winner) {
-          // New run completed with winner
-          setDailyRunProgress({
-            stage: 'complete',
-            message: `Winner: "${data.data.winner.keyword}"`,
-            keywordsScored: data.data.total_scored,
-            winner: {
-              keyword: data.data.winner.keyword,
-              score: data.data.winner.opportunity_score,
-            },
-          });
-          setSuccessMessage(`Daily run complete! Winner: "${data.data.winner.keyword}" (${data.data.winner.opportunity_score})`);
-        } else {
-          // Scored opportunities but no clear winner
-          setDailyRunProgress({
-            stage: 'complete',
-            message: `Scored ${data.data.total_scored} opportunities`,
-            keywordsScored: data.data.total_scored,
-          });
-          setSuccessMessage(`Scored ${data.data.total_scored} opportunities`);
-        }
-        // Clear category filter to show all results and refresh data
-        setFilters(f => ({ ...f, category: '' }));
-        // Refresh data after a brief delay to allow state updates
-        await fetchStats();
-        await fetchOpportunities();
-
-        // Keep the complete state visible for a moment, then reset
-        setTimeout(() => {
-          setDailyRunProgress({ stage: 'idle', message: '' });
-        }, 5000);
-      } else {
-        setDailyRunProgress({
-          stage: 'error',
-          message: data.error || 'Daily run failed',
-        });
-        setError(data.error || 'Daily run failed');
-        console.error('Daily run failed:', data.error, data);
-
-        // Reset progress after showing error
-        setTimeout(() => {
-          setDailyRunProgress({ stage: 'idle', message: '' });
-        }, 5000);
-      }
-    } catch (err) {
-      // Stop polling
-      if (pollInterval) {
-        clearInterval(pollInterval);
-      }
-
-      const message = err instanceof Error ? err.message : 'Network error';
-      setDailyRunProgress({
-        stage: 'error',
-        message: `Error: ${message}`,
-      });
-      setError(`Error: ${message}`);
-      console.error('Error running daily discovery:', err);
-
-      // Reset progress after showing error
-      setTimeout(() => {
-        setDailyRunProgress({ stage: 'idle', message: '' });
-      }, 5000);
-    } finally {
-      setRunningDailyRun(false);
-    }
-  };
-
   // Router for navigation
   const router = useRouter();
 
@@ -2218,111 +2198,14 @@ export default function OpportunityDashboard() {
           <h1 className="text-2xl font-bold text-gray-900">Opportunity Ranker</h1>
           <p className="text-gray-500">Discover and rank app opportunities autonomously</p>
         </div>
-        <div className="flex flex-col items-end gap-2">
-          <div className="flex gap-3">
-            <button
-              onClick={handleExportAllCSV}
-              disabled={opportunities.length === 0}
-              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
-              title="Export all visible opportunities to CSV"
-            >
-              Export All
-            </button>
-            <button
-              onClick={handleDailyRun}
-              disabled={runningDailyRun || discovering}
-              className={`px-4 py-2 rounded-lg transition-colors ${
-                dailyRunProgress.stage === 'complete'
-                  ? 'bg-green-600 text-white'
-                  : dailyRunProgress.stage === 'error'
-                  ? 'bg-red-600 text-white'
-                  : 'bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50'
-              }`}
-            >
-              {runningDailyRun ? (
-                <span className="flex items-center gap-2">
-                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Running...
-                </span>
-              ) : dailyRunProgress.stage === 'complete' ? (
-                'Run Again'
-              ) : (
-                'Run Daily Discovery'
-              )}
-            </button>
-          </div>
-
-          {/* Daily Run Progress Indicator */}
-          {dailyRunProgress.stage !== 'idle' && (
-            <div className={`w-80 rounded-lg p-3 ${
-              dailyRunProgress.stage === 'complete' ? 'bg-green-50 border border-green-200' :
-              dailyRunProgress.stage === 'error' ? 'bg-red-50 border border-red-200' :
-              'bg-purple-50 border border-purple-200'
-            }`}>
-              <div className="flex items-center gap-2 mb-1">
-                {dailyRunProgress.stage === 'complete' ? (
-                  <div className="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                    </svg>
-                  </div>
-                ) : dailyRunProgress.stage === 'error' ? (
-                  <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </div>
-                ) : (
-                  <div className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
-                )}
-                <span className={`text-sm font-medium ${
-                  dailyRunProgress.stage === 'complete' ? 'text-green-700' :
-                  dailyRunProgress.stage === 'error' ? 'text-red-700' :
-                  'text-purple-700'
-                }`}>
-                  {dailyRunProgress.stage === 'initializing' && 'Step 1/4: Initializing'}
-                  {dailyRunProgress.stage === 'discovering' && 'Step 2/4: Discovering'}
-                  {dailyRunProgress.stage === 'scoring' && 'Step 3/4: Scoring'}
-                  {dailyRunProgress.stage === 'selecting' && 'Step 4/4: Selecting Winner'}
-                  {dailyRunProgress.stage === 'complete' && 'Complete!'}
-                  {dailyRunProgress.stage === 'error' && 'Failed'}
-                </span>
-              </div>
-              <p className={`text-xs ${
-                dailyRunProgress.stage === 'complete' ? 'text-green-600' :
-                dailyRunProgress.stage === 'error' ? 'text-red-600' :
-                'text-gray-600'
-              }`}>
-                {dailyRunProgress.message}
-              </p>
-              {dailyRunProgress.keywordsScored && dailyRunProgress.stage !== 'error' && (
-                <p className="text-xs text-green-600 mt-0.5 font-medium">
-                  {dailyRunProgress.keywordsScored} opportunities scored
-                </p>
-              )}
-              {dailyRunProgress.winner && (
-                <p className="text-xs text-purple-700 mt-0.5 font-medium">
-                  Winner: "{dailyRunProgress.winner.keyword}" ({dailyRunProgress.winner.score.toFixed(1)})
-                </p>
-              )}
-
-              {/* Progress bar */}
-              {dailyRunProgress.stage !== 'complete' && dailyRunProgress.stage !== 'error' && (
-                <div className="mt-2 h-1.5 bg-purple-100 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-purple-500 rounded-full transition-all duration-500"
-                    style={{
-                      width: dailyRunProgress.stage === 'initializing' ? '15%' :
-                             dailyRunProgress.stage === 'discovering' ? '35%' :
-                             dailyRunProgress.stage === 'scoring' ? '70%' :
-                             dailyRunProgress.stage === 'selecting' ? '90%' : '100%'
-                    }}
-                  />
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+        <button
+          onClick={handleExportAllCSV}
+          disabled={opportunities.length === 0}
+          className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+          title="Export all visible opportunities to CSV"
+        >
+          Export All
+        </button>
       </div>
 
       {/* Error/Success Messages */}
@@ -2560,7 +2443,7 @@ export default function OpportunityDashboard() {
 
               <button
                 onClick={handleDiscover}
-                disabled={discovering || runningDailyRun}
+                disabled={discovering}
                 className={`w-full px-4 py-2 rounded-lg transition-colors ${
                   discoveryProgress.stage === 'complete'
                     ? 'bg-green-600 text-white'

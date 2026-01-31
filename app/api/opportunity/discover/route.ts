@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isAuthenticated } from '@/lib/auth';
 import {
-  scoreOpportunity,
-  scoreOpportunities,
+  scoreOpportunityBasic,
+  scoreOpportunitiesBasic,
   rankOpportunities,
   upsertOpportunity,
   recordOpportunityHistory,
@@ -123,13 +123,13 @@ export async function POST(request: NextRequest) {
 
     console.log(`Discovered ${discoveredKeywords.size} keywords, will score ${keywordsToScore.length}:`, keywordsToScore);
 
-    // Score all discovered keywords
-    console.log(`Starting to score ${keywordsToScore.length} keywords...`);
-    const scoredResults = await scoreOpportunities(
+    // Score all discovered keywords (using BASIC scoring - fast, iTunes only)
+    console.log(`Starting BASIC scoring for ${keywordsToScore.length} keywords...`);
+    const scoredResults = await scoreOpportunitiesBasic(
       keywordsToScore.map(keyword => ({ keyword, category })),
       country
     );
-    console.log(`Scored ${scoredResults.length} opportunities`);
+    console.log(`Scored ${scoredResults.length} opportunities (basic scoring)`);
 
     // Save all to database
     let savedCount = 0;

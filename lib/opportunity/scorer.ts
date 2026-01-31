@@ -725,6 +725,161 @@ export async function scoreOpportunities(
 }
 
 /**
+ * Basic score calculation - uses only iTunes + autosuggest data (fast, <3s per keyword)
+ * This is used for quick discovery; full enrichment happens via background jobs
+ */
+export async function scoreOpportunityBasic(
+  keyword: string,
+  category: string,
+  country: string = 'us'
+): Promise<OpportunityScoreResult> {
+  const normalizedKeyword = keyword.toLowerCase().trim();
+
+  // Fetch only fast data sources in parallel (no trends/reddit)
+  const [autosuggestData, searchResults] = await Promise.all([
+    getAutosuggestData(normalizedKeyword, country),
+    searchiTunes(normalizedKeyword, country, 200),
+  ]);
+
+  // Extract top 10 apps data
+  const top10iTunes = searchResults.apps.slice(0, 10);
+  const top10Apps: TopAppData[] = top10iTunes.map(app =>
+    extractTopAppData(app, normalizedKeyword)
+  );
+
+  // Save top 10 apps to the apps database for cross-referencing
+  await saveAppsToDatabase(top10iTunes, country, category);
+
+  // Extract category data
+  const categoryData = extractCategoryData(top10Apps);
+
+  // Calculate market estimates from top apps
+  const marketEstimates = calculateMarketEstimates(top10Apps);
+
+  // Build raw data object (minimal - no trends/reddit)
+  const rawData: OpportunityRawData = {
+    itunes: {
+      total_results: searchResults.total,
+      top_10_apps: top10Apps,
+      autosuggest_priority: autosuggestData.priority,
+      autosuggest_position: autosuggestData.position,
+    },
+    google_trends: null as unknown as OpportunityRawData['google_trends'],
+    reddit: null as unknown as OpportunityRawData['reddit'],
+    pain_points: null,
+    category_data: categoryData,
+    market_estimates: marketEstimates,
+    review_sentiment: null,
+  };
+
+  // Calculate dimension scores (with estimates for trend/reddit)
+  const competitionGap = calculateCompetitionGap(top10Apps);
+
+  // For market demand, use a simplified calculation without trends/reddit
+  const marketDemand = calculateMarketDemand(
+    autosuggestData.priority,
+    searchResults.total,
+    null as unknown as OpportunityRawData['google_trends'],
+    null as unknown as OpportunityRawData['reddit']
+  );
+
+  const revenuePotential = calculateRevenuePotential(top10Apps, categoryData);
+
+  // For trend momentum, use neutral values since we don't have trend data
+  const trendMomentum = calculateTrendMomentum(
+    null as unknown as OpportunityRawData['google_trends'],
+    categoryData,
+    null as unknown as OpportunityRawData['reddit']
+  );
+
+  const executionFeasibility = calculateExecutionFeasibility(top10Apps);
+
+  // Calculate weighted final score
+  const opportunityScore = calculateFinalScore({
+    competition_gap: competitionGap.total,
+    market_demand: marketDemand.total,
+    revenue_potential: revenuePotential.total,
+    trend_momentum: trendMomentum.total,
+    execution_feasibility: executionFeasibility.total,
+  });
+
+  // Generate insights
+  const reasoning = generateReasoning(
+    competitionGap,
+    marketDemand,
+    revenuePotential,
+    trendMomentum,
+    executionFeasibility
+  );
+
+  const competitorWeaknesses = identifyCompetitorWeaknesses(top10Apps, competitionGap);
+  const differentiator = suggestDifferentiator(
+    top10Apps,
+    competitionGap,
+    executionFeasibility
+  );
+
+  return {
+    keyword: normalizedKeyword,
+    category,
+    country,
+    opportunity_score: opportunityScore,
+    dimensions: {
+      competition_gap: competitionGap.total,
+      market_demand: marketDemand.total,
+      revenue_potential: revenuePotential.total,
+      trend_momentum: trendMomentum.total,
+      execution_feasibility: executionFeasibility.total,
+    },
+    breakdowns: {
+      competition_gap: competitionGap,
+      market_demand: marketDemand,
+      revenue_potential: revenuePotential,
+      trend_momentum: trendMomentum,
+      execution_feasibility: executionFeasibility,
+    },
+    reasoning,
+    top_competitor_weaknesses: competitorWeaknesses,
+    suggested_differentiator: differentiator,
+    raw_data: rawData,
+  };
+}
+
+/**
+ * Basic batch scoring - much faster than full scoring
+ */
+export async function scoreOpportunitiesBasic(
+  keywords: Array<{ keyword: string; category: string }>,
+  country: string = 'us',
+  onProgress?: (scored: number, total: number, result: OpportunityScoreResult) => void
+): Promise<OpportunityScoreResult[]> {
+  const results: OpportunityScoreResult[] = [];
+
+  for (let i = 0; i < keywords.length; i++) {
+    const { keyword, category } = keywords[i];
+
+    try {
+      const result = await scoreOpportunityBasic(keyword, category, country);
+      results.push(result);
+
+      if (onProgress) {
+        onProgress(i + 1, keywords.length, result);
+      }
+    } catch (error) {
+      console.error(`Error scoring ${keyword}:`, error);
+      // Continue with other keywords
+    }
+
+    // Minimal rate limiting (iTunes API is more forgiving)
+    if (i < keywords.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+
+  return results;
+}
+
+/**
  * Rank opportunities by final score
  */
 export function rankOpportunities(

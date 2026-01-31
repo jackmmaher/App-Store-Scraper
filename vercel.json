@@ -13,9 +13,9 @@
       "maxDuration": 300
     },
     "app/api/opportunity/discover/route.ts": {
-      "maxDuration": 300
+      "maxDuration": 60
     },
-    "app/api/opportunity/daily-run/route.ts": {
+    "app/api/pipeline/jobs/process/route.ts": {
       "maxDuration": 300
     }
   },
@@ -29,8 +29,8 @@
       "schedule": "0 4 * * *"
     },
     {
-      "path": "/api/opportunity/daily-run",
-      "schedule": "0 6 * * *"
+      "path": "/api/pipeline/jobs/process",
+      "schedule": "* * * * *"
     }
   ]
 }

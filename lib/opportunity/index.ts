@@ -21,7 +21,9 @@ export {
 // Core Scorer
 export {
   scoreOpportunity,
+  scoreOpportunityBasic,
   scoreOpportunities,
+  scoreOpportunitiesBasic,
   rankOpportunities,
   selectWinner,
 } from './scorer';
