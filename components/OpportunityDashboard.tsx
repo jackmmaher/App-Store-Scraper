@@ -490,13 +490,15 @@ interface TopAppData {
 function TopAppsTable({
   apps,
   keyword,
-  onSelectApp,
-  selectedAppId,
+  selectedAppIds,
+  onToggleApp,
+  onSelectAll,
 }: {
   apps: TopAppData[];
   keyword: string;
-  onSelectApp: (app: TopAppData) => void;
-  selectedAppId: string | null;
+  selectedAppIds: Set<string>;
+  onToggleApp: (app: TopAppData) => void;
+  onSelectAll: (selectAll: boolean) => void;
 }) {
   if (!apps || apps.length === 0) {
     return (
@@ -506,28 +508,50 @@ function TopAppsTable({
     );
   }
 
+  const allSelected = apps.length > 0 && apps.every(app => selectedAppIds.has(app.id));
+  const someSelected = apps.some(app => selectedAppIds.has(app.id));
+
   return (
     <div className="overflow-x-auto">
       <table className="min-w-full text-sm">
         <thead>
           <tr className="border-b">
+            <th className="text-center py-2 px-2 font-medium text-gray-600 w-10">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                ref={(el) => {
+                  if (el) el.indeterminate = someSelected && !allSelected;
+                }}
+                onChange={(e) => onSelectAll(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+              />
+            </th>
             <th className="text-left py-2 px-2 font-medium text-gray-600">#</th>
             <th className="text-left py-2 px-2 font-medium text-gray-600">App</th>
             <th className="text-center py-2 px-2 font-medium text-gray-600">Rating</th>
             <th className="text-center py-2 px-2 font-medium text-gray-600">Reviews</th>
             <th className="text-center py-2 px-2 font-medium text-gray-600">Price</th>
             <th className="text-center py-2 px-2 font-medium text-gray-600">Signals</th>
-            <th className="text-center py-2 px-2 font-medium text-gray-600">Action</th>
           </tr>
         </thead>
         <tbody>
           {apps.map((app, idx) => (
             <tr
               key={app.id}
-              className={`border-b hover:bg-gray-50 ${
-                selectedAppId === app.id ? 'bg-purple-50' : ''
+              className={`border-b hover:bg-gray-50 cursor-pointer ${
+                selectedAppIds.has(app.id) ? 'bg-purple-50' : ''
               }`}
+              onClick={() => onToggleApp(app)}
             >
+              <td className="py-2 px-2 text-center" onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  checked={selectedAppIds.has(app.id)}
+                  onChange={() => onToggleApp(app)}
+                  className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                />
+              </td>
               <td className="py-2 px-2 text-gray-500">{idx + 1}</td>
               <td className="py-2 px-2">
                 <div className="flex items-center gap-2">
@@ -584,18 +608,6 @@ function TopAppsTable({
                   )}
                 </div>
               </td>
-              <td className="py-2 px-2 text-center">
-                <button
-                  onClick={() => onSelectApp(app)}
-                  className={`px-2 py-1 text-xs rounded transition-colors ${
-                    selectedAppId === app.id
-                      ? 'bg-purple-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  {selectedAppId === app.id ? 'Selected' : 'Select'}
-                </button>
-              </td>
             </tr>
           ))}
         </tbody>
@@ -612,28 +624,74 @@ function OpportunityDetailModal({
   opportunity,
   onClose,
   onGenerateBlueprint,
-  onExportCSV,
+  onAddToProjects,
 }: {
   opportunity: Opportunity;
   onClose: () => void;
   onGenerateBlueprint: (competitorApp?: TopAppData) => void;
-  onExportCSV: () => void;
+  onAddToProjects: (apps: TopAppData[], opportunity: Opportunity) => Promise<{ success: boolean; count: number }>;
 }) {
-  const [selectedCompetitor, setSelectedCompetitor] = useState<TopAppData | null>(null);
+  const [selectedAppIds, setSelectedAppIds] = useState<Set<string>>(new Set());
   const [showApps, setShowApps] = useState(true);
   const [creatingProject, setCreatingProject] = useState(false);
+  const [addingToProjects, setAddingToProjects] = useState(false);
+  const [addResult, setAddResult] = useState<{ success: boolean; count: number } | null>(null);
 
   // Extract top apps from raw_data
   const topApps: TopAppData[] = opportunity.raw_data?.itunes?.top_10_apps || [];
 
+  const handleToggleApp = (app: TopAppData) => {
+    setSelectedAppIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(app.id)) {
+        newSet.delete(app.id);
+      } else {
+        newSet.add(app.id);
+      }
+      return newSet;
+    });
+    setAddResult(null); // Clear previous result when selection changes
+  };
+
+  const handleSelectAll = (selectAll: boolean) => {
+    if (selectAll) {
+      setSelectedAppIds(new Set(topApps.map(app => app.id)));
+    } else {
+      setSelectedAppIds(new Set());
+    }
+    setAddResult(null);
+  };
+
   const handleGenerateBlueprint = async () => {
     setCreatingProject(true);
     try {
-      await onGenerateBlueprint(selectedCompetitor || undefined);
+      // Use the first selected app, or undefined
+      const selectedApps = topApps.filter(app => selectedAppIds.has(app.id));
+      await onGenerateBlueprint(selectedApps[0] || undefined);
     } finally {
       setCreatingProject(false);
     }
   };
+
+  const handleAddToProjects = async () => {
+    const selectedApps = topApps.filter(app => selectedAppIds.has(app.id));
+    if (selectedApps.length === 0) return;
+
+    setAddingToProjects(true);
+    setAddResult(null);
+    try {
+      const result = await onAddToProjects(selectedApps, opportunity);
+      setAddResult(result);
+      if (result.success) {
+        // Clear selection after successful add
+        setSelectedAppIds(new Set());
+      }
+    } finally {
+      setAddingToProjects(false);
+    }
+  };
+
+  const selectedCount = selectedAppIds.size;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -728,20 +786,77 @@ function OpportunityDetailModal({
             >
               <h3 className="font-semibold text-gray-900">
                 Apps Ranking for "{opportunity.keyword}" ({topApps.length})
+                {selectedCount > 0 && (
+                  <span className="ml-2 text-sm font-normal text-purple-600">
+                    {selectedCount} selected
+                  </span>
+                )}
               </h3>
               <span className="text-gray-400">{showApps ? '▼' : '▶'}</span>
             </button>
             {showApps && (
               <div className="mt-3 border rounded-lg p-3">
-                <div className="text-xs text-gray-500 mb-2">
-                  Select a competitor app to analyze for blueprint generation:
+                <div className="flex justify-between items-center mb-2">
+                  <div className="text-xs text-gray-500">
+                    Select apps to add to your projects for deeper analysis:
+                  </div>
+                  {selectedCount > 0 && (
+                    <button
+                      onClick={() => setSelectedAppIds(new Set())}
+                      className="text-xs text-gray-500 hover:text-gray-700"
+                    >
+                      Clear selection
+                    </button>
+                  )}
                 </div>
                 <TopAppsTable
                   apps={topApps}
                   keyword={opportunity.keyword}
-                  onSelectApp={setSelectedCompetitor}
-                  selectedAppId={selectedCompetitor?.id || null}
+                  selectedAppIds={selectedAppIds}
+                  onToggleApp={handleToggleApp}
+                  onSelectAll={handleSelectAll}
                 />
+
+                {/* Add to Projects button - inline with table */}
+                {selectedCount > 0 && (
+                  <div className="mt-3 pt-3 border-t flex items-center justify-between">
+                    <div className="text-sm text-gray-600">
+                      {selectedCount} app{selectedCount !== 1 ? 's' : ''} selected
+                    </div>
+                    <button
+                      onClick={handleAddToProjects}
+                      disabled={addingToProjects}
+                      className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center gap-2"
+                    >
+                      {addingToProjects ? (
+                        <>
+                          <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          Adding...
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                          </svg>
+                          Add to Projects
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+
+                {/* Success message */}
+                {addResult?.success && (
+                  <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2 text-green-700">
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span className="text-sm">
+                      Added {addResult.count} app{addResult.count !== 1 ? 's' : ''} to Projects!
+                      <a href="/projects" className="ml-1 underline hover:no-underline">View Projects →</a>
+                    </span>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -783,15 +898,16 @@ function OpportunityDetailModal({
               onClick={handleGenerateBlueprint}
               disabled={creatingProject}
               className="flex-1 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
+              title="Create a blueprint project based on this opportunity"
             >
-              {creatingProject ? 'Creating Project...' : selectedCompetitor ? `Blueprint from "${selectedCompetitor.name}"` : 'Generate Blueprint'}
-            </button>
-            <button
-              onClick={onExportCSV}
-              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-              title="Export opportunity data"
-            >
-              Export
+              {creatingProject ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Creating...
+                </span>
+              ) : (
+                'Create Opportunity Blueprint'
+              )}
             </button>
             <button
               onClick={onClose}
@@ -1126,7 +1242,59 @@ export default function OpportunityDashboard() {
     }
   };
 
-  // Export opportunity to CSV
+  // Add selected apps to projects
+  const handleAddToProjects = async (apps: TopAppData[], opportunity: Opportunity): Promise<{ success: boolean; count: number }> => {
+    let successCount = 0;
+
+    for (const app of apps) {
+      try {
+        const res = await fetch('/api/projects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            app: {
+              id: app.id,
+              name: app.name,
+              bundle_id: '',
+              developer: 'Unknown',
+              developer_id: '',
+              price: app.price || 0,
+              currency: app.currency || 'USD',
+              rating: app.rating || 0,
+              rating_current_version: app.rating || 0,
+              review_count: app.reviews || 0,
+              review_count_current_version: app.reviews || 0,
+              version: '',
+              release_date: app.release_date || '',
+              current_version_release_date: '',
+              min_os_version: '',
+              file_size_bytes: '0',
+              content_rating: '',
+              genres: [],
+              primary_genre: opportunity.category,
+              primary_genre_id: '',
+              url: '',
+              icon_url: app.icon_url || '',
+              description: '',
+            },
+            country: opportunity.country,
+            notes: `Added from Opportunity: "${opportunity.keyword}"\nOpportunity Score: ${opportunity.opportunity_score?.toFixed(1) || 'N/A'}\nCategory: ${CATEGORY_NAMES[opportunity.category] || opportunity.category}`,
+          }),
+        });
+
+        const data = await res.json();
+        if (data.success || data.id) {
+          successCount++;
+        }
+      } catch (err) {
+        console.error(`Error adding app ${app.name} to projects:`, err);
+      }
+    }
+
+    return { success: successCount > 0, count: successCount };
+  };
+
+  // Export opportunity to CSV (keeping for "Export All" feature)
   const handleExportCSV = () => {
     if (!selectedOpportunity) return;
 
@@ -1450,7 +1618,7 @@ export default function OpportunityDashboard() {
           opportunity={selectedOpportunity}
           onClose={() => setSelectedOpportunity(null)}
           onGenerateBlueprint={handleGenerateBlueprint}
-          onExportCSV={handleExportCSV}
+          onAddToProjects={handleAddToProjects}
         />
       )}
     </div>
