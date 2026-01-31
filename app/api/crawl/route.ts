@@ -8,6 +8,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCrawlOrchestrator } from '@/lib/crawl';
 
+// Disable caching for health check - always fetch fresh status
+export const dynamic = 'force-dynamic';
+
 // Check authentication
 async function checkAuth(request: NextRequest): Promise<boolean> {
   const authHeader = request.headers.get('authorization');

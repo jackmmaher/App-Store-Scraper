@@ -2168,6 +2168,8 @@ export async function getProjectsByType(
 
 // Get linked competitors for a project
 export async function getLinkedCompetitors(projectId: string): Promise<LinkedCompetitor[]> {
+  console.log('[getLinkedCompetitors] Fetching for project:', projectId);
+
   const { data, error } = await supabase
     .from('app_projects')
     .select('linked_competitors')
@@ -2175,10 +2177,11 @@ export async function getLinkedCompetitors(projectId: string): Promise<LinkedCom
     .single();
 
   if (error) {
-    console.error('Error fetching linked competitors:', error);
+    console.error('[getLinkedCompetitors] Error:', error.message, error.code, error.details);
     return [];
   }
 
+  console.log('[getLinkedCompetitors] Found:', data?.linked_competitors?.length || 0, 'competitors');
   return (data?.linked_competitors as LinkedCompetitor[]) || [];
 }
 
@@ -2187,17 +2190,21 @@ export async function addLinkedCompetitor(
   projectId: string,
   competitor: LinkedCompetitor
 ): Promise<LinkedCompetitor[] | null> {
+  console.log('[addLinkedCompetitor] Adding to project:', projectId, 'competitor:', competitor.name);
+
   // First get existing competitors
   const existing = await getLinkedCompetitors(projectId);
+  console.log('[addLinkedCompetitor] Existing competitors:', existing.length);
 
   // Check if competitor already exists
   if (existing.some(c => c.app_store_id === competitor.app_store_id)) {
-    console.log('Competitor already linked:', competitor.app_store_id);
+    console.log('[addLinkedCompetitor] Competitor already linked:', competitor.app_store_id);
     return existing;
   }
 
   // Add new competitor
   const updated = [...existing, competitor];
+  console.log('[addLinkedCompetitor] Updating with', updated.length, 'competitors');
 
   const { data, error } = await supabase
     .from('app_projects')
@@ -2210,10 +2217,11 @@ export async function addLinkedCompetitor(
     .single();
 
   if (error) {
-    console.error('Error adding linked competitor:', error.message, error.details, error.hint);
+    console.error('[addLinkedCompetitor] Error:', error.message, error.code, error.details, error.hint);
     return null;
   }
 
+  console.log('[addLinkedCompetitor] Success, now has:', data?.linked_competitors?.length || 0, 'competitors');
   return (data?.linked_competitors as LinkedCompetitor[]) || [];
 }
 
@@ -2286,13 +2294,24 @@ export async function addLinkedCompetitors(
   projectId: string,
   competitors: LinkedCompetitor[]
 ): Promise<LinkedCompetitor[] | null> {
+  console.log('[addLinkedCompetitors] Adding', competitors.length, 'competitors to project:', projectId);
+
   // Get existing competitors
   const existing = await getLinkedCompetitors(projectId);
   const existingIds = new Set(existing.map(c => c.app_store_id));
+  console.log('[addLinkedCompetitors] Existing:', existing.length, 'IDs:', [...existingIds]);
 
   // Filter out duplicates and add new ones
   const newCompetitors = competitors.filter(c => !existingIds.has(c.app_store_id));
+  console.log('[addLinkedCompetitors] New competitors to add:', newCompetitors.length);
+
+  if (newCompetitors.length === 0) {
+    console.log('[addLinkedCompetitors] All competitors already linked, returning existing');
+    return existing;
+  }
+
   const updated = [...existing, ...newCompetitors];
+  console.log('[addLinkedCompetitors] Updating with total:', updated.length);
 
   const { data, error } = await supabase
     .from('app_projects')
@@ -2305,10 +2324,11 @@ export async function addLinkedCompetitors(
     .single();
 
   if (error) {
-    console.error('Error adding linked competitors:', error);
+    console.error('[addLinkedCompetitors] Error:', error.message, error.code, error.details, error.hint);
     return null;
   }
 
+  console.log('[addLinkedCompetitors] Success, now has:', data?.linked_competitors?.length || 0);
   return (data?.linked_competitors as LinkedCompetitor[]) || [];
 }
 
