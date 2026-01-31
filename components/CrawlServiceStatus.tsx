@@ -3,10 +3,14 @@
 import { useState, useEffect, useCallback } from 'react';
 
 type ServiceStatus = 'checking' | 'connected' | 'disconnected';
+type StartStatus = 'idle' | 'starting' | 'success' | 'error';
 
 export default function CrawlServiceStatus() {
   const [status, setStatus] = useState<ServiceStatus>('checking');
   const [modalOpen, setModalOpen] = useState(false);
+  const [startStatus, setStartStatus] = useState<StartStatus>('idle');
+  const [startError, setStartError] = useState<string | null>(null);
+  const [showManualSetup, setShowManualSetup] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
 
   const checkStatus = useCallback(async () => {
@@ -28,10 +32,45 @@ export default function CrawlServiceStatus() {
 
   useEffect(() => {
     checkStatus();
-    // Check every 30 seconds
     const interval = setInterval(checkStatus, 30000);
     return () => clearInterval(interval);
   }, [checkStatus]);
+
+  const startCrawler = async () => {
+    setStartStatus('starting');
+    setStartError(null);
+
+    try {
+      const response = await fetch('/api/crawl/start', {
+        method: 'POST',
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setStartStatus('success');
+        // Poll for connection
+        let attempts = 0;
+        const pollInterval = setInterval(async () => {
+          attempts++;
+          await checkStatus();
+          if (status === 'connected' || attempts >= 10) {
+            clearInterval(pollInterval);
+            if (attempts >= 10 && status !== 'connected') {
+              // Final check
+              await checkStatus();
+            }
+          }
+        }, 1000);
+      } else {
+        setStartStatus('error');
+        setStartError(data.hint || data.error || 'Failed to start crawler');
+      }
+    } catch (err) {
+      setStartStatus('error');
+      setStartError('Network error - make sure the app is running locally');
+    }
+  };
 
   const copyCommand = (command: string, id: string) => {
     navigator.clipboard.writeText(command);
@@ -150,103 +189,114 @@ export default function CrawlServiceStatus() {
                 <>
                   <hr className="border-gray-200 dark:border-gray-700" />
 
-                  {/* Setup Instructions */}
-                  <div>
-                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-3">
-                      How to Enable (One-Time Setup)
-                    </h3>
+                  {/* One-Click Start Button */}
+                  <div className="space-y-3">
+                    <button
+                      onClick={startCrawler}
+                      disabled={startStatus === 'starting'}
+                      className={`w-full py-3 px-4 rounded-lg text-white font-medium transition-all flex items-center justify-center gap-2 ${
+                        startStatus === 'starting'
+                          ? 'bg-blue-400 cursor-wait'
+                          : startStatus === 'success'
+                          ? 'bg-green-500 hover:bg-green-600'
+                          : 'bg-blue-500 hover:bg-blue-600'
+                      }`}
+                    >
+                      {startStatus === 'starting' ? (
+                        <>
+                          <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          </svg>
+                          Starting Crawler...
+                        </>
+                      ) : startStatus === 'success' ? (
+                        <>
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          Started! Connecting...
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          Start Crawler
+                        </>
+                      )}
+                    </button>
 
-                    {/* Prerequisites */}
-                    <div className="mb-4">
-                      <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-2">
-                        Prerequisites
-                      </p>
-                      <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
-                        <li>• Python 3.9+ installed</li>
-                        <li>• pip (Python package manager)</li>
-                      </ul>
-                    </div>
-
-                    {/* Step 1 */}
-                    <div className="mb-3">
-                      <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">
-                        Step 1: Install Dependencies (once)
-                      </p>
-                      <div className="relative">
-                        <pre className="bg-gray-900 text-gray-100 text-xs p-3 rounded-lg overflow-x-auto">
-                          <code>cd crawl-service{'\n'}pip install -r requirements.txt{'\n'}playwright install chromium</code>
-                        </pre>
-                        <button
-                          onClick={() => copyCommand('cd crawl-service && pip install -r requirements.txt && playwright install chromium', 'step1')}
-                          className="absolute top-2 right-2 p-1.5 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 transition-colors"
-                          title="Copy"
-                        >
-                          {copied === 'step1' ? (
-                            <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                          ) : (
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                            </svg>
-                          )}
-                        </button>
+                    {/* Error Message */}
+                    {startStatus === 'error' && startError && (
+                      <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                        <p className="text-sm text-red-700 dark:text-red-300">{startError}</p>
                       </div>
-                    </div>
+                    )}
 
-                    {/* Step 2 */}
-                    <div className="mb-3">
-                      <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">
-                        Step 2: Start the Service
-                      </p>
-                      <div className="relative">
-                        <pre className="bg-gray-900 text-gray-100 text-xs p-3 rounded-lg overflow-x-auto">
-                          <code>cd crawl-service{'\n'}uvicorn main:app --host 0.0.0.0 --port 8000</code>
-                        </pre>
-                        <button
-                          onClick={() => copyCommand('cd crawl-service && uvicorn main:app --host 0.0.0.0 --port 8000', 'step2')}
-                          className="absolute top-2 right-2 p-1.5 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 transition-colors"
-                          title="Copy"
-                        >
-                          {copied === 'step2' ? (
-                            <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                          ) : (
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                            </svg>
-                          )}
-                        </button>
-                      </div>
-                    </div>
+                    {/* First-time setup toggle */}
+                    <button
+                      onClick={() => setShowManualSetup(!showManualSetup)}
+                      className="w-full text-left text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 flex items-center gap-2"
+                    >
+                      <svg
+                        className={`w-4 h-4 transition-transform ${showManualSetup ? 'rotate-90' : ''}`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                      First-time setup (if button doesn&apos;t work)
+                    </button>
 
-                    {/* Alternative: One Command */}
-                    <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                      <p className="text-xs font-medium text-blue-800 dark:text-blue-200 mb-2">
-                        Or use one command (after setup):
-                      </p>
-                      <div className="relative">
-                        <pre className="bg-gray-900 text-gray-100 text-xs p-2 rounded overflow-x-auto">
-                          <code>npm run dev:full</code>
-                        </pre>
-                        <button
-                          onClick={() => copyCommand('npm run dev:full', 'devfull')}
-                          className="absolute top-1 right-1 p-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 transition-colors"
-                          title="Copy"
-                        >
-                          {copied === 'devfull' ? (
-                            <svg className="w-3 h-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                          ) : (
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                            </svg>
-                          )}
-                        </button>
+                    {/* Collapsible Manual Setup */}
+                    {showManualSetup && (
+                      <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg space-y-4">
+                        {/* Prerequisites */}
+                        <div>
+                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-2">
+                            Prerequisites
+                          </p>
+                          <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
+                            <li>- Python 3.9+ installed</li>
+                            <li>- pip (Python package manager)</li>
+                          </ul>
+                        </div>
+
+                        {/* Install Command */}
+                        <div>
+                          <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">
+                            Install Dependencies (run once in terminal)
+                          </p>
+                          <div className="relative">
+                            <pre className="bg-gray-900 text-gray-100 text-xs p-3 rounded-lg overflow-x-auto">
+                              <code>cd crawl-service &amp;&amp; pip install -r requirements.txt &amp;&amp; playwright install chromium</code>
+                            </pre>
+                            <button
+                              onClick={() => copyCommand('cd crawl-service && pip install -r requirements.txt && playwright install chromium', 'install')}
+                              className="absolute top-2 right-2 p-1.5 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 transition-colors"
+                              title="Copy"
+                            >
+                              {copied === 'install' ? (
+                                <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                              ) : (
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          After installing, try the &quot;Start Crawler&quot; button again.
+                        </p>
                       </div>
-                    </div>
+                    )}
                   </div>
                 </>
               )}
@@ -255,6 +305,7 @@ export default function CrawlServiceStatus() {
               <button
                 onClick={() => {
                   setStatus('checking');
+                  setStartStatus('idle');
                   checkStatus();
                 }}
                 disabled={status === 'checking'}
