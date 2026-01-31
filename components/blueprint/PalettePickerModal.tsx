@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { BlueprintColorPalette, BlueprintSection } from '@/lib/supabase';
 import { PaletteCard, PaletteSwatches } from './ColorSwatch';
 
@@ -9,6 +9,14 @@ interface PaletteOption {
   mood?: string;
   source_url?: string;
 }
+
+type LoadingStage = 'connecting' | 'fetching' | 'processing' | 'done' | 'error';
+
+const LOADING_STAGES: { stage: LoadingStage; label: string; description: string }[] = [
+  { stage: 'connecting', label: 'Connecting', description: 'Connecting to palette service...' },
+  { stage: 'fetching', label: 'Fetching', description: 'Fetching trending palettes from Coolors...' },
+  { stage: 'processing', label: 'Processing', description: 'Processing color combinations...' },
+];
 
 interface PalettePickerModalProps {
   isOpen: boolean;
@@ -32,23 +40,54 @@ export default function PalettePickerModal({
 }: PalettePickerModalProps) {
   const [palettes, setPalettes] = useState<PaletteOption[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingStage, setLoadingStage] = useState<LoadingStage>('connecting');
+  const [elapsedTime, setElapsedTime] = useState(0);
   const [selectedPalette, setSelectedPalette] = useState<PaletteOption | null>(null);
   const [regenerateSections, setRegeneateSections] = useState<BlueprintSection[]>([]);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const startTimeRef = useRef<number>(0);
 
   // Sections that are completed and would be affected by palette change
   const affectedCompletedSections = completedSections.filter(s =>
     PALETTE_AFFECTED_SECTIONS.includes(s)
   );
 
+  // Clear timer on unmount
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+  }, []);
+
   useEffect(() => {
     if (isOpen) {
       fetchPalettes();
+    } else {
+      // Reset state when modal closes
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
     }
   }, [isOpen, appCategory]);
 
   const fetchPalettes = async () => {
     setLoading(true);
+    setLoadingStage('connecting');
+    setElapsedTime(0);
+    startTimeRef.current = Date.now();
+
+    // Start elapsed time counter
+    timerRef.current = setInterval(() => {
+      setElapsedTime(Math.floor((Date.now() - startTimeRef.current) / 1000));
+    }, 1000);
+
     try {
+      // Simulate stage progression for UX
+      setTimeout(() => setLoadingStage('fetching'), 500);
+
       // Try to fetch from crawl service
       const response = await fetch('/api/blueprint/palettes', {
         method: 'POST',
@@ -60,17 +99,26 @@ export default function PalettePickerModal({
         }),
       });
 
+      setLoadingStage('processing');
+
       if (response.ok) {
         const data = await response.json();
         setPalettes(data.palettes || []);
+        setLoadingStage('done');
       } else {
         // Use fallback palettes
         setPalettes(getFallbackPalettes());
+        setLoadingStage('done');
       }
     } catch (error) {
       console.error('Failed to fetch palettes:', error);
       setPalettes(getFallbackPalettes());
+      setLoadingStage('error');
     } finally {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
       setLoading(false);
     }
   };
@@ -152,8 +200,91 @@ export default function PalettePickerModal({
           {/* Palette Grid */}
           <div className="p-4 max-h-[40vh] overflow-y-auto">
             {loading ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+              <div className="py-8 px-4">
+                {/* Progress Header */}
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Loading Palettes
+                  </span>
+                  <span className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
+                    {elapsedTime}s
+                  </span>
+                </div>
+
+                {/* Stage Progress */}
+                <div className="space-y-3">
+                  {LOADING_STAGES.map((stage, index) => {
+                    const currentIndex = LOADING_STAGES.findIndex(s => s.stage === loadingStage);
+                    const isComplete = index < currentIndex;
+                    const isCurrent = stage.stage === loadingStage;
+                    const isPending = index > currentIndex;
+
+                    return (
+                      <div key={stage.stage} className="flex items-center gap-3">
+                        {/* Status Icon */}
+                        <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center">
+                          {isComplete ? (
+                            <svg className="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                          ) : isCurrent ? (
+                            <svg className="w-5 h-5 text-blue-500 animate-spin" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                            </svg>
+                          ) : (
+                            <div className="w-2 h-2 rounded-full bg-gray-300 dark:bg-gray-600" />
+                          )}
+                        </div>
+
+                        {/* Stage Info */}
+                        <div className="flex-1 min-w-0">
+                          <div className={`text-sm font-medium ${
+                            isCurrent
+                              ? 'text-blue-600 dark:text-blue-400'
+                              : isComplete
+                                ? 'text-green-600 dark:text-green-400'
+                                : 'text-gray-400 dark:text-gray-500'
+                          }`}>
+                            {stage.label}
+                          </div>
+                          {isCurrent && (
+                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                              {stage.description}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Progress Bar */}
+                <div className="mt-4 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-500 ease-out"
+                    style={{
+                      width: `${
+                        loadingStage === 'connecting' ? 15 :
+                        loadingStage === 'fetching' ? 50 :
+                        loadingStage === 'processing' ? 85 :
+                        100
+                      }%`
+                    }}
+                  />
+                </div>
+
+                {/* Helpful Message */}
+                {elapsedTime > 5 && (
+                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-3 text-center">
+                    Fetching fresh palettes from Coolors.co...
+                  </p>
+                )}
+                {elapsedTime > 15 && (
+                  <p className="text-xs text-amber-500 dark:text-amber-400 mt-1 text-center">
+                    Taking longer than usual. Will fall back to curated palettes if needed.
+                  </p>
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-3">
