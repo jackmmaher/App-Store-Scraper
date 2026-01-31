@@ -429,17 +429,119 @@ Based on the negative reviews and researcher notes, what opportunities exist to 
 Format your response in clean Markdown with proper headings, tables, and bullet points. Cite specific reviews where relevant.`;
 }
 
-// Section 2: App Identity Prompt
+// Section 2: App Identity Prompt - generates candidate names for availability checking
+export function getAppIdentityCandidatesPrompt(
+  project: AppProject,
+  paretoStrategy: string
+): string {
+  const notesSection = project.notes && project.notes.trim()
+    ? `\n## Researcher's Notes\n${project.notes}\n`
+    : '';
+
+  return `You are a brand strategist specializing in iOS app naming. Based on the Pareto Strategy below, generate 5 candidate app names.
+
+## App Context
+
+**Competitor App Name:** ${project.app_name}
+**Category:** ${project.app_primary_genre || 'Unknown'}
+**Developer:** ${project.app_developer || 'Unknown'}
+${notesSection}
+## Pareto Strategy (Section 1)
+
+${paretoStrategy}
+
+---
+
+## Your Task
+
+Generate exactly 5 candidate app names, ordered by preference. Names should be:
+- Unique and distinctive (not generic)
+- Easy to spell and remember
+- Available as a single word or two-word combo (no spaces for domain purposes)
+- Not too similar to existing major apps
+
+Return ONLY a JSON array with 5 names, nothing else:
+["Name1", "Name2", "Name3", "Name4", "Name5"]`;
+}
+
+// Section 2: App Identity Prompt - full identity with chosen name
 export function getAppIdentityPrompt(
   project: AppProject,
   paretoStrategy: string,
-  colorPalette?: BlueprintColorPalette | null
+  colorPalette?: BlueprintColorPalette | null,
+  chosenName?: string,
+  availabilityResults?: {
+    name: string;
+    checks: {
+      appStore: { available: boolean; existingApps: string[] };
+      domainCom: { available: boolean };
+      domainApp: { available: boolean };
+      twitter: { available: boolean };
+      instagram: { available: boolean };
+    };
+  }
 ): string {
   const notesSection = project.notes && project.notes.trim()
     ? `\n## Researcher's Notes\n${project.notes}\n`
     : '';
 
   const paletteSection = formatStoredPalette(colorPalette);
+
+  // Build availability section if we have results
+  let availabilitySection = '';
+  if (chosenName && availabilityResults) {
+    const c = availabilityResults.checks;
+    availabilitySection = `
+### 2. Name Availability (Auto-Verified)
+
+| Check | Status | Notes |
+|-------|--------|-------|
+| App Store | ${c.appStore.available ? '✅ Available' : '⚠️ Conflicts'} | ${c.appStore.existingApps.length > 0 ? `Similar: ${c.appStore.existingApps.join(', ')}` : 'No direct conflicts found'} |
+| Domain (.com) | ${c.domainCom.available ? '✅ Likely Available' : '❌ Taken'} | ${chosenName.toLowerCase().replace(/[^a-z0-9]/g, '')}.com |
+| Domain (.app) | ${c.domainApp.available ? '✅ Likely Available' : '❌ Taken'} | ${chosenName.toLowerCase().replace(/[^a-z0-9]/g, '')}.app |
+| Twitter/X | ${c.twitter.available ? '✅ Likely Available' : '❌ Taken'} | @${chosenName.toLowerCase().replace(/[^a-z0-9]/g, '')} |
+| Instagram | ${c.instagram.available ? '✅ Likely Available' : '❌ Taken'} | @${chosenName.toLowerCase().replace(/[^a-z0-9]/g, '')} |
+| Trademark | 🔍 To verify | Search USPTO database manually |
+
+`;
+  }
+
+  const nameSection = chosenName
+    ? `### 1. Chosen App Name
+
+**App Name:** ${chosenName}
+
+Provide a detailed rationale for this name choice:
+- Why it works for this app's value proposition
+- Brand positioning and memorability
+- How it differentiates from competitors
+- Target audience appeal
+
+${availabilitySection}`
+    : `### 1. App Name
+
+Decide on ONE app name. Do not provide options - make a decisive choice:
+
+**App Name:** [Your chosen name]
+
+Provide a detailed rationale for this name choice:
+- Why it works for this app's value proposition
+- Brand positioning and memorability
+- How it differentiates from competitors
+- Target audience appeal
+
+### 2. Name Availability Checklist
+
+| Check | Status | Notes |
+|-------|--------|-------|
+| App Store | 🔍 To verify | Search "[name]" on App Store |
+| Domain (.com) | 🔍 To verify | Check [name].com availability |
+| Domain (.app) | 🔍 To verify | Check [name].app availability |
+| Twitter/X | 🔍 To verify | Check @[name] availability |
+| Instagram | 🔍 To verify | Check @[name] availability |
+| Trademark | 🔍 To verify | Search USPTO database |
+
+`;
 
   return `You are a brand strategist specializing in iOS app naming and visual identity. Based on the Pareto Strategy below, create a comprehensive App Identity specification document.
 
@@ -466,30 +568,7 @@ ${paretoStrategy}
 
 Create a detailed App Identity document with the following sections:
 
-### 1. App Name Options
-
-Provide 3-5 app name suggestions with rationale for each:
-
-| Name | Rationale | Pros | Cons |
-|------|-----------|------|------|
-| [Name 1] | Why this name works | Benefits | Drawbacks |
-| [Name 2] | ... | ... | ... |
-
-**Top Recommendation:** [Name] because [reason]
-
-### 2. Name Availability Checklist
-
-For your top recommended name, create a checklist:
-
-| Check | Status | Notes |
-|-------|--------|-------|
-| App Store | 🔍 To verify | Search "[name]" on App Store |
-| Domain (.com) | 🔍 To verify | Check [name].com availability |
-| Domain (.app) | 🔍 To verify | Check [name].app availability |
-| Twitter/X | 🔍 To verify | Check @[name] availability |
-| Instagram | 🔍 To verify | Check @[name] availability |
-| Trademark | 🔍 To verify | Search USPTO database |
-
+${nameSection}
 ### 3. App Icon Design Direction
 
 **Design Style:**

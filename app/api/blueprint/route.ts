@@ -3,6 +3,7 @@ import { isAuthenticated } from '@/lib/auth';
 import {
   getOrCreateBlueprint,
   getBlueprint,
+  getBlueprintAttachments,
   updateBlueprintSection,
   updateBlueprintSectionStatus,
   deleteBlueprint,
@@ -68,7 +69,9 @@ export async function GET(request: NextRequest) {
       }
       // Auto-recover stuck 'generating' statuses
       blueprint = await recoverStuckGenerating(blueprint);
-      return NextResponse.json({ blueprint });
+      // Fetch attachments
+      const attachments = await getBlueprintAttachments(blueprintId);
+      return NextResponse.json({ blueprint, attachments });
     }
 
     if (projectId) {

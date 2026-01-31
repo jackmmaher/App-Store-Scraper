@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import type { BlueprintSection as BlueprintSectionType, BlueprintSectionStatus, BlueprintAttachment, BlueprintColorPalette } from '@/lib/supabase';
 import BlueprintGenerateButton from './BlueprintGenerateButton';
 import BlueprintImageUpload from './BlueprintImageUpload';
@@ -66,6 +67,7 @@ const COLOR_SECTIONS: BlueprintSectionType[] = ['identity', 'design_system', 'wi
 
 interface BlueprintSectionProps {
   section: BlueprintSectionType;
+  blueprintId: string;
   content: string | null;
   status: BlueprintSectionStatus;
   generatedAt: string | null;
@@ -79,10 +81,12 @@ interface BlueprintSectionProps {
   onUploadAttachment: (file: File, screenLabel?: string) => Promise<BlueprintAttachment | null>;
   onDeleteAttachment: (attachmentId: string) => Promise<boolean>;
   onChangePalette?: () => void;
+  onRefreshAttachments?: () => void;
 }
 
 export default function BlueprintSection({
   section,
+  blueprintId,
   content,
   status,
   generatedAt,
@@ -96,9 +100,48 @@ export default function BlueprintSection({
   onUploadAttachment,
   onDeleteAttachment,
   onChangePalette,
+  onRefreshAttachments,
 }: BlueprintSectionProps) {
+  const [isGeneratingIcon, setIsGeneratingIcon] = useState(false);
+  const [iconError, setIconError] = useState<string | null>(null);
+
   const meta = SECTION_META[section];
-  const showPalette = COLOR_SECTIONS.includes(section) && colorPalette?.colors?.length;
+  const hasPalette = colorPalette?.colors?.length;
+  const showPalette = COLOR_SECTIONS.includes(section) && hasPalette;
+  // Show "Choose Palette" button on identity section before generation if no palette yet
+  const showChoosePalette = section === 'identity' && !hasPalette && statuses.pareto === 'completed';
+
+  // Check if icon already generated (for identity section)
+  const iconAttachment = section === 'identity'
+    ? attachments.find(a => a.section === 'identity' && a.screen_label?.includes('App Icon'))
+    : null;
+
+  // Generate icon handler
+  const handleGenerateIcon = async () => {
+    setIsGeneratingIcon(true);
+    setIconError(null);
+
+    try {
+      const response = await fetch('/api/blueprint/generate-icon', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blueprintId }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to generate icon');
+      }
+
+      // Refresh attachments to show the new icon
+      onRefreshAttachments?.();
+    } catch (error) {
+      setIconError(error instanceof Error ? error.message : 'Failed to generate icon');
+    } finally {
+      setIsGeneratingIcon(false);
+    }
+  };
 
   // Check if dependencies are met
   const dependenciesMet = meta.dependencies.every((dep) => statuses[dep] === 'completed');
@@ -130,7 +173,21 @@ export default function BlueprintSection({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Color Palette Display */}
+          {/* Choose Palette Button (before generation) */}
+          {showChoosePalette && (
+            <button
+              type="button"
+              onClick={onChangePalette}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-blue-200 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-400 transition-colors"
+              title="Choose a color palette before generating"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+              </svg>
+              <span className="text-sm font-medium">Choose Palette</span>
+            </button>
+          )}
+          {/* Color Palette Display (after palette is set) */}
           {showPalette && colorPalette && (
             <button
               type="button"
@@ -190,6 +247,74 @@ export default function BlueprintSection({
             <div className="analysis-report bg-gray-50 dark:bg-gray-900 rounded-lg p-4 sm:p-6 max-h-[50vh] sm:max-h-[600px] overflow-y-auto overflow-x-auto">
               <BlueprintMarkdown content={displayContent} />
             </div>
+
+            {/* Icon Generation for Identity Section */}
+            {section === 'identity' && (
+              <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                <div className="flex items-start gap-4">
+                  {/* Icon Preview */}
+                  {iconAttachment ? (
+                    <div className="flex-shrink-0">
+                      <img
+                        src={`${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/blueprint-attachments/${iconAttachment.storage_path}`}
+                        alt="Generated App Icon"
+                        className="w-24 h-24 rounded-2xl shadow-lg"
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex-shrink-0 w-24 h-24 bg-gray-200 dark:bg-gray-700 rounded-2xl flex items-center justify-center">
+                      <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                  )}
+
+                  {/* Generate Button */}
+                  <div className="flex-1">
+                    <h4 className="font-medium text-gray-900 dark:text-white mb-1">
+                      {iconAttachment ? 'App Icon Generated' : 'Generate App Icon'}
+                    </h4>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
+                      {iconAttachment
+                        ? 'Icon generated with DALL-E 3. Click to regenerate a new version.'
+                        : 'Generate a professional app icon using DALL-E 3 based on the icon prompt above.'}
+                    </p>
+
+                    {iconError && (
+                      <p className="text-sm text-red-600 dark:text-red-400 mb-2">{iconError}</p>
+                    )}
+
+                    <button
+                      onClick={handleGenerateIcon}
+                      disabled={isGeneratingIcon}
+                      className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                        isGeneratingIcon
+                          ? 'bg-gray-100 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
+                          : 'bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white'
+                      }`}
+                    >
+                      {isGeneratingIcon ? (
+                        <>
+                          <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                          </svg>
+                          {iconAttachment ? 'Regenerate Icon' : 'Generate Icon with DALL-E'}
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {generatedAt && (
               <p className="text-xs text-gray-400 mt-2">
                 Generated on {new Date(generatedAt).toLocaleString()}

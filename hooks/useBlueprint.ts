@@ -147,6 +147,23 @@ export function useBlueprint({ projectId }: UseBlueprintProps) {
     return `/api/blueprint/export?id=${blueprint.id}`;
   }, [blueprint]);
 
+  // Refresh attachments from server
+  const refreshAttachments = useCallback(async () => {
+    if (!blueprint) return;
+
+    try {
+      const res = await fetch(`/api/blueprint?id=${blueprint.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.attachments) {
+          setAttachments(data.attachments);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to refresh attachments:', err);
+    }
+  }, [blueprint]);
+
   // Load blueprint on mount
   useEffect(() => {
     if (projectId) {
@@ -168,6 +185,7 @@ export function useBlueprint({ projectId }: UseBlueprintProps) {
     deleteBlueprint,
     uploadAttachment,
     deleteAttachment,
+    refreshAttachments,
     getExportUrl,
     clearError: () => setError(null),
     setBlueprint,

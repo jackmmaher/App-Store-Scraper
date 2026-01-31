@@ -10,7 +10,7 @@ import {
   type BlueprintSection,
   type BlueprintColorPalette,
 } from '@/lib/supabase';
-import { getBlueprintPrompt, getBlueprintPromptWithEnrichment, getBuildManifestPrompt } from '@/lib/blueprint-prompts';
+import { getBlueprintPrompt, getBlueprintPromptWithEnrichment, getBuildManifestPrompt, getAppIdentityCandidatesPrompt, getAppIdentityPrompt } from '@/lib/blueprint-prompts';
 import { getColorPalettesForDesignSystem, type ColorPalette } from '@/lib/crawl';
 
 // Sections that need a color palette
@@ -181,6 +181,105 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // For identity section: first generate candidate names, check availability, then generate full identity
+    let chosenName: string | undefined;
+    let availabilityResults: {
+      name: string;
+      checks: {
+        appStore: { available: boolean; existingApps: string[] };
+        domainCom: { available: boolean };
+        domainApp: { available: boolean };
+        twitter: { available: boolean };
+        instagram: { available: boolean };
+      };
+    } | undefined;
+
+    if (section === 'identity') {
+      console.log('[Identity] Starting name availability check flow...');
+
+      // Step 1: Get candidate names from Claude (non-streaming)
+      const candidatesPrompt = getAppIdentityCandidatesPrompt(project, blueprint.pareto_strategy!);
+
+      try {
+        const candidatesResponse = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 500,
+            messages: [{ role: 'user', content: candidatesPrompt }],
+          }),
+        });
+
+        if (candidatesResponse.ok) {
+          const candidatesData = await candidatesResponse.json();
+          const candidatesText = candidatesData.content?.[0]?.text || '';
+
+          // Parse JSON array of names
+          const jsonMatch = candidatesText.match(/\[[\s\S]*\]/);
+          if (jsonMatch) {
+            const candidateNames: string[] = JSON.parse(jsonMatch[0]);
+            console.log('[Identity] Candidate names:', candidateNames);
+
+            // Step 2: Check availability for each name
+            for (const name of candidateNames) {
+              try {
+                // Use internal availability check
+                const checkResponse = await fetch(new URL('/api/name-availability', request.url).toString(), {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Cookie': request.headers.get('cookie') || '' },
+                  body: JSON.stringify({
+                    names: [name],
+                    checks: ['appStore', 'domainCom', 'domainApp', 'twitter', 'instagram'],
+                  }),
+                });
+
+                if (checkResponse.ok) {
+                  const checkData = await checkResponse.json();
+                  const result = checkData.results?.[0];
+
+                  if (result) {
+                    console.log(`[Identity] ${name}: score=${result.score}, recommendation=${result.recommendation}`);
+
+                    // Accept if fully available or mostly available (score >= 3)
+                    if (result.recommendation === 'available' || result.score >= 3) {
+                      chosenName = name;
+                      availabilityResults = {
+                        name,
+                        checks: {
+                          appStore: result.checks.appStore,
+                          domainCom: result.checks.domainCom,
+                          domainApp: result.checks.domainApp,
+                          twitter: result.checks.twitter,
+                          instagram: result.checks.instagram,
+                        },
+                      };
+                      console.log(`[Identity] Selected name: ${chosenName}`);
+                      break;
+                    }
+                  }
+                }
+              } catch (checkError) {
+                console.error(`[Identity] Error checking ${name}:`, checkError);
+              }
+            }
+
+            // If no name passed all checks, use the first one with a warning
+            if (!chosenName && candidateNames.length > 0) {
+              chosenName = candidateNames[0];
+              console.log(`[Identity] No fully available name found, using first candidate: ${chosenName}`);
+            }
+          }
+        }
+      } catch (candidatesError) {
+        console.error('[Identity] Error getting candidate names:', candidatesError);
+      }
+    }
+
     // Build prompt - manifest uses a different prompt function
     // For pareto, design_system, and aso, use async version with enrichment (palettes, reviews, keywords)
     const sectionsNeedingEnrichment = ['pareto', 'design_system', 'aso'];
@@ -192,6 +291,15 @@ export async function POST(request: NextRequest) {
         blueprint.pareto_strategy!,
         blueprint.ui_wireframes!,
         blueprint.tech_stack!
+      );
+    } else if (section === 'identity') {
+      // Identity section uses special prompt with chosen name and availability results
+      prompt = getAppIdentityPrompt(
+        project,
+        blueprint.pareto_strategy!,
+        colorPalette,
+        chosenName,
+        availabilityResults
       );
     } else if (sectionsNeedingEnrichment.includes(section)) {
       // Use async version with enrichment (color palettes for design_system, reviews for pareto)

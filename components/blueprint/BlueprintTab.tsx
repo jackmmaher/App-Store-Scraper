@@ -25,6 +25,7 @@ export default function BlueprintTab({ projectId }: BlueprintTabProps) {
     error,
     uploadAttachment,
     deleteAttachment,
+    refreshAttachments,
     getExportUrl,
     setBlueprint,
   } = useBlueprint({ projectId });
@@ -197,6 +198,7 @@ export default function BlueprintTab({ projectId }: BlueprintTabProps) {
       <div className="flex-1 p-6 overflow-auto">
         <BlueprintSectionComponent
           section={activeSection}
+          blueprintId={blueprint.id}
           content={getSectionContent(activeSection)}
           status={statuses[activeSection]}
           generatedAt={getSectionGeneratedAt(activeSection)}
@@ -210,6 +212,7 @@ export default function BlueprintTab({ projectId }: BlueprintTabProps) {
           onUploadAttachment={handleUpload}
           onDeleteAttachment={deleteAttachment}
           onChangePalette={() => setPaletteModalOpen(true)}
+          onRefreshAttachments={refreshAttachments}
         />
       </div>
 
