@@ -1,29 +1,68 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Keyword, KeywordScoreResult, DiscoveryMethod, KeywordJob, KeywordRanking } from '@/lib/keywords/types';
 import type { AppResult } from '@/lib/supabase';
 import { ensureAppInMasterDb } from '@/lib/supabase';
 import AppDetailModal from './AppDetailModal';
 
 // Tooltip component for metric explanations
-function Tooltip({ children, content }: { children: React.ReactNode; content: React.ReactNode }) {
+// Uses fixed positioning to escape modal overflow constraints
+function Tooltip({ children, content, position = 'top' }: {
+  children: React.ReactNode;
+  content: React.ReactNode;
+  position?: 'top' | 'bottom';
+}) {
   const [show, setShow] = useState(false);
+  const [coords, setCoords] = useState({ x: 0, y: 0 });
+  const triggerRef = useRef<HTMLSpanElement>(null);
+
+  const handleMouseEnter = () => {
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect();
+      setCoords({
+        x: rect.left + rect.width / 2,
+        y: position === 'bottom' ? rect.bottom : rect.top,
+      });
+    }
+    setShow(true);
+  };
 
   return (
     <span
+      ref={triggerRef}
       className="relative inline-flex items-center cursor-help"
-      onMouseEnter={() => setShow(true)}
+      onMouseEnter={handleMouseEnter}
       onMouseLeave={() => setShow(false)}
     >
       {children}
       {show && (
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50">
+        <div
+          className="fixed z-[100]"
+          style={{
+            left: `${coords.x}px`,
+            top: position === 'bottom' ? `${coords.y + 8}px` : `${coords.y - 8}px`,
+            transform: position === 'bottom'
+              ? 'translateX(-50%)'
+              : 'translateX(-50%) translateY(-100%)',
+          }}
+        >
           <div className="bg-gray-900 text-white text-xs rounded-lg px-3 py-2 w-64 shadow-lg">
             {content}
           </div>
-          <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1">
-            <div className="border-4 border-transparent border-t-gray-900" />
+          {/* Arrow */}
+          <div
+            className="absolute left-1/2 -translate-x-1/2"
+            style={position === 'bottom'
+              ? { top: '-6px' }
+              : { bottom: '-6px' }
+            }
+          >
+            <div className={`border-4 border-transparent ${
+              position === 'bottom'
+                ? 'border-b-gray-900'
+                : 'border-t-gray-900'
+            }`} />
           </div>
         </div>
       )}
@@ -1145,7 +1184,7 @@ export default function KeywordResearch({ initialQuery, initialCountry }: Keywor
                 </h2>
                 {selectedKeyword && (
                   <div className="flex items-center gap-4 mt-1 text-sm">
-                    <Tooltip content={METRIC_TOOLTIPS.volume}>
+                    <Tooltip content={METRIC_TOOLTIPS.volume} position="bottom">
                       <span className={`${getScoreColor(selectedKeyword.keyword.volume_score, 'volume')} flex items-center gap-1`}>
                         Volume: {selectedKeyword.keyword.volume_score?.toFixed(1)}
                         <svg className="w-3.5 h-3.5 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1153,7 +1192,7 @@ export default function KeywordResearch({ initialQuery, initialCountry }: Keywor
                         </svg>
                       </span>
                     </Tooltip>
-                    <Tooltip content={METRIC_TOOLTIPS.difficulty}>
+                    <Tooltip content={METRIC_TOOLTIPS.difficulty} position="bottom">
                       <span className={`${getScoreColor(selectedKeyword.keyword.difficulty_score, 'difficulty')} flex items-center gap-1`}>
                         Difficulty: {selectedKeyword.keyword.difficulty_score?.toFixed(1)}
                         <svg className="w-3.5 h-3.5 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1161,7 +1200,7 @@ export default function KeywordResearch({ initialQuery, initialCountry }: Keywor
                         </svg>
                       </span>
                     </Tooltip>
-                    <Tooltip content={METRIC_TOOLTIPS.opportunity}>
+                    <Tooltip content={METRIC_TOOLTIPS.opportunity} position="bottom">
                       <span className={`${getScoreColor(selectedKeyword.keyword.opportunity_score, 'opportunity')} flex items-center gap-1`}>
                         Opportunity: {selectedKeyword.keyword.opportunity_score?.toFixed(1)}
                         <svg className="w-3.5 h-3.5 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
