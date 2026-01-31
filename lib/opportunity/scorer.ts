@@ -421,28 +421,17 @@ export async function scoreOpportunity(
   const marketEstimates = calculateMarketEstimates(top10Apps);
 
   // Analyze competitor reviews for sentiment (only if apps have enough reviews)
-  let reviewSentiment = null;
-  if (shouldAnalyzeReviews(top10Apps)) {
-    try {
-      const sentimentResult = await analyzeCompetitorReviews(top10Apps, country, 3);
-      reviewSentiment = {
-        total_critical_reviews: sentimentResult.total_critical_reviews,
-        apps_analyzed: sentimentResult.apps_analyzed,
-        complaint_themes: sentimentResult.complaint_themes,
-        top_complaints: sentimentResult.top_complaints,
-        opportunity_signals: sentimentResult.opportunity_signals,
-        sample_reviews: sentimentResult.sample_reviews.map(r => ({
-          title: r.title,
-          content: r.content,
-          rating: r.rating,
-          app_name: r.app_name,
-        })),
-      };
-    } catch (error) {
-      console.error('Error analyzing competitor reviews:', error);
-      // Continue without review sentiment - it's optional enrichment
-    }
-  }
+  // DISABLED: Review analysis adds ~30s per keyword, causing timeouts on daily run
+  // TODO: Re-enable once we have a background job queue for this
+  const reviewSentiment = null;
+  // if (shouldAnalyzeReviews(top10Apps)) {
+  //   try {
+  //     const sentimentResult = await analyzeCompetitorReviews(top10Apps, country, 3);
+  //     reviewSentiment = { ... };
+  //   } catch (error) {
+  //     console.error('Error analyzing competitor reviews:', error);
+  //   }
+  // }
 
   // Build raw data object
   const rawData: OpportunityRawData = {
