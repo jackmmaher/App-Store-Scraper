@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { useGapAnalysis } from '@/hooks/useGapAnalysis';
 import { useGapChat } from '@/hooks/useGapChat';
@@ -13,6 +13,7 @@ import {
 } from '@/components/gap-analysis';
 import { CATEGORY_NAMES } from '@/lib/constants';
 import type { GapAnalysisApp } from '@/lib/supabase';
+import Header from './Header';
 
 interface Props {
   sessionId: string;
@@ -98,8 +99,10 @@ export default function GapSessionDetailPage({ sessionId }: Props) {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 overflow-x-hidden">
-      {/* Header */}
-      <header className="bg-white dark:bg-gray-800 shadow-sm sticky top-0 z-10">
+      <Header />
+
+      {/* Session Sub-header */}
+      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 overflow-x-hidden">
           <div className="flex items-center justify-between">
             <div>
@@ -107,6 +110,7 @@ export default function GapSessionDetailPage({ sessionId }: Props) {
                 <Link
                   href="/gap-analysis"
                   className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                  title="Back to Gap Analysis"
                 >
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -173,7 +177,7 @@ export default function GapSessionDetailPage({ sessionId }: Props) {
             </div>
           </div>
         </div>
-      </header>
+      </div>
 
       {/* Error Banner */}
       {error && (
