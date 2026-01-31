@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { isAuthenticated } from '@/lib/auth';
 import { scoreKeyword } from '@/lib/keywords/scoring';
 import { upsertKeyword, getKeyword, saveKeywordRankings, recordKeywordHistory } from '@/lib/keywords/db';
+import { batchAddAppsFromiTunes } from '@/lib/supabase';
 
 // POST /api/keywords/score - Score a single keyword
 export async function POST(request: NextRequest) {
@@ -65,6 +66,13 @@ export async function POST(request: NextRequest) {
         scores.difficulty_score,
         scores.opportunity_score
       );
+
+      // Automatically add top ranking apps to the master database
+      // This runs async but we don't wait for it to complete
+      const appIds = scores.top_10_apps.map(app => app.id);
+      batchAddAppsFromiTunes(appIds, country).catch(err => {
+        console.error('Error auto-adding apps to database:', err);
+      });
     }
 
     return NextResponse.json({

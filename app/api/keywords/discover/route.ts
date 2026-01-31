@@ -15,6 +15,7 @@ import {
   completeJob,
   failJob,
 } from '@/lib/keywords/db';
+import { batchAddAppsFromiTunes } from '@/lib/supabase';
 import { DiscoveryMethod, DiscoveredKeyword, JobProgressEvent } from '@/lib/keywords/types';
 
 export const runtime = 'nodejs';
@@ -154,6 +155,8 @@ export async function POST(request: NextRequest) {
           });
 
           // Score keywords if requested
+          const allAppIds = new Set<string>(); // Collect all app IDs for batch adding
+
           if (score_immediately && keywords.length > 0) {
             for (const kw of keywords) {
               try {
@@ -177,6 +180,11 @@ export async function POST(request: NextRequest) {
                     app_icon_url: app.icon_url || null,
                   }));
                   await saveKeywordRankings(savedKeyword.id, rankingsToSave);
+
+                  // Collect app IDs for batch adding to master database
+                  for (const app of scores.top_10_apps) {
+                    allAppIds.add(app.id);
+                  }
                 }
 
                 scored++;
@@ -199,6 +207,13 @@ export async function POST(request: NextRequest) {
               } catch (err) {
                 console.error(`Error scoring keyword ${kw.keyword}:`, err);
               }
+            }
+
+            // Batch add all discovered apps to the master database
+            if (allAppIds.size > 0) {
+              batchAddAppsFromiTunes(Array.from(allAppIds), country).catch(err => {
+                console.error('Error batch adding apps to database:', err);
+              });
             }
           }
 

@@ -563,6 +563,98 @@ export async function ensureAppInMasterDb(app: AppResult, country: string): Prom
   return data;
 }
 
+// Batch add apps to master database from iTunes IDs
+// Fetches full app details and adds them, avoiding duplicates
+export async function batchAddAppsFromiTunes(
+  appIds: string[],
+  country: string = 'us'
+): Promise<{ added: number; skipped: number; failed: number }> {
+  const results = { added: 0, skipped: 0, failed: 0 };
+
+  if (appIds.length === 0) return results;
+
+  // First, check which apps already exist
+  const { data: existingApps } = await supabase
+    .from('apps')
+    .select('app_store_id')
+    .in('app_store_id', appIds);
+
+  const existingIds = new Set((existingApps || []).map(a => a.app_store_id));
+  const newAppIds = appIds.filter(id => !existingIds.has(id));
+
+  results.skipped = existingIds.size;
+
+  if (newAppIds.length === 0) return results;
+
+  // Batch lookup from iTunes (max 200 per request)
+  const batchSize = 100;
+  for (let i = 0; i < newAppIds.length; i += batchSize) {
+    const batch = newAppIds.slice(i, i + batchSize);
+    const url = `https://itunes.apple.com/lookup?id=${batch.join(',')}&country=${country}`;
+
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        results.failed += batch.length;
+        continue;
+      }
+
+      const data = await response.json();
+      const apps = data.results || [];
+
+      for (const itunesApp of apps) {
+        try {
+          const appResult: AppResult = {
+            id: itunesApp.trackId.toString(),
+            name: itunesApp.trackName || '',
+            bundle_id: itunesApp.bundleId || '',
+            developer: itunesApp.artistName || '',
+            developer_id: itunesApp.artistId?.toString() || '',
+            price: itunesApp.price || 0,
+            currency: itunesApp.currency || 'USD',
+            rating: itunesApp.averageUserRating || 0,
+            rating_current_version: itunesApp.averageUserRatingForCurrentVersion || 0,
+            review_count: itunesApp.userRatingCount || 0,
+            review_count_current_version: itunesApp.userRatingCountForCurrentVersion || 0,
+            version: itunesApp.version || '',
+            release_date: itunesApp.releaseDate || '',
+            current_version_release_date: itunesApp.currentVersionReleaseDate || '',
+            min_os_version: itunesApp.minimumOsVersion || '',
+            file_size_bytes: itunesApp.fileSizeBytes || '0',
+            content_rating: itunesApp.contentAdvisoryRating || '',
+            genres: itunesApp.genres || [],
+            primary_genre: itunesApp.primaryGenreName || '',
+            primary_genre_id: itunesApp.primaryGenreId?.toString() || '',
+            url: itunesApp.trackViewUrl || '',
+            icon_url: itunesApp.artworkUrl100 || '',
+            description: itunesApp.description || '',
+          };
+
+          const saved = await ensureAppInMasterDb(appResult, country);
+          if (saved) {
+            results.added++;
+          } else {
+            results.failed++;
+          }
+        } catch (err) {
+          console.error('Error saving app:', itunesApp.trackId, err);
+          results.failed++;
+        }
+      }
+
+      // Rate limiting between batches
+      if (i + batchSize < newAppIds.length) {
+        await new Promise(r => setTimeout(r, 200));
+      }
+    } catch (error) {
+      console.error('Error fetching iTunes batch:', error);
+      results.failed += batch.length;
+    }
+  }
+
+  return results;
+}
+
 // ============================================
 // App Projects Types & Operations
 // ============================================
