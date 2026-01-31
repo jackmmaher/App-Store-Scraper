@@ -11,6 +11,7 @@ import {
   type BlueprintColorPalette,
 } from '@/lib/supabase';
 import { getBlueprintPrompt, getBlueprintPromptWithEnrichment, getBuildManifestPrompt } from '@/lib/blueprint-prompts';
+import { getColorPalettesForDesignSystem, type ColorPalette } from '@/lib/crawl';
 
 // Sections that need a color palette
 const COLOR_SECTIONS: BlueprintSection[] = ['identity', 'design_system', 'wireframes', 'aso'];
@@ -139,23 +140,25 @@ export async function POST(request: NextRequest) {
       const category = project.app_primary_genre || '';
       console.log(`[Blueprint] No palette set, auto-selecting for category "${category}"...`);
 
-      // Try to fetch from Coolors via our API
+      // Try to fetch from Coolors via crawl service directly (not via API route)
       let selectedPalette: BlueprintColorPalette | null = null;
       try {
-        const palettesResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/blueprint/palettes`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ category, max_palettes: 1 }),
-        });
+        const palettePromptText = await getColorPalettesForDesignSystem(category, undefined, 1);
 
-        if (palettesResponse.ok) {
-          const data = await palettesResponse.json();
-          if (data.palettes?.[0]) {
-            selectedPalette = {
-              colors: data.palettes[0].colors,
-              mood: data.palettes[0].mood,
-              source_url: data.palettes[0].source_url,
-            };
+        // Parse the first palette from the prompt text
+        const paletteMatch = palettePromptText.match(/\*\*Palette \d+\*\*\s*\(([^)]+)\):\s*((?:`#[A-Fa-f0-9]{6}`\s*\|?\s*)+)/);
+        if (paletteMatch) {
+          const mood = paletteMatch[1].trim();
+          const colorsStr = paletteMatch[2];
+          const colors: string[] = [];
+          const hexPattern = /#([A-Fa-f0-9]{6})/g;
+          let hexMatch;
+          while ((hexMatch = hexPattern.exec(colorsStr)) !== null) {
+            colors.push(hexMatch[1].toUpperCase());
+          }
+
+          if (colors.length > 0) {
+            selectedPalette = { colors, mood };
             console.log(`[Blueprint] Selected Coolors palette:`, selectedPalette.colors);
           }
         }
