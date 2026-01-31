@@ -14,11 +14,14 @@ export const dynamic = 'force-dynamic';
 // Track if we've already started the service
 let serviceProcess: ReturnType<typeof spawn> | null = null;
 
-export async function POST() {
-  // Only allow in development
-  if (process.env.NODE_ENV === 'production') {
+export async function POST(request: Request) {
+  // Only allow on localhost (security measure for deployed environments)
+  const host = request.headers.get('host') || '';
+  const isLocalhost = host.startsWith('localhost') || host.startsWith('127.0.0.1') || host.startsWith('192.168.');
+
+  if (!isLocalhost) {
     return NextResponse.json(
-      { error: 'Cannot start crawler in production mode' },
+      { error: 'Crawler can only be started from localhost' },
       { status: 403 }
     );
   }
