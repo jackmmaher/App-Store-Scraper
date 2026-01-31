@@ -19,20 +19,40 @@ const SECTION_META: Record<BlueprintSectionType, SectionMeta> = {
     description: 'Identify the 20% of features that deliver 80% of the value, plus onboarding, monetization, and architecture decisions.',
     dependencies: [],
   },
+  identity: {
+    title: 'App Identity',
+    description: 'App name options, availability checklist, icon design specs, and visual identity guidelines.',
+    dependencies: ['pareto'],
+  },
+  design_system: {
+    title: 'Design System',
+    description: 'Colors, typography, spacing, borders, shadows, and component styles with light/dark mode variants.',
+    dependencies: ['identity'],
+  },
   wireframes: {
     title: 'UI Wireframes',
-    description: 'Detailed screen-by-screen specifications for the app UI, from onboarding to settings.',
-    dependencies: ['pareto'],
+    description: 'Detailed screen-by-screen specifications for the app UI, using the design system tokens.',
+    dependencies: ['pareto', 'design_system'],
   },
   tech_stack: {
     title: 'Tech Stack',
-    description: 'Native iOS stack recommendations including Swift/SwiftUI, iPhone APIs, backend services, and third-party SDKs.',
+    description: 'Native iOS stack recommendations including Swift/SwiftUI, iPhone APIs, and native Apple services.',
     dependencies: ['pareto', 'wireframes'],
+  },
+  xcode_setup: {
+    title: 'Xcode Setup',
+    description: 'Project structure, bundle ID, Info.plist, entitlements, code signing, and App Store Connect setup.',
+    dependencies: ['tech_stack', 'identity'],
   },
   prd: {
     title: 'Product Requirements Document',
-    description: 'Complete PRD synthesizing all previous sections into executive summary, requirements, metrics, and timeline.',
+    description: 'Complete PRD synthesizing strategy, wireframes, and tech stack into requirements, metrics, and timeline.',
     dependencies: ['pareto', 'wireframes', 'tech_stack'],
+  },
+  aso: {
+    title: 'App Store Optimization',
+    description: 'Title, subtitle, keywords, description, screenshot strategy, and pricing recommendations.',
+    dependencies: ['prd', 'identity', 'design_system'],
   },
   manifest: {
     title: 'Build Manifest',

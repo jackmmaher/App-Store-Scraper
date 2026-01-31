@@ -160,10 +160,341 @@ Based on the negative reviews and researcher notes, what opportunities exist to 
 Format your response in clean Markdown with proper headings, tables, and bullet points. Cite specific reviews where relevant.`;
 }
 
-// Section 2: UI Wireframes Prompt
+// Section 2: App Identity Prompt
+export function getAppIdentityPrompt(
+  project: AppProject,
+  paretoStrategy: string
+): string {
+  const notesSection = project.notes && project.notes.trim()
+    ? `\n## Researcher's Notes\n${project.notes}\n`
+    : '';
+
+  return `You are a brand strategist specializing in iOS app naming and visual identity. Based on the Pareto Strategy below, create a comprehensive App Identity specification document.
+
+## App Context
+
+**Competitor App Name:** ${project.app_name}
+**Category:** ${project.app_primary_genre || 'Unknown'}
+**Developer:** ${project.app_developer || 'Unknown'}
+${notesSection}
+## Pareto Strategy (Section 1)
+
+${paretoStrategy}
+
+---
+
+## Your Task
+
+Create a detailed App Identity document with the following sections:
+
+### 1. App Name Options
+
+Provide 3-5 app name suggestions with rationale for each:
+
+| Name | Rationale | Pros | Cons |
+|------|-----------|------|------|
+| [Name 1] | Why this name works | Benefits | Drawbacks |
+| [Name 2] | ... | ... | ... |
+
+**Top Recommendation:** [Name] because [reason]
+
+### 2. Name Availability Checklist
+
+For your top recommended name, create a checklist:
+
+| Check | Status | Notes |
+|-------|--------|-------|
+| App Store | 🔍 To verify | Search "[name]" on App Store |
+| Domain (.com) | 🔍 To verify | Check [name].com availability |
+| Domain (.app) | 🔍 To verify | Check [name].app availability |
+| Twitter/X | 🔍 To verify | Check @[name] availability |
+| Instagram | 🔍 To verify | Check @[name] availability |
+| Trademark | 🔍 To verify | Search USPTO database |
+
+### 3. App Icon Design Direction
+
+**Design Style:**
+- Recommended style: [Flat/Gradient/3D/Illustrated/Minimal]
+- Reasoning: [Why this style fits the app]
+
+**Color Direction:**
+- Primary color: [Color + hex code suggestion]
+- Accent color: [Color + hex code suggestion]
+- Background: [Solid/Gradient/Transparent]
+
+**Iconography:**
+- Main symbol/shape: [Description of the central element]
+- Visual metaphor: [What the icon should communicate]
+- Style notes: [Rounded corners, sharp edges, etc.]
+
+**Icon Design Guidelines:**
+
+DO:
+- [Specific do's for this app's icon]
+- Keep it simple and recognizable at 20x20pt
+- Use consistent stroke weights
+- Test against light and dark backgrounds
+
+DON'T:
+- [Specific don'ts for this app's icon]
+- Include text in the icon
+- Use photos or complex gradients
+- Copy competitor icons directly
+
+### 4. Required Icon Sizes
+
+| Size (pt) | Scale | Pixels | Usage |
+|-----------|-------|--------|-------|
+| 1024 | 1x | 1024×1024 | App Store |
+| 180 | 3x | 180×180 | iPhone App Icon |
+| 120 | 2x | 120×120 | iPhone App Icon |
+| 167 | 2x | 167×167 | iPad Pro App Icon |
+| 152 | 2x | 152×152 | iPad App Icon |
+| 76 | 1x | 76×76 | iPad App Icon |
+| 120 | 3x | 120×120 | iPhone Spotlight |
+| 80 | 2x | 80×80 | iPhone Spotlight |
+| 80 | 2x | 80×80 | iPad Spotlight |
+| 40 | 1x | 40×40 | iPad Spotlight |
+| 87 | 3x | 87×87 | iPhone Settings |
+| 58 | 2x | 58×58 | iPhone Settings |
+| 58 | 2x | 58×58 | iPad Settings |
+| 29 | 1x | 29×29 | iPad Settings |
+| 60 | 3x | 60×60 | iPhone Notifications |
+| 40 | 2x | 40×40 | iPhone/iPad Notifications |
+| 20 | 1x | 20×20 | iPad Notifications |
+
+### 5. Icon Mockup Prompt
+
+Provide a detailed prompt that could be used with an AI image generator (DALL-E, Midjourney):
+
+\`\`\`
+[Detailed prompt for generating the app icon]
+\`\`\`
+
+Format your response in clean Markdown with proper headings and tables.`;
+}
+
+// Section 3: Design System Prompt
+export function getDesignSystemPrompt(
+  project: AppProject,
+  paretoStrategy: string,
+  appIdentity: string
+): string {
+  const notesSection = project.notes && project.notes.trim()
+    ? `\n## Researcher's Notes\n${project.notes}\n`
+    : '';
+
+  return `You are a senior UI/UX designer specializing in native iOS design systems. Based on the Pareto Strategy and App Identity below, create a comprehensive Design System specification.
+
+**IMPORTANT: Native iOS Design**
+All design recommendations must follow Apple's Human Interface Guidelines and use native SwiftUI components.
+
+## App Context
+
+**App Name:** ${project.app_name}
+**Category:** ${project.app_primary_genre || 'Unknown'}
+${notesSection}
+## Pareto Strategy (Section 1)
+
+${paretoStrategy}
+
+## App Identity (Section 2)
+
+${appIdentity}
+
+---
+
+## Your Task
+
+Create a comprehensive Design System document:
+
+### 1. Color Palette
+
+#### Primary Colors
+| Name | Light Mode | Dark Mode | Usage |
+|------|------------|-----------|-------|
+| Primary | #XXXXXX | #XXXXXX | Main actions, brand |
+| Secondary | #XXXXXX | #XXXXXX | Secondary actions |
+| Accent | #XXXXXX | #XXXXXX | Highlights, links |
+
+#### Semantic Colors
+| Name | Light Mode | Dark Mode | Usage |
+|------|------------|-----------|-------|
+| Success | #22C55E | #4ADE80 | Confirmations, complete |
+| Warning | #F59E0B | #FBBF24 | Cautions, alerts |
+| Error | #EF4444 | #F87171 | Errors, destructive |
+| Info | #3B82F6 | #60A5FA | Information, tips |
+
+#### Background Colors
+| Name | Light Mode | Dark Mode | Usage |
+|------|------------|-----------|-------|
+| Background | #FFFFFF | #000000 | Main background |
+| Secondary BG | #F9FAFB | #1C1C1E | Cards, sections |
+| Tertiary BG | #F3F4F6 | #2C2C2E | Input fields |
+
+#### Text Colors
+| Name | Light Mode | Dark Mode | Usage |
+|------|------------|-----------|-------|
+| Primary Text | #111827 | #FFFFFF | Headings, body |
+| Secondary Text | #6B7280 | #9CA3AF | Captions, hints |
+| Tertiary Text | #9CA3AF | #6B7280 | Disabled, placeholders |
+
+### 2. Typography Scale
+
+**Font Family:** SF Pro (system default)
+
+| Style | Size | Weight | Line Height | Letter Spacing | Usage |
+|-------|------|--------|-------------|----------------|-------|
+| Large Title | 34pt | Bold | 41pt | 0.37pt | Main screen titles |
+| Title 1 | 28pt | Bold | 34pt | 0.36pt | Section headers |
+| Title 2 | 22pt | Bold | 28pt | 0.35pt | Card titles |
+| Title 3 | 20pt | Semibold | 25pt | 0.38pt | List headers |
+| Headline | 17pt | Semibold | 22pt | -0.43pt | Emphasized text |
+| Body | 17pt | Regular | 22pt | -0.43pt | Main content |
+| Callout | 16pt | Regular | 21pt | -0.31pt | Secondary content |
+| Subheadline | 15pt | Regular | 20pt | -0.23pt | Supporting text |
+| Footnote | 13pt | Regular | 18pt | -0.08pt | Fine print |
+| Caption 1 | 12pt | Regular | 16pt | 0pt | Labels |
+| Caption 2 | 11pt | Regular | 13pt | 0.06pt | Timestamps |
+
+### 3. Spacing System
+
+**Base Unit:** 4pt
+
+| Token | Value | Usage |
+|-------|-------|-------|
+| spacing-xs | 4pt | Tight spacing, icon gaps |
+| spacing-sm | 8pt | Related elements |
+| spacing-md | 16pt | Default padding |
+| spacing-lg | 24pt | Section separators |
+| spacing-xl | 32pt | Major sections |
+| spacing-2xl | 48pt | Screen margins |
+
+**Layout Grid:**
+- Margins: 16pt (iPhone), 20pt (iPad)
+- Gutter: 16pt
+- Columns: 4 (iPhone), 12 (iPad)
+
+### 4. Borders & Corners
+
+| Token | Value | Usage |
+|-------|-------|-------|
+| radius-sm | 4pt | Buttons, tags |
+| radius-md | 8pt | Cards, inputs |
+| radius-lg | 12pt | Modals, sheets |
+| radius-xl | 16pt | Large cards |
+| radius-full | 9999pt | Pills, avatars |
+
+**Border Widths:**
+| Token | Value | Usage |
+|-------|-------|-------|
+| border-thin | 0.5pt | Subtle dividers |
+| border-default | 1pt | Standard borders |
+| border-thick | 2pt | Focus states |
+
+### 5. Shadows & Elevation
+
+| Level | Shadow | Usage |
+|-------|--------|-------|
+| elevation-0 | None | Flat elements |
+| elevation-1 | 0 1pt 2pt rgba(0,0,0,0.05) | Cards, lists |
+| elevation-2 | 0 4pt 6pt rgba(0,0,0,0.07) | Dropdowns, popovers |
+| elevation-3 | 0 10pt 15pt rgba(0,0,0,0.1) | Modals, sheets |
+| elevation-4 | 0 20pt 25pt rgba(0,0,0,0.15) | Dialogs |
+
+### 6. Component Styles
+
+#### Buttons
+| Type | Background | Text | Border | Usage |
+|------|------------|------|--------|-------|
+| Primary | Primary Color | White | None | Main actions |
+| Secondary | Secondary BG | Primary Text | 1pt border | Secondary actions |
+| Tertiary | Transparent | Accent | None | Text links |
+| Destructive | Error Color | White | None | Delete, cancel |
+
+**Button Specs:**
+- Height: 44pt minimum (touch target)
+- Padding: 16pt horizontal, 12pt vertical
+- Corner radius: radius-md (8pt)
+- Font: Headline (17pt Semibold)
+
+#### Cards
+- Background: Secondary BG
+- Corner radius: radius-lg (12pt)
+- Padding: spacing-md (16pt)
+- Shadow: elevation-1
+
+#### Form Inputs
+- Height: 44pt
+- Background: Tertiary BG
+- Corner radius: radius-md (8pt)
+- Border: 1pt Secondary Text (on focus)
+- Padding: 12pt horizontal
+
+### 7. Accessibility
+
+**Contrast Ratios:**
+- Normal text: Minimum 4.5:1
+- Large text (18pt+): Minimum 3:1
+- Interactive elements: Minimum 3:1
+
+**Touch Targets:**
+- Minimum size: 44×44pt
+- Minimum spacing between targets: 8pt
+
+**Motion:**
+- Respect "Reduce Motion" setting
+- Provide alternatives to animations
+- Duration: 200-300ms for micro-interactions
+
+### 8. SwiftUI Implementation
+
+\`\`\`swift
+import SwiftUI
+
+// MARK: - Colors
+extension Color {
+    static let appPrimary = Color("Primary")
+    static let appSecondary = Color("Secondary")
+    static let appAccent = Color("Accent")
+    // Add semantic colors...
+}
+
+// MARK: - Typography
+extension Font {
+    static let appLargeTitle = Font.largeTitle.weight(.bold)
+    static let appTitle1 = Font.title.weight(.bold)
+    static let appHeadline = Font.headline
+    static let appBody = Font.body
+    static let appCaption = Font.caption
+}
+
+// MARK: - Spacing
+enum Spacing {
+    static let xs: CGFloat = 4
+    static let sm: CGFloat = 8
+    static let md: CGFloat = 16
+    static let lg: CGFloat = 24
+    static let xl: CGFloat = 32
+}
+
+// MARK: - Corner Radius
+enum CornerRadius {
+    static let sm: CGFloat = 4
+    static let md: CGFloat = 8
+    static let lg: CGFloat = 12
+    static let xl: CGFloat = 16
+}
+\`\`\`
+
+Format your response in clean Markdown with proper headings and tables.`;
+}
+
+// Section 4: UI Wireframes Prompt
 export function getUIWireframesPrompt(
   project: AppProject,
   paretoStrategy: string,
+  designSystem: string,
   attachments: BlueprintAttachment[]
 ): string {
   const attachmentInfo = attachments.length > 0
@@ -175,7 +506,7 @@ export function getUIWireframesPrompt(
     ? `\n## Researcher's Notes\n${project.notes}\n`
     : '';
 
-  return `You are a senior UI/UX designer specializing in native iOS apps built with SwiftUI. Based on the Pareto Strategy and project context below, create a detailed UI Wireframe specification document.
+  return `You are a senior UI/UX designer specializing in native iOS apps built with SwiftUI. Based on the Pareto Strategy, Design System, and project context below, create a detailed UI Wireframe specification document.
 
 **IMPORTANT: Native SwiftUI Design**
 All UI recommendations must use native SwiftUI components and Apple's Human Interface Guidelines:
@@ -195,6 +526,12 @@ ${notesSection}
 ## Pareto Strategy (Section 1)
 
 ${paretoStrategy}
+
+## Design System (Section 3)
+
+Use the following design system tokens for all UI specifications:
+
+${designSystem}
 ${attachmentInfo}
 
 ## AI Analysis Reference
@@ -565,7 +902,454 @@ Create a comprehensive PRD that synthesizes ALL the above information:
 Format your response in clean Markdown with proper headings, tables, and bullet points.`;
 }
 
-// Section 5: Build Manifest Prompt (generated on export)
+// Section 6: Xcode Setup Prompt
+export function getXcodeSetupPrompt(
+  project: AppProject,
+  techStack: string,
+  appIdentity: string
+): string {
+  const notesSection = project.notes && project.notes.trim()
+    ? `\n## Researcher's Notes\n${project.notes}\n`
+    : '';
+
+  return `You are a senior iOS developer creating an Xcode Setup guide for a new native iOS app. Based on the Tech Stack and App Identity below, create a comprehensive setup document.
+
+## App Context
+
+**App Name:** ${project.app_name}
+**Category:** ${project.app_primary_genre || 'Unknown'}
+${notesSection}
+## Tech Stack (Section 5)
+
+${techStack}
+
+## App Identity (Section 2)
+
+${appIdentity}
+
+---
+
+## Your Task
+
+Create a comprehensive Xcode Setup document:
+
+### 1. Bundle ID & Team Configuration
+
+**Recommended Bundle ID Format:**
+\`\`\`
+com.[yourcompany].[appname]
+\`\`\`
+
+**Example:** \`com.acme.myawesomeapp\`
+
+**Team Setup:**
+| Setting | Value | Notes |
+|---------|-------|-------|
+| Team | Your Developer Account | Select from Xcode Signing |
+| Bundle Identifier | com.yourcompany.appname | Unique identifier |
+| Version | 1.0.0 | Semantic versioning |
+| Build | 1 | Increment for each build |
+
+### 2. Project Structure
+
+Create the following folder structure:
+
+\`\`\`
+MyApp/
+├── MyApp.swift                 # App entry point
+├── Info.plist                  # App configuration
+├── Assets.xcassets/            # Images, colors, app icon
+│   ├── AppIcon.appiconset/
+│   ├── AccentColor.colorset/
+│   └── Colors/
+├── Models/                     # SwiftData models
+│   ├── User.swift
+│   └── [Other models].swift
+├── Views/                      # SwiftUI views
+│   ├── ContentView.swift
+│   ├── Onboarding/
+│   ├── Main/
+│   ├── Settings/
+│   └── Components/
+├── ViewModels/                 # @Observable classes
+│   └── [ViewModels].swift
+├── Services/                   # Business logic
+│   ├── StoreManager.swift      # StoreKit 2
+│   ├── CloudKitManager.swift   # CloudKit sync
+│   └── AuthManager.swift       # Sign in with Apple
+├── Utilities/                  # Helpers, extensions
+│   ├── Extensions/
+│   └── Helpers/
+└── Resources/                  # Localization, fonts
+    └── Localizable.xcstrings
+\`\`\`
+
+### 3. Info.plist Configuration
+
+**Required Keys:**
+
+| Key | Type | Value | Purpose |
+|-----|------|-------|---------|
+| CFBundleDisplayName | String | $(PRODUCT_NAME) | App name on home screen |
+| CFBundleIdentifier | String | $(PRODUCT_BUNDLE_IDENTIFIER) | Unique app ID |
+| CFBundleVersion | String | $(CURRENT_PROJECT_VERSION) | Build number |
+| CFBundleShortVersionString | String | $(MARKETING_VERSION) | Version string |
+| UILaunchScreen | Dictionary | {} | Uses SwiftUI launch |
+| UISupportedInterfaceOrientations | Array | [Portrait] | Supported orientations |
+| ITSAppUsesNonExemptEncryption | Boolean | NO | Export compliance |
+
+**Privacy Permission Keys (add as needed):**
+
+| Key | Description Example |
+|-----|---------------------|
+| NSCameraUsageDescription | "We need camera access to scan QR codes" |
+| NSPhotoLibraryUsageDescription | "We need photo access to save images" |
+| NSLocationWhenInUseUsageDescription | "We need your location to show nearby places" |
+| NSMicrophoneUsageDescription | "We need microphone access to record audio" |
+| NSFaceIDUsageDescription | "We use Face ID to secure your data" |
+| NSHealthShareUsageDescription | "We read health data to track your progress" |
+
+### 4. Entitlements
+
+**MyApp.entitlements:**
+
+\`\`\`xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- iCloud / CloudKit -->
+    <key>com.apple.developer.icloud-container-identifiers</key>
+    <array>
+        <string>iCloud.com.yourcompany.appname</string>
+    </array>
+    <key>com.apple.developer.icloud-services</key>
+    <array>
+        <string>CloudKit</string>
+    </array>
+
+    <!-- Sign in with Apple -->
+    <key>com.apple.developer.applesignin</key>
+    <array>
+        <string>Default</string>
+    </array>
+
+    <!-- In-App Purchases -->
+    <key>com.apple.developer.in-app-payments</key>
+    <array>
+        <string>merchant.com.yourcompany.appname</string>
+    </array>
+
+    <!-- Push Notifications -->
+    <key>aps-environment</key>
+    <string>development</string>
+</dict>
+</plist>
+\`\`\`
+
+### 5. Code Signing
+
+| Environment | Profile Type | Certificate |
+|-------------|--------------|-------------|
+| Development | iOS App Development | Apple Development |
+| TestFlight | App Store Distribution | Apple Distribution |
+| App Store | App Store Distribution | Apple Distribution |
+
+**Automatic Signing Steps:**
+1. Open project in Xcode
+2. Select target → Signing & Capabilities
+3. Check "Automatically manage signing"
+4. Select your Team
+5. Xcode creates provisioning profiles automatically
+
+### 6. App Store Connect Setup
+
+**Create App Record:**
+1. Log into App Store Connect
+2. My Apps → "+" → New App
+3. Fill in:
+   - Platform: iOS
+   - Name: [App Name]
+   - Primary Language: English (U.S.)
+   - Bundle ID: Select from list
+   - SKU: [unique identifier, e.g., appname-ios-2024]
+
+**Required Metadata Fields:**
+
+| Field | Limit | Notes |
+|-------|-------|-------|
+| App Name | 30 chars | Must match or relate to bundle display name |
+| Subtitle | 30 chars | Benefit-focused tagline |
+| Keywords | 100 chars | Comma-separated, no spaces after commas |
+| Description | 4000 chars | Rich description with features |
+| Promotional Text | 170 chars | Can be updated without new build |
+| Support URL | Required | Link to support page |
+| Marketing URL | Optional | Link to marketing site |
+| Privacy Policy URL | Required | Link to privacy policy |
+
+### 7. StoreKit Configuration
+
+**Create StoreKit Configuration File:**
+1. File → New → File → StoreKit Configuration File
+2. Name: \`Configuration.storekit\`
+3. Add products:
+
+| Product Type | Product ID | Display Name | Price |
+|--------------|------------|--------------|-------|
+| Auto-Renewable | com.yourcompany.appname.monthly | Monthly Pro | $X.99/month |
+| Auto-Renewable | com.yourcompany.appname.annual | Annual Pro | $XX.99/year |
+| Non-Consumable | com.yourcompany.appname.lifetime | Lifetime Pro | $XX.99 |
+
+### 8. Pre-Submission Checklist
+
+**Before Submitting to App Store:**
+
+- [ ] **App Icon:** All sizes provided (1024x1024 for App Store)
+- [ ] **Screenshots:** All required device sizes
+- [ ] **Privacy Policy:** URL accessible and accurate
+- [ ] **Age Rating:** Questionnaire completed
+- [ ] **Export Compliance:** ITSAppUsesNonExemptEncryption set
+- [ ] **Build Tested:** Full testing on real devices
+- [ ] **StoreKit Products:** Created in App Store Connect
+- [ ] **In-App Purchase:** Tested with sandbox account
+- [ ] **Sign in with Apple:** Tested flow works
+- [ ] **CloudKit:** Schema deployed to production
+- [ ] **Push Notifications:** APNs key configured
+- [ ] **Version/Build Numbers:** Updated appropriately
+- [ ] **Review Notes:** Provided for reviewer (demo account if needed)
+
+### 9. Common Xcode Settings
+
+**Build Settings:**
+
+| Setting | Recommended Value |
+|---------|-------------------|
+| SWIFT_VERSION | 5.9 |
+| IPHONEOS_DEPLOYMENT_TARGET | 17.0 |
+| SWIFT_OPTIMIZATION_LEVEL | -Owholemodule (Release) |
+| ENABLE_BITCODE | NO |
+| DEBUG_INFORMATION_FORMAT | dwarf-with-dsym |
+
+Format your response in clean Markdown with proper headings, tables, and code blocks.`;
+}
+
+// Section 8: ASO (App Store Optimization) Prompt
+export function getASOPrompt(
+  project: AppProject,
+  prd: string,
+  appIdentity: string,
+  designSystem: string
+): string {
+  const notesSection = project.notes && project.notes.trim()
+    ? `\n## Researcher's Notes\n${project.notes}\n`
+    : '';
+
+  return `You are an App Store Optimization (ASO) specialist. Based on the PRD, App Identity, and Design System below, create a comprehensive ASO document for the App Store listing.
+
+## App Context
+
+**Competitor App Name:** ${project.app_name}
+**Category:** ${project.app_primary_genre || 'Unknown'}
+**Competitor Rating:** ${project.app_rating?.toFixed(1) || 'N/A'} ⭐ (${project.app_review_count?.toLocaleString() || 0} reviews)
+${notesSection}
+## PRD (Section 7)
+
+${prd}
+
+## App Identity (Section 2)
+
+${appIdentity}
+
+## Design System (Section 3)
+
+${designSystem}
+
+---
+
+## Your Task
+
+Create a comprehensive ASO document:
+
+### 1. App Title (30 characters max)
+
+| Option | Characters | Rationale |
+|--------|------------|-----------|
+| Option 1 | XX/30 | [Why this works] |
+| Option 2 | XX/30 | [Alternative approach] |
+
+**Recommended:** [Title] because [reason]
+
+### 2. Subtitle (30 characters max)
+
+| Option | Characters | Focus |
+|--------|------------|-------|
+| Option 1 | XX/30 | Benefit-focused |
+| Option 2 | XX/30 | Feature-focused |
+
+**Recommended:** [Subtitle]
+
+### 3. Keywords (100 characters max)
+
+**Keyword Strategy:**
+- Primary keywords: [high-volume, relevant]
+- Secondary keywords: [medium-volume, specific]
+- Long-tail keywords: [low-competition, niche]
+
+**Keyword String:**
+\`\`\`
+keyword1,keyword2,keyword3,keyword4,keyword5,keyword6,keyword7,keyword8,keyword9,keyword10
+\`\`\`
+
+**Character Count:** XX/100
+
+**Keyword Research Notes:**
+| Keyword | Relevance | Competition | Notes |
+|---------|-----------|-------------|-------|
+| keyword1 | High | Medium | [why included] |
+| keyword2 | High | Low | [why included] |
+
+### 4. Description (4000 characters max)
+
+\`\`\`
+[Opening hook - 1-2 sentences that grab attention]
+
+[Main value proposition - what problem does this solve?]
+
+KEY FEATURES:
+• Feature 1 - [benefit explanation]
+• Feature 2 - [benefit explanation]
+• Feature 3 - [benefit explanation]
+• Feature 4 - [benefit explanation]
+• Feature 5 - [benefit explanation]
+
+WHY CHOOSE [APP NAME]?
+[Unique selling points and differentiators]
+
+WHAT'S INCLUDED:
+Free Features:
+• [List free features]
+
+Pro Features:
+• [List premium features]
+
+SUBSCRIPTION OPTIONS:
+• Monthly: $X.99/month
+• Annual: $XX.99/year (Save XX%)
+• Lifetime: $XX.99 (one-time)
+
+[Social proof or press mentions if any]
+
+Download [APP NAME] today and [call to action]!
+
+---
+
+Questions or feedback? Contact us at support@yourcompany.com
+
+Privacy Policy: [URL]
+Terms of Service: [URL]
+\`\`\`
+
+**Character Count:** ~XXXX/4000
+
+### 5. Promotional Text (170 characters max)
+
+| Option | Characters | When to Use |
+|--------|------------|-------------|
+| Default | XX/170 | General promotion |
+| Sale | XX/170 | During price drops |
+| Feature | XX/170 | New feature launch |
+| Seasonal | XX/170 | Holiday promotions |
+
+### 6. Screenshot Strategy
+
+**Required Screenshots:**
+
+| Screen | Device | Content | Headline |
+|--------|--------|---------|----------|
+| 1 | iPhone 6.7" | [Main feature/hero] | "[Compelling headline]" |
+| 2 | iPhone 6.7" | [Key feature 1] | "[Benefit statement]" |
+| 3 | iPhone 6.7" | [Key feature 2] | "[Benefit statement]" |
+| 4 | iPhone 6.7" | [Key feature 3] | "[Benefit statement]" |
+| 5 | iPhone 6.7" | [Social proof/reviews] | "[Trust builder]" |
+
+**Screenshot Design Guidelines:**
+- Use design system colors for backgrounds
+- Headlines: Large Title typography (34pt equivalent)
+- Device frame: Optional but recommended
+- Orientation: Portrait for iPhone
+- Resolution: 1290 × 2796 px (6.7" display)
+
+### 7. App Preview Video (Optional)
+
+**Recommended Scenes:**
+
+| Timestamp | Scene | Focus |
+|-----------|-------|-------|
+| 0:00-0:05 | Hook | Problem statement or wow moment |
+| 0:05-0:15 | Feature 1 | Core functionality demo |
+| 0:15-0:25 | Feature 2 | Key benefit demo |
+| 0:25-0:30 | CTA | Download call-to-action |
+
+**Video Specs:**
+- Duration: 15-30 seconds
+- Resolution: 1080p minimum
+- Audio: Optional background music (royalty-free)
+- No narration required
+
+### 8. Category Selection
+
+**Primary Category:** [Category]
+- Rationale: [Why this is the best fit]
+- Competition level: [High/Medium/Low]
+
+**Secondary Category:** [Category]
+- Rationale: [Why this secondary helps discovery]
+
+### 9. Age Rating Guidance
+
+**Content Rating Questionnaire:**
+
+| Question | Answer | Impact |
+|----------|--------|--------|
+| Violence | None/Infrequent/Frequent | Affects rating |
+| Sexual Content | None/Mild/Intense | Affects rating |
+| Profanity | None/Mild/Strong | Affects rating |
+| Gambling | None/Simulated/Real | May restrict distribution |
+| Horror/Fear | None/Mild/Intense | Affects rating |
+| Medical/Treatment | No/Yes | May require disclaimer |
+| User-Generated Content | No/Yes | Requires moderation plan |
+| Unrestricted Web Access | No/Yes | May increase rating |
+
+**Expected Rating:** [4+/9+/12+/17+]
+
+### 10. Pricing Strategy
+
+| Tier | Price | Rationale |
+|------|-------|-----------|
+| Free | $0 | Core features to demonstrate value |
+| Monthly | $X.99 | Low commitment entry point |
+| Annual | $XX.99 | Best value, highest LTV |
+| Lifetime | $XX.99 | One-time for price-sensitive users |
+
+**Launch Pricing Recommendations:**
+- Consider introductory pricing for first month
+- Use price anchoring (show annual savings)
+- Offer free trial period
+
+### 11. Localization Priority
+
+| Language | Market Size | Priority |
+|----------|-------------|----------|
+| English (US) | Largest | P0 |
+| Spanish | Growing | P1 |
+| German | High-value | P1 |
+| Japanese | App-heavy | P2 |
+| French | Significant | P2 |
+
+Format your response in clean Markdown with proper headings and tables.`;
+}
+
+// Section 9: Build Manifest Prompt
 export function getBuildManifestPrompt(
   appName: string,
   paretoStrategy: string,
@@ -737,37 +1521,65 @@ Generate the complete BUILD_MANIFEST.md following this format. Extract EVERY scr
 
 // Helper to get the appropriate prompt for a section
 export function getBlueprintPrompt(
-  section: 'pareto' | 'wireframes' | 'tech_stack' | 'prd',
+  section: 'pareto' | 'identity' | 'design_system' | 'wireframes' | 'tech_stack' | 'xcode_setup' | 'prd' | 'aso',
   project: AppProject,
   previousSections: {
     paretoStrategy?: string;
+    appIdentity?: string;
+    designSystem?: string;
     uiWireframes?: string;
     techStack?: string;
+    prd?: string;
   },
   attachments: BlueprintAttachment[] = []
 ): string {
   switch (section) {
     case 'pareto':
       return getParetoStrategyPrompt(project);
-    case 'wireframes':
+    case 'identity':
       if (!previousSections.paretoStrategy) {
-        throw new Error('Pareto Strategy is required before generating UI Wireframes');
+        throw new Error('Pareto Strategy is required before generating App Identity');
       }
-      return getUIWireframesPrompt(project, previousSections.paretoStrategy, attachments);
+      return getAppIdentityPrompt(project, previousSections.paretoStrategy);
+    case 'design_system':
+      if (!previousSections.paretoStrategy || !previousSections.appIdentity) {
+        throw new Error('Pareto Strategy and App Identity are required before generating Design System');
+      }
+      return getDesignSystemPrompt(project, previousSections.paretoStrategy, previousSections.appIdentity);
+    case 'wireframes':
+      if (!previousSections.paretoStrategy || !previousSections.designSystem) {
+        throw new Error('Pareto Strategy and Design System are required before generating UI Wireframes');
+      }
+      return getUIWireframesPrompt(project, previousSections.paretoStrategy, previousSections.designSystem, attachments);
     case 'tech_stack':
       if (!previousSections.paretoStrategy || !previousSections.uiWireframes) {
         throw new Error('Pareto Strategy and UI Wireframes are required before generating Tech Stack');
       }
       return getTechStackPrompt(project, previousSections.paretoStrategy, previousSections.uiWireframes);
+    case 'xcode_setup':
+      if (!previousSections.techStack || !previousSections.appIdentity) {
+        throw new Error('Tech Stack and App Identity are required before generating Xcode Setup');
+      }
+      return getXcodeSetupPrompt(project, previousSections.techStack, previousSections.appIdentity);
     case 'prd':
       if (!previousSections.paretoStrategy || !previousSections.uiWireframes || !previousSections.techStack) {
-        throw new Error('All previous sections are required before generating PRD');
+        throw new Error('Strategy, Wireframes, and Tech Stack are required before generating PRD');
       }
       return getPRDPrompt(
         project,
         previousSections.paretoStrategy,
         previousSections.uiWireframes,
         previousSections.techStack
+      );
+    case 'aso':
+      if (!previousSections.prd || !previousSections.appIdentity || !previousSections.designSystem) {
+        throw new Error('PRD, App Identity, and Design System are required before generating ASO');
+      }
+      return getASOPrompt(
+        project,
+        previousSections.prd,
+        previousSections.appIdentity,
+        previousSections.designSystem
       );
     default:
       throw new Error(`Unknown section: ${section}`);

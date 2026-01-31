@@ -11,10 +11,14 @@ interface SectionInfo {
 
 const SECTIONS: SectionInfo[] = [
   { id: 'pareto', label: 'Strategy', shortLabel: 'Strategy', number: 1 },
-  { id: 'wireframes', label: 'Wireframes', shortLabel: 'UI', number: 2 },
-  { id: 'tech_stack', label: 'Tech Stack', shortLabel: 'Tech', number: 3 },
-  { id: 'prd', label: 'PRD', shortLabel: 'PRD', number: 4 },
-  { id: 'manifest', label: 'Build Manifest', shortLabel: 'Build', number: 5 },
+  { id: 'identity', label: 'App Identity', shortLabel: 'Identity', number: 2 },
+  { id: 'design_system', label: 'Design System', shortLabel: 'Design', number: 3 },
+  { id: 'wireframes', label: 'Wireframes', shortLabel: 'UI', number: 4 },
+  { id: 'tech_stack', label: 'Tech Stack', shortLabel: 'Tech', number: 5 },
+  { id: 'xcode_setup', label: 'Xcode Setup', shortLabel: 'Xcode', number: 6 },
+  { id: 'prd', label: 'PRD', shortLabel: 'PRD', number: 7 },
+  { id: 'aso', label: 'ASO', shortLabel: 'ASO', number: 8 },
+  { id: 'manifest', label: 'Build Manifest', shortLabel: 'Build', number: 9 },
 ];
 
 interface BlueprintSectionNavProps {

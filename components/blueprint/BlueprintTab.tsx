@@ -89,12 +89,20 @@ export default function BlueprintTab({ projectId }: BlueprintTabProps) {
     switch (section) {
       case 'pareto':
         return blueprint.pareto_strategy;
+      case 'identity':
+        return blueprint.app_identity;
+      case 'design_system':
+        return blueprint.design_system;
       case 'wireframes':
         return blueprint.ui_wireframes;
       case 'tech_stack':
         return blueprint.tech_stack;
+      case 'xcode_setup':
+        return blueprint.xcode_setup;
       case 'prd':
         return blueprint.prd_content;
+      case 'aso':
+        return blueprint.aso_content;
       case 'manifest':
         return blueprint.build_manifest;
       default:
@@ -106,12 +114,20 @@ export default function BlueprintTab({ projectId }: BlueprintTabProps) {
     switch (section) {
       case 'pareto':
         return blueprint.pareto_generated_at;
+      case 'identity':
+        return blueprint.app_identity_generated_at;
+      case 'design_system':
+        return blueprint.design_system_generated_at;
       case 'wireframes':
         return blueprint.ui_wireframes_generated_at;
       case 'tech_stack':
         return blueprint.tech_stack_generated_at;
+      case 'xcode_setup':
+        return blueprint.xcode_setup_generated_at;
       case 'prd':
         return blueprint.prd_generated_at;
+      case 'aso':
+        return blueprint.aso_generated_at;
       case 'manifest':
         return blueprint.build_manifest_generated_at;
       default:
@@ -121,9 +137,13 @@ export default function BlueprintTab({ projectId }: BlueprintTabProps) {
 
   const statuses = {
     pareto: blueprint.pareto_status,
+    identity: blueprint.app_identity_status,
+    design_system: blueprint.design_system_status,
     wireframes: blueprint.ui_wireframes_status,
     tech_stack: blueprint.tech_stack_status,
+    xcode_setup: blueprint.xcode_setup_status,
     prd: blueprint.prd_status,
+    aso: blueprint.aso_status,
     manifest: blueprint.build_manifest_status,
   };
 

@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'blueprintId and section required' }, { status: 400 });
     }
 
-    const validSections: BlueprintSection[] = ['pareto', 'wireframes', 'tech_stack', 'prd', 'manifest'];
+    const validSections: BlueprintSection[] = ['pareto', 'identity', 'design_system', 'wireframes', 'tech_stack', 'xcode_setup', 'prd', 'aso', 'manifest'];
     if (!validSections.includes(section)) {
       return NextResponse.json({ error: 'Invalid section' }, { status: 400 });
     }
@@ -55,17 +55,29 @@ export async function POST(request: NextRequest) {
     }
 
     // Check dependencies
-    if (section === 'wireframes' && !blueprint.pareto_strategy) {
-      return NextResponse.json({ error: 'Generate Pareto Strategy first' }, { status: 400 });
+    if (section === 'identity' && !blueprint.pareto_strategy) {
+      return NextResponse.json({ error: 'Generate Strategy first' }, { status: 400 });
+    }
+    if (section === 'design_system' && !blueprint.app_identity) {
+      return NextResponse.json({ error: 'Generate App Identity first' }, { status: 400 });
+    }
+    if (section === 'wireframes' && (!blueprint.pareto_strategy || !blueprint.design_system)) {
+      return NextResponse.json({ error: 'Generate Strategy and Design System first' }, { status: 400 });
     }
     if (section === 'tech_stack' && (!blueprint.pareto_strategy || !blueprint.ui_wireframes)) {
       return NextResponse.json({ error: 'Generate Strategy and Wireframes first' }, { status: 400 });
     }
+    if (section === 'xcode_setup' && (!blueprint.tech_stack || !blueprint.app_identity)) {
+      return NextResponse.json({ error: 'Generate Tech Stack and App Identity first' }, { status: 400 });
+    }
     if (section === 'prd' && (!blueprint.pareto_strategy || !blueprint.ui_wireframes || !blueprint.tech_stack)) {
-      return NextResponse.json({ error: 'Generate all previous sections first' }, { status: 400 });
+      return NextResponse.json({ error: 'Generate Strategy, Wireframes, and Tech Stack first' }, { status: 400 });
+    }
+    if (section === 'aso' && (!blueprint.prd_content || !blueprint.app_identity || !blueprint.design_system)) {
+      return NextResponse.json({ error: 'Generate PRD, App Identity, and Design System first' }, { status: 400 });
     }
     if (section === 'manifest' && (!blueprint.pareto_strategy || !blueprint.ui_wireframes || !blueprint.tech_stack || !blueprint.prd_content)) {
-      return NextResponse.json({ error: 'Generate all previous sections (including PRD) first' }, { status: 400 });
+      return NextResponse.json({ error: 'Generate Strategy, Wireframes, Tech Stack, and PRD first' }, { status: 400 });
     }
 
     // Get attachments for wireframes section
@@ -82,12 +94,15 @@ export async function POST(request: NextRequest) {
           blueprint.tech_stack!
         )
       : getBlueprintPrompt(
-          section,
+          section as 'pareto' | 'identity' | 'design_system' | 'wireframes' | 'tech_stack' | 'xcode_setup' | 'prd' | 'aso',
           project,
           {
             paretoStrategy: blueprint.pareto_strategy || undefined,
+            appIdentity: blueprint.app_identity || undefined,
+            designSystem: blueprint.design_system || undefined,
             uiWireframes: blueprint.ui_wireframes || undefined,
             techStack: blueprint.tech_stack || undefined,
+            prd: blueprint.prd_content || undefined,
           },
           attachments
         );

@@ -1542,7 +1542,7 @@ export async function clearGapChatMessages(sessionId: string): Promise<boolean> 
 // ============================================
 
 export type BlueprintSectionStatus = 'pending' | 'generating' | 'completed' | 'error';
-export type BlueprintSection = 'pareto' | 'wireframes' | 'tech_stack' | 'prd' | 'manifest';
+export type BlueprintSection = 'pareto' | 'identity' | 'design_system' | 'wireframes' | 'tech_stack' | 'xcode_setup' | 'prd' | 'aso' | 'manifest';
 
 export interface ProjectBlueprint {
   id: string;
@@ -1553,22 +1553,42 @@ export interface ProjectBlueprint {
   pareto_status: BlueprintSectionStatus;
   pareto_generated_at: string | null;
 
-  // Section 2: UI Wireframes
+  // Section 2: App Identity
+  app_identity: string | null;
+  app_identity_status: BlueprintSectionStatus;
+  app_identity_generated_at: string | null;
+
+  // Section 3: Design System
+  design_system: string | null;
+  design_system_status: BlueprintSectionStatus;
+  design_system_generated_at: string | null;
+
+  // Section 4: UI Wireframes
   ui_wireframes: string | null;
   ui_wireframes_status: BlueprintSectionStatus;
   ui_wireframes_generated_at: string | null;
 
-  // Section 3: Tech Stack
+  // Section 5: Tech Stack
   tech_stack: string | null;
   tech_stack_status: BlueprintSectionStatus;
   tech_stack_generated_at: string | null;
 
-  // Section 4: PRD
+  // Section 6: Xcode Setup
+  xcode_setup: string | null;
+  xcode_setup_status: BlueprintSectionStatus;
+  xcode_setup_generated_at: string | null;
+
+  // Section 7: PRD
   prd_content: string | null;
   prd_status: BlueprintSectionStatus;
   prd_generated_at: string | null;
 
-  // Section 5: Build Manifest
+  // Section 8: ASO
+  aso_content: string | null;
+  aso_status: BlueprintSectionStatus;
+  aso_generated_at: string | null;
+
+  // Section 9: Build Manifest
   build_manifest: string | null;
   build_manifest_status: BlueprintSectionStatus;
   build_manifest_generated_at: string | null;
@@ -1652,9 +1672,13 @@ export async function updateBlueprintSection(
 ): Promise<ProjectBlueprint | null> {
   const columnMap: Record<BlueprintSection, { content: string; status: string; timestamp: string }> = {
     pareto: { content: 'pareto_strategy', status: 'pareto_status', timestamp: 'pareto_generated_at' },
+    identity: { content: 'app_identity', status: 'app_identity_status', timestamp: 'app_identity_generated_at' },
+    design_system: { content: 'design_system', status: 'design_system_status', timestamp: 'design_system_generated_at' },
     wireframes: { content: 'ui_wireframes', status: 'ui_wireframes_status', timestamp: 'ui_wireframes_generated_at' },
     tech_stack: { content: 'tech_stack', status: 'tech_stack_status', timestamp: 'tech_stack_generated_at' },
+    xcode_setup: { content: 'xcode_setup', status: 'xcode_setup_status', timestamp: 'xcode_setup_generated_at' },
     prd: { content: 'prd_content', status: 'prd_status', timestamp: 'prd_generated_at' },
+    aso: { content: 'aso_content', status: 'aso_status', timestamp: 'aso_generated_at' },
     manifest: { content: 'build_manifest', status: 'build_manifest_status', timestamp: 'build_manifest_generated_at' },
   };
 
@@ -1692,9 +1716,13 @@ export async function updateBlueprintSectionStatus(
 ): Promise<boolean> {
   const statusColumn = {
     pareto: 'pareto_status',
+    identity: 'app_identity_status',
+    design_system: 'design_system_status',
     wireframes: 'ui_wireframes_status',
     tech_stack: 'tech_stack_status',
+    xcode_setup: 'xcode_setup_status',
     prd: 'prd_status',
+    aso: 'aso_status',
     manifest: 'build_manifest_status',
   }[section];
 
