@@ -291,19 +291,19 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
           if (!prev) return prev;
           const updatedStatuses = prev.filterStatuses.map(s =>
             s.filter === event.filter
-              ? { ...s, status: 'active' as const, count: event.filterReviewsTotal as number }
+              ? { ...s, status: 'active' as const, count: (event.filterReviewsTotal as number) ?? 0 }
               : s
           );
           return {
             ...prev,
-            currentFilter: event.filter as string,
-            currentFilterIndex: event.filterIndex as number,
-            currentPage: event.page as number,
-            maxPages: event.maxPages as number,
-            reviewsCollected: prev.reviewsCollected + (event.reviewsThisPage as number),
-            uniqueReviews: event.totalUnique as number,
+            currentFilter: (event.filter as string) ?? prev.currentFilter,
+            currentFilterIndex: (event.filterIndex as number) ?? prev.currentFilterIndex,
+            currentPage: (event.page as number) ?? prev.currentPage,
+            maxPages: (event.maxPages as number) ?? prev.maxPages,
+            reviewsCollected: prev.reviewsCollected + ((event.reviewsThisPage as number) ?? 0),
+            uniqueReviews: (event.totalUnique as number) ?? prev.uniqueReviews,
             filterStatuses: updatedStatuses,
-            nextRequestIn: event.nextDelayMs as number,
+            nextRequestIn: (event.nextDelayMs as number) ?? 0,
           };
         });
         break;
@@ -1215,13 +1215,13 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
                     <div>
                       <span className="text-gray-500 dark:text-gray-400">Reviews:</span>
                       <span className="ml-2 text-gray-900 dark:text-white font-medium">
-                        {progress.uniqueReviews.toLocaleString()} unique
+                        {(progress.uniqueReviews ?? 0).toLocaleString()} unique
                       </span>
                     </div>
                     <div>
                       <span className="text-gray-500 dark:text-gray-400">Next request:</span>
                       <span className="ml-2 text-gray-900 dark:text-white font-medium">
-                        {(progress.nextRequestIn / 1000).toFixed(1)}s
+                        {((progress.nextRequestIn ?? 0) / 1000).toFixed(1)}s
                       </span>
                     </div>
                   </div>
