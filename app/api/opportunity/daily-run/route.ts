@@ -73,15 +73,14 @@ function verifyCronAuth(request: NextRequest): boolean {
 
 // POST /api/opportunity/daily-run - Execute daily autonomous opportunity discovery
 export async function POST(request: NextRequest) {
-  // Check authentication (cron secret or session)
-  const isCron = verifyCronAuth(request);
-  const isSessionAuth = await isAuthenticated();
-
-  if (!isCron && !isSessionAuth) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
   try {
+    // Check authentication (cron secret or session)
+    const isCron = verifyCronAuth(request);
+    const isSessionAuth = await isAuthenticated();
+
+    if (!isCron && !isSessionAuth) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     // Parse optional config from body first
     let config = {
       categories: [...DEFAULT_CRAWL_CATEGORIES],
@@ -292,8 +291,9 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Error in daily run:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      { error: 'Failed to execute daily run' },
+      { error: `Failed to execute daily run: ${errorMessage}` },
       { status: 500 }
     );
   }
@@ -301,12 +301,11 @@ export async function POST(request: NextRequest) {
 
 // GET /api/opportunity/daily-run - Get today's run status
 export async function GET(request: NextRequest) {
-  const authed = await isAuthenticated();
-  if (!authed) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
   try {
+    const authed = await isAuthenticated();
+    if (!authed) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     const existingRun = await getTodaysDailyRun();
 
     if (!existingRun) {
@@ -342,8 +341,9 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('Error getting daily run status:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      { error: 'Failed to get daily run status' },
+      { error: `Failed to get daily run status: ${errorMessage}` },
       { status: 500 }
     );
   }
