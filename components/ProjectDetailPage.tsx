@@ -9,7 +9,9 @@ import Header from './Header';
 import StarRating from './StarRating';
 import ChatPanel from './ChatPanel';
 import BlueprintTab from './blueprint/BlueprintTab';
-import type { AppProject, Review } from '@/lib/supabase';
+import OriginalIdeaBrief from './project/OriginalIdeaBrief';
+import CompetitorApps from './project/CompetitorApps';
+import type { AppProject, Review, LinkedCompetitor, AppIdeaRecommendationData } from '@/lib/supabase';
 import { saveAppAnalysis, getMasterApp } from '@/lib/supabase';
 import { useKeywordRanking } from '@/hooks/useKeywordRanking';
 import { useKeywordExtraction } from '@/hooks/useKeywordExtraction';
@@ -418,6 +420,29 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
             </div>
           </div>
         </div>
+
+        {/* Original Idea Brief (for original_idea projects) */}
+        {project.project_type === 'original_idea' && project.app_idea_recommendation && (
+          <>
+            <OriginalIdeaBrief
+              recommendation={project.app_idea_recommendation as AppIdeaRecommendationData}
+            />
+            <CompetitorApps
+              projectId={projectId}
+              analyzedApps={
+                (project.app_idea_recommendation?.gapAnalysis?.analyzedApps || []).map(app => ({
+                  app_store_id: app.id,
+                  name: app.name,
+                  icon_url: app.iconUrl,
+                  rating: app.rating,
+                  reviews: app.reviews,
+                }))
+              }
+              linkedCompetitors={project.linked_competitors || []}
+              onRefresh={fetchProject}
+            />
+          </>
+        )}
 
         {/* Tabs */}
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow">

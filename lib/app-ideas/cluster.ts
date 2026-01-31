@@ -1,7 +1,9 @@
 // Keyword Clustering Module
 // Uses Claude to group raw keywords into semantically related "app concept" clusters
+// Enhanced with Crawl4AI Reddit validation for demand confirmation
 
 import { Cluster, ClusteringPromptResult, DiscoveredKeyword } from './types';
+import { getRedditEnrichmentForTrends } from '@/lib/crawl';
 
 /**
  * Generate a unique cluster ID
@@ -45,9 +47,29 @@ Return your response as valid JSON with this exact structure:
   ]
 }`;
 
+  // NEW: Get Reddit validation for top keywords to confirm user demand
+  let redditContext = '';
+  try {
+    const topKeywords = keywordList.slice(0, 5);
+    redditContext = await getRedditEnrichmentForTrends(topKeywords);
+  } catch (error) {
+    console.log('Reddit enrichment unavailable, proceeding without');
+  }
+
   const userPrompt = `Analyze these ${keywordList.length} App Store keywords and group them into 5-8 distinct app concept clusters:
 
 ${keywordList.join('\n')}
+${redditContext ? `
+
+---
+## Reddit Market Validation
+*Real user discussions about these topics:*
+
+${redditContext}
+
+Use this Reddit data to validate which clusters have genuine user demand.
+---
+` : ''}
 
 Return valid JSON only, no markdown or explanation.`;
 

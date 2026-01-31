@@ -1,0 +1,68 @@
+version: '3.8'
+
+# Crawl4AI Deep Integration - Docker Compose Configuration
+# Run with: docker-compose up
+
+services:
+  # Next.js Application
+  nextjs:
+    build:
+      context: .
+      dockerfile: Dockerfile.nextjs
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - CRAWL_SERVICE_URL=http://crawl-service:8000
+      - CRAWL_SERVICE_API_KEY=${CRAWL_SERVICE_API_KEY}
+    depends_on:
+      crawl-service:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    networks:
+      - app-network
+
+  # Crawl4AI Python Service
+  crawl-service:
+    build:
+      context: ./crawl-service
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - CRAWL_SERVICE_API_KEY=${CRAWL_SERVICE_API_KEY}
+      - SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - CRAWL_MAX_CONCURRENT=${CRAWL_MAX_CONCURRENT:-5}
+      - CRAWL_REQUESTS_PER_MINUTE=${CRAWL_REQUESTS_PER_MINUTE:-30}
+      - CRAWL_CACHE_TTL_HOURS=${CRAWL_CACHE_TTL_HOURS:-24}
+      - CRAWL4AI_HEADLESS=true
+      - LOG_LEVEL=INFO
+    volumes:
+      - crawl-cache:/app/cache
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - app-network
+    # Resource limits for browser automation
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+
+volumes:
+  crawl-cache:
+    driver: local
+
+networks:
+  app-network:
+    driver: bridge

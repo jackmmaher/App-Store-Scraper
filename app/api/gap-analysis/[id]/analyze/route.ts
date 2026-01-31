@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { isAuthenticated } from '@/lib/auth';
 import { getGapSession, type GapAnalysisApp } from '@/lib/supabase';
 import { COUNTRY_CODES } from '@/lib/constants';
+import { getEnrichmentForPrompt } from '@/lib/crawl';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -66,7 +67,26 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       .map(([country, rank]) => `${COUNTRY_CODES[country] || country} (#${rank})`)
       .join(', ');
 
-    const prompt = buildAnalysisPrompt(app, session.countries, topCountries, missingCountries, lowRankCountries);
+    // NEW: Get enrichment from Crawl4AI (extended reviews + Reddit discussions)
+    let enrichment = '';
+    try {
+      const appName = app.app_name.split(' ').slice(0, 3).join(' ');
+      enrichment = await getEnrichmentForPrompt({
+        appStoreIds: [app.app_store_id],
+        keywords: [appName, app.app_primary_genre || ''].filter(Boolean),
+        options: {
+          includeReviews: true,
+          includeReddit: true,
+          includeWebsites: false,
+          maxReviewsPerApp: 100,
+          maxRedditPosts: 15,
+        },
+      });
+    } catch (error) {
+      console.log('Enrichment unavailable for gap analysis:', error);
+    }
+
+    const prompt = buildAnalysisPrompt(app, session.countries, topCountries, missingCountries, lowRankCountries, enrichment);
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -122,7 +142,8 @@ function buildAnalysisPrompt(
   allCountries: string[],
   topCountries: string,
   missingCountries: string,
-  lowRankCountries: string
+  lowRankCountries: string,
+  enrichment?: string
 ): string {
   return `You are a market intelligence analyst specializing in mobile app competitive strategy.
 
@@ -140,6 +161,18 @@ function buildAnalysisPrompt(
 - **Countries where it ranks poorly (20+):** ${lowRankCountries || 'None'}
 - **Total presence:** ${app.presence_count} of ${allCountries.length} markets (${((app.presence_count / allCountries.length) * 100).toFixed(0)}%)
 - **Average rank:** ${app.average_rank?.toFixed(1) || 'N/A'}
+${enrichment ? `
+
+---
+
+## ENRICHED DATA (Extended Reviews & Reddit Discussions)
+
+*Real user feedback and market discussions:*
+
+${enrichment}
+
+Use this data to provide more specific insights about user complaints, feature requests, and market sentiment.
+` : ''}
 
 ---
 

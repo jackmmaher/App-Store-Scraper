@@ -1,4 +1,5 @@
 import { AppProject, BlueprintAttachment, Review } from './supabase';
+import { getEnrichmentForBlueprint } from '@/lib/crawl';
 
 // Helper to get diverse sample reviews (mix of ratings)
 function getSampleReviews(reviews: Review[], count: number = 10): Review[] {
@@ -36,12 +37,25 @@ function formatReviewsForPrompt(reviews: Review[]): string {
   ).join('\n\n');
 }
 
+// Note: AppProject now includes project_type, app_idea_recommendation, and linked_competitors fields
+
 // Build project context section used across all prompts
 function buildProjectContext(project: AppProject): string {
   const sections: string[] = [];
+  const extProject = project as AppProject;
+
+  // Check if this is an original idea project
+  const isOriginalIdea = extProject.project_type === 'original_idea';
 
   // Basic app info
-  sections.push(`## Competitor App Details
+  if (isOriginalIdea) {
+    sections.push(`## App Concept
+
+**App Name:** ${project.app_name}
+**Category:** ${project.app_primary_genre || 'Unknown'}
+**Project Type:** Original App Idea (new app concept from market analysis)`);
+  } else {
+    sections.push(`## Competitor App Details
 
 **App Name:** ${project.app_name}
 **Category:** ${project.app_primary_genre || 'Unknown'}
@@ -49,6 +63,70 @@ function buildProjectContext(project: AppProject): string {
 **Rating:** ${project.app_rating?.toFixed(1) || 'N/A'} ⭐ (${project.app_review_count?.toLocaleString() || 0} total reviews)
 **Price:** ${project.app_price > 0 ? `${project.app_currency} ${project.app_price}` : 'Free'}
 **Reviews Analyzed:** ${project.review_count} reviews scraped and analyzed`);
+  }
+
+  // NEW: Original Idea Context
+  if (isOriginalIdea && extProject.app_idea_recommendation) {
+    const { recommendation, gapAnalysis, clusterScore } = extProject.app_idea_recommendation;
+
+    sections.push(`## Strategic Recommendation
+
+**Headline:** ${recommendation.headline}
+
+**Why Build This:**
+${recommendation.reasoning.map(r => `- ${r}`).join('\n')}
+
+**Primary Gap:** ${recommendation.primaryGap}
+**Differentiator:** ${recommendation.differentiator}
+**Monetization Strategy:** ${recommendation.suggestedMonetization}
+**MVP Scope:** ${recommendation.mvpScope}`);
+
+    sections.push(`## Opportunity Scores (0-100)
+
+- **Overall Opportunity:** ${clusterScore.opportunityScore}
+- **Competition Gap:** ${clusterScore.competitionGap} (higher = less competition)
+- **Market Demand:** ${clusterScore.marketDemand} (higher = more demand)
+- **Revenue Potential:** ${clusterScore.revenuePotential} (higher = better monetization potential)
+- **Trend Momentum:** ${clusterScore.trendMomentum} (higher = growing market)
+- **Execution Feasibility:** ${clusterScore.executionFeasibility} (higher = easier to build)`);
+
+    sections.push(`## Competitive Analysis
+
+**Existing Features in Market:**
+${gapAnalysis.existingFeatures.map(f => `- ${f}`).join('\n')}
+
+**User Pain Points (from competitor reviews):**
+${gapAnalysis.userComplaints.map(c => `- ${c}`).join('\n')}
+
+**Market Gaps (Opportunities):**
+${gapAnalysis.gaps.map(g => `- ${g}`).join('\n')}
+
+**Monetization Patterns:** ${gapAnalysis.monetizationInsights}`);
+
+    if (clusterScore.keywords && clusterScore.keywords.length > 0) {
+      sections.push(`## Target Keywords
+
+${clusterScore.keywords.slice(0, 15).join(', ')}`);
+    }
+  }
+
+  // NEW: Linked Competitor Reviews Analysis
+  if (extProject.linked_competitors && extProject.linked_competitors.length > 0) {
+    const analyzed = extProject.linked_competitors.filter(c => c.ai_analysis);
+    if (analyzed.length > 0) {
+      const competitorContext = analyzed.slice(0, 5).map(comp => {
+        return `### ${comp.name} (${comp.rating?.toFixed(1) || 'N/A'}★, ${comp.reviews?.toLocaleString() || 0} reviews)
+
+${comp.ai_analysis}`;
+      }).join('\n\n');
+
+      sections.push(`## Competitor Review Analysis
+
+The following competitors have been analyzed from their user reviews:
+
+${competitorContext}`);
+    }
+  }
 
   // AI Analysis (the main insight source)
   if (project.ai_analysis) {
@@ -98,8 +176,23 @@ Average: ${project.review_stats.average_rating?.toFixed(2) || 'N/A'}`);
 }
 
 // Section 1: Pareto Strategy Prompt
-export function getParetoStrategyPrompt(project: AppProject): string {
+export function getParetoStrategyPrompt(project: AppProject, enrichment?: string): string {
   const context = buildProjectContext(project);
+
+  // Include enrichment section if available (extended reviews + Reddit data from Crawl4AI)
+  const enrichmentSection = enrichment
+    ? `
+---
+
+## ENRICHED DATA (Extended Reviews & Market Research)
+
+*The following data was gathered from extended crawling - thousands of reviews and real Reddit discussions:*
+
+${enrichment}
+
+---
+`
+    : '';
 
   return `You are a senior product strategist specializing in native iOS app development. Analyze the following competitor app and create a comprehensive Pareto Strategy document that identifies the 20% of features that deliver 80% of the value.
 
@@ -112,12 +205,12 @@ This app will be built using ONLY native Apple frameworks. No third-party depend
 - **Crash Reporting:** MetricKit + Xcode Organizer
 
 ${context}
-
+${enrichmentSection}
 ---
 
 ## Your Task
 
-Based on ALL the information above (app details, AI analysis, researcher notes, and raw user reviews), create a detailed Pareto Strategy document:
+Based on ALL the information above (app details, AI analysis, researcher notes, raw user reviews, AND the enriched data if available), create a detailed Pareto Strategy document:
 
 ### 1. Core Value Proposition
 - What is the single most important problem this app solves?
@@ -1517,6 +1610,63 @@ At the end, verify ALL of the following from the source documents:
 \`\`\`
 
 Generate the complete BUILD_MANIFEST.md following this format. Extract EVERY screen from wireframes, EVERY model from tech stack, EVERY feature from pareto strategy. Miss nothing.`;
+}
+
+/**
+ * Get Pareto Strategy prompt with Crawl4AI enrichment
+ * This async version fetches extended reviews and Reddit data before generating the prompt
+ */
+export async function getParetoStrategyPromptWithEnrichment(
+  project: AppProject
+): Promise<string> {
+  const extProject = project as AppProject;
+
+  // Extract app ID and keywords for enrichment
+  const appId = extProject.app_store_id;
+  const keywords = extProject.app_idea_recommendation?.clusterScore?.keywords?.slice(0, 5) || [];
+
+  // If we have an app ID, fetch enrichment
+  let enrichment = '';
+  if (appId || keywords.length > 0) {
+    try {
+      enrichment = await getEnrichmentForBlueprint(
+        appId || '',
+        keywords,
+        undefined, // No competitor URL for now
+        'us'
+      );
+    } catch (error) {
+      console.error('Error fetching enrichment for blueprint:', error);
+    }
+  }
+
+  return getParetoStrategyPrompt(project, enrichment);
+}
+
+/**
+ * Get all blueprint prompts with enrichment (async version)
+ * Call this when you want enriched prompts
+ */
+export async function getBlueprintPromptWithEnrichment(
+  section: 'pareto' | 'identity' | 'design_system' | 'wireframes' | 'tech_stack' | 'xcode_setup' | 'prd' | 'aso',
+  project: AppProject,
+  previousSections: {
+    paretoStrategy?: string;
+    appIdentity?: string;
+    designSystem?: string;
+    uiWireframes?: string;
+    techStack?: string;
+    prd?: string;
+  },
+  attachments: BlueprintAttachment[] = []
+): Promise<string> {
+  // Only pareto needs enrichment currently - other sections use its output
+  if (section === 'pareto') {
+    return getParetoStrategyPromptWithEnrichment(project);
+  }
+
+  // For all other sections, use the standard sync function
+  return getBlueprintPrompt(section, project, previousSections, attachments);
 }
 
 // Helper to get the appropriate prompt for a section

@@ -684,6 +684,65 @@ export interface ReviewStats {
   };
 }
 
+// Forward declaration for LinkedCompetitor (full definition below)
+export interface LinkedCompetitor {
+  app_store_id: string;
+  name: string;
+  icon_url?: string;
+  rating?: number;
+  reviews?: number;
+  scraped_reviews?: Review[];
+  ai_analysis?: string;
+  scraped_at?: string;
+  analyzed_at?: string;
+}
+
+// App idea recommendation structure
+export interface AppIdeaRecommendationData {
+  recommendation: {
+    clusterId: string;
+    clusterName: string;
+    headline: string;
+    reasoning: string[];
+    combinedSearchVolume: string;
+    competitionSummary: string;
+    primaryGap: string;
+    suggestedMonetization: string;
+    mvpScope: string;
+    differentiator: string;
+    opportunityScore: number;
+  };
+  gapAnalysis: {
+    clusterId: string;
+    clusterName: string;
+    existingFeatures: string[];
+    userComplaints: string[];
+    gaps: string[];
+    monetizationInsights: string;
+    analyzedApps?: Array<{
+      id: string;
+      name: string;
+      rating: number;
+      reviews: number;
+      iconUrl: string;
+      price: number;
+      hasSubscription: boolean;
+    }>;
+  };
+  clusterScore: {
+    clusterId: string;
+    clusterName: string;
+    keywords: string[];
+    opportunityScore: number;
+    competitionGap: number;
+    marketDemand: number;
+    revenuePotential: number;
+    trendMomentum: number;
+    executionFeasibility: number;
+    reasoning: string;
+  };
+}
+
 export interface AppProject {
   id: string;
   app_store_id: string;
@@ -707,6 +766,11 @@ export interface AppProject {
   country: string;
   created_at: string;
   updated_at: string;
+  // Original Idea project fields
+  project_type?: 'competitor_research' | 'original_idea';
+  app_idea_session_id?: string;
+  app_idea_recommendation?: AppIdeaRecommendationData;
+  linked_competitors?: LinkedCompetitor[];
 }
 
 export interface CreateProjectInput {
@@ -2076,5 +2140,155 @@ export async function getProjectsByType(
   }
 
   return data || [];
+}
+
+// ============================================
+// Linked Competitors Operations
+// ============================================
+
+// Get linked competitors for a project
+export async function getLinkedCompetitors(projectId: string): Promise<LinkedCompetitor[]> {
+  const { data, error } = await supabase
+    .from('app_projects')
+    .select('linked_competitors')
+    .eq('id', projectId)
+    .single();
+
+  if (error) {
+    console.error('Error fetching linked competitors:', error);
+    return [];
+  }
+
+  return (data?.linked_competitors as LinkedCompetitor[]) || [];
+}
+
+// Add a linked competitor to a project
+export async function addLinkedCompetitor(
+  projectId: string,
+  competitor: LinkedCompetitor
+): Promise<LinkedCompetitor[] | null> {
+  // First get existing competitors
+  const existing = await getLinkedCompetitors(projectId);
+
+  // Check if competitor already exists
+  if (existing.some(c => c.app_store_id === competitor.app_store_id)) {
+    console.log('Competitor already linked:', competitor.app_store_id);
+    return existing;
+  }
+
+  // Add new competitor
+  const updated = [...existing, competitor];
+
+  const { data, error } = await supabase
+    .from('app_projects')
+    .update({
+      linked_competitors: updated,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', projectId)
+    .select('linked_competitors')
+    .single();
+
+  if (error) {
+    console.error('Error adding linked competitor:', error);
+    return null;
+  }
+
+  return (data?.linked_competitors as LinkedCompetitor[]) || [];
+}
+
+// Update a linked competitor's data (e.g., after scraping or analysis)
+export async function updateLinkedCompetitor(
+  projectId: string,
+  appStoreId: string,
+  updates: Partial<LinkedCompetitor>
+): Promise<LinkedCompetitor[] | null> {
+  // Get existing competitors
+  const existing = await getLinkedCompetitors(projectId);
+
+  // Find and update the competitor
+  const updated = existing.map(c => {
+    if (c.app_store_id === appStoreId) {
+      return { ...c, ...updates };
+    }
+    return c;
+  });
+
+  const { data, error } = await supabase
+    .from('app_projects')
+    .update({
+      linked_competitors: updated,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', projectId)
+    .select('linked_competitors')
+    .single();
+
+  if (error) {
+    console.error('Error updating linked competitor:', error);
+    return null;
+  }
+
+  return (data?.linked_competitors as LinkedCompetitor[]) || [];
+}
+
+// Remove a linked competitor from a project
+export async function removeLinkedCompetitor(
+  projectId: string,
+  appStoreId: string
+): Promise<LinkedCompetitor[] | null> {
+  // Get existing competitors
+  const existing = await getLinkedCompetitors(projectId);
+
+  // Filter out the competitor
+  const updated = existing.filter(c => c.app_store_id !== appStoreId);
+
+  const { data, error } = await supabase
+    .from('app_projects')
+    .update({
+      linked_competitors: updated,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', projectId)
+    .select('linked_competitors')
+    .single();
+
+  if (error) {
+    console.error('Error removing linked competitor:', error);
+    return null;
+  }
+
+  return (data?.linked_competitors as LinkedCompetitor[]) || [];
+}
+
+// Add multiple linked competitors at once
+export async function addLinkedCompetitors(
+  projectId: string,
+  competitors: LinkedCompetitor[]
+): Promise<LinkedCompetitor[] | null> {
+  // Get existing competitors
+  const existing = await getLinkedCompetitors(projectId);
+  const existingIds = new Set(existing.map(c => c.app_store_id));
+
+  // Filter out duplicates and add new ones
+  const newCompetitors = competitors.filter(c => !existingIds.has(c.app_store_id));
+  const updated = [...existing, ...newCompetitors];
+
+  const { data, error } = await supabase
+    .from('app_projects')
+    .update({
+      linked_competitors: updated,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', projectId)
+    .select('linked_competitors')
+    .single();
+
+  if (error) {
+    console.error('Error adding linked competitors:', error);
+    return null;
+  }
+
+  return (data?.linked_competitors as LinkedCompetitor[]) || [];
 }
 

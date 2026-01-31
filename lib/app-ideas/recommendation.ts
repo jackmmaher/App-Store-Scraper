@@ -1,5 +1,6 @@
 // Recommendation Generation Module
 // Uses Claude to generate actionable "build this app" recommendations
+// Enhanced with Crawl4AI for enriched review and Reddit data
 
 import {
   Recommendation,
@@ -7,6 +8,7 @@ import {
   ClusterScore,
   GapAnalysis,
 } from './types';
+import { getEnrichmentForPrompt } from '@/lib/crawl';
 
 /**
  * Generate a recommendation for a single cluster
@@ -68,6 +70,38 @@ ${gapAnalysis.monetizationInsights}
 
 Generate a compelling, actionable app recommendation. Return valid JSON only.`;
 
+  // NEW: Fetch enrichment data from Crawl4AI (extended reviews + Reddit)
+  let enrichment = '';
+  try {
+    const appIds = gapAnalysis.analyzedApps.slice(0, 3).map(a => a.id);
+    enrichment = await getEnrichmentForPrompt({
+      appStoreIds: appIds,
+      keywords: clusterScore.keywords.slice(0, 5),
+      options: {
+        includeReviews: true,
+        includeReddit: true,
+        includeWebsites: false,
+        maxReviewsPerApp: 50,
+        maxRedditPosts: 15,
+      },
+    });
+  } catch (error) {
+    console.log('Enrichment unavailable, proceeding without');
+  }
+
+  // Append enrichment to user prompt if available
+  const enrichedUserPrompt = enrichment
+    ? `${userPrompt}
+
+---
+## ENRICHED DATA (Real User Reviews & Reddit Discussions)
+
+${enrichment}
+
+Use this data to make your recommendation more specific and grounded in real user feedback.
+---`
+    : userPrompt;
+
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -80,7 +114,7 @@ Generate a compelling, actionable app recommendation. Return valid JSON only.`;
         model: 'claude-sonnet-4-20250514',
         max_tokens: 2000,
         system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }],
+        messages: [{ role: 'user', content: enrichedUserPrompt }],
       }),
     });
 

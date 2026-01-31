@@ -1,0 +1,31 @@
+# Crawl4AI Deep Integration Service
+# Python 3.11+ required
+
+# Core web crawling
+crawl4ai>=0.4.0
+
+# FastAPI server
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
+
+# Async support
+aiohttp>=3.9.0
+asyncio-throttle>=1.0.2
+
+# Data validation
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# Caching
+cachetools>=5.3.0
+aiofiles>=23.2.0
+
+# Database (Supabase)
+supabase>=2.3.0
+python-dotenv>=1.0.0
+
+# Utilities
+httpx>=0.26.0
+beautifulsoup4>=4.12.0
+lxml>=5.1.0

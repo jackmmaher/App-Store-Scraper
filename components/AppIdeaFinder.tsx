@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { CATEGORY_NAMES, COUNTRY_CODES, MAIN_CATEGORIES } from '@/lib/constants';
 import {
@@ -13,6 +13,7 @@ import {
 } from '@/lib/app-ideas/types';
 import ClusterCard from './app-ideas/ClusterCard';
 import RecommendationCard from './app-ideas/RecommendationCard';
+import AppIdeaProgress, { ProgressStep } from './app-ideas/AppIdeaProgress';
 
 type WizardStep = 'start' | 'clusters' | 'scores' | 'gaps' | 'recommendations';
 
@@ -41,7 +42,6 @@ export default function AppIdeaFinder() {
   const [currentStep, setCurrentStep] = useState<WizardStep>('start');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loadingMessage, setLoadingMessage] = useState('');
 
   // Entry point state
   const [entryType, setEntryType] = useState<EntryType>('category');
@@ -63,6 +63,16 @@ export default function AppIdeaFinder() {
   // UI state
   const [expandedClusters, setExpandedClusters] = useState<Set<string>>(new Set());
   const [creatingProject, setCreatingProject] = useState<string | null>(null);
+
+  // Progress state
+  const [progressSteps, setProgressSteps] = useState<ProgressStep[]>([]);
+  const [progressTitle, setProgressTitle] = useState('');
+  const [currentStepIdx, setCurrentStepIdx] = useState(0);
+  const [totalItems, setTotalItems] = useState(0);
+  const [completedItems, setCompletedItems] = useState(0);
+  const [currentItemLabel, setCurrentItemLabel] = useState('');
+  const [progressMode, setProgressMode] = useState<'items' | 'keywords' | 'steps'>('items');
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Load past sessions on mount
   useEffect(() => {
@@ -116,7 +126,7 @@ export default function AppIdeaFinder() {
     }
   };
 
-  // Step 1: Discover keywords and cluster
+  // Step 1: Discover keywords and cluster with streaming progress
   const handleDiscover = useCallback(async () => {
     if (!entryValue.trim()) {
       setError('Please enter a value');
@@ -125,10 +135,26 @@ export default function AppIdeaFinder() {
 
     setIsLoading(true);
     setError(null);
-    setLoadingMessage('Discovering keywords...');
+    setProgressTitle('Discovering App Ideas');
+
+    // Build initial progress steps
+    const initialSteps: ProgressStep[] = [
+      { id: 'discover', label: 'Discovering Keywords', status: 'pending' as const },
+      { id: 'cluster', label: 'Clustering Keywords', status: 'pending' as const },
+    ];
+    setProgressSteps(initialSteps);
+    setCurrentStepIdx(0);
+    setCompletedItems(0);
+    // Use keyword count for granular progress during discovery (estimate ~100 keywords)
+    setTotalItems(100);
+    setCurrentItemLabel('');
+    setProgressMode('keywords');
+
+    // Create abort controller for cleanup
+    abortControllerRef.current = new AbortController();
 
     try {
-      const response = await fetch('/api/app-ideas/discover', {
+      const response = await fetch('/api/app-ideas/discover/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -136,30 +162,126 @@ export default function AppIdeaFinder() {
           entryValue: entryValue.trim(),
           country,
         }),
+        signal: abortControllerRef.current.signal,
       });
 
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Discovery failed');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Discovery failed');
       }
 
-      setSessionId(data.data.sessionId);
-      setKeywords(data.data.keywords);
-      setClusters(data.data.clusters);
-      setCurrentStep('clusters');
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('No response body');
 
-      // Refresh past sessions list
-      loadPastSessions();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = JSON.parse(line.slice(6));
+
+            switch (data.type) {
+              case 'start':
+                setSessionId(data.sessionId);
+                break;
+
+              case 'phase_start':
+                setProgressSteps(prev =>
+                  prev.map(s =>
+                    s.id === data.phaseId
+                      ? { ...s, status: 'active' as const }
+                      : s
+                  )
+                );
+                setCurrentItemLabel(data.label);
+                break;
+
+              case 'keyword_progress':
+                // Update current progress with keyword count
+                setProgressSteps(prev =>
+                  prev.map(s =>
+                    s.id === data.phaseId
+                      ? {
+                          ...s,
+                          status: 'active' as const,
+                          detail: data.message || `${data.keywordsFound} keywords found`,
+                        }
+                      : s
+                  )
+                );
+                // Update progress bar with keyword count
+                if (data.keywordsFound) {
+                  setCompletedItems(data.keywordsFound);
+                }
+                if (data.latestKeyword) {
+                  setCurrentItemLabel(`Found: "${data.latestKeyword}"`);
+                } else if (data.message) {
+                  setCurrentItemLabel(data.message);
+                }
+                break;
+
+              case 'phase_complete':
+                setProgressSteps(prev =>
+                  prev.map(s =>
+                    s.id === data.phaseId
+                      ? {
+                          ...s,
+                          status: 'done' as const,
+                          detail:
+                            data.phaseId === 'discover'
+                              ? `${data.keywordsFound} keywords`
+                              : `${data.clustersCreated} clusters`,
+                        }
+                      : s
+                  )
+                );
+                // When discover completes, switch to phase-based progress for clustering
+                if (data.phaseId === 'discover') {
+                  setProgressMode('items');
+                  setTotalItems(2);
+                  setCompletedItems(1);
+                  setCurrentItemLabel('Clustering with AI...');
+                } else {
+                  setCompletedItems(2);
+                }
+                break;
+
+              case 'complete':
+                setSessionId(data.sessionId);
+                setKeywords(data.keywords);
+                setClusters(data.clusters);
+                setCurrentStep('clusters');
+                loadPastSessions();
+                break;
+
+              case 'error':
+                throw new Error(data.message);
+            }
+          }
+        }
+      }
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        return; // User cancelled
+      }
       setError(err instanceof Error ? err.message : 'Discovery failed');
     } finally {
       setIsLoading(false);
-      setLoadingMessage('');
+      setProgressSteps([]);
+      setProgressTitle('');
+      abortControllerRef.current = null;
     }
   }, [entryType, entryValue, country]);
 
-  // Step 2: Score clusters
+  // Step 2: Score clusters with streaming progress
   const handleScoreClusters = useCallback(async () => {
     if (clusters.length === 0) {
       setError('No clusters to score');
@@ -168,38 +290,119 @@ export default function AppIdeaFinder() {
 
     setIsLoading(true);
     setError(null);
-    setLoadingMessage('Scoring clusters...');
+    setProgressTitle('Scoring Clusters');
+
+    // Build initial progress steps - one per cluster
+    const initialSteps: ProgressStep[] = clusters.map(c => ({
+      id: c.id,
+      label: c.name,
+      status: 'pending' as const,
+    }));
+    setProgressSteps(initialSteps);
+    setCurrentStepIdx(0);
+    setCompletedItems(0);
+    setTotalItems(clusters.length * 3); // 3 keywords per cluster
+    setCurrentItemLabel('');
+
+    // Create abort controller for cleanup
+    abortControllerRef.current = new AbortController();
 
     try {
-      const response = await fetch('/api/app-ideas/analyze', {
+      const response = await fetch('/api/app-ideas/score/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'score',
-          sessionId,
           clusters,
+          sessionId,
           category: entryType === 'category' ? entryValue : 'productivity',
           country,
         }),
+        signal: abortControllerRef.current.signal,
       });
 
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Scoring failed');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Scoring failed');
       }
 
-      setClusterScores(data.data.clusterScores);
-      setCurrentStep('scores');
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('No response body');
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = JSON.parse(line.slice(6));
+
+            switch (data.type) {
+              case 'start':
+                setTotalItems(data.totalKeywords);
+                break;
+
+              case 'cluster_start':
+                setProgressSteps(prev =>
+                  prev.map((s, i) =>
+                    i === data.clusterIndex
+                      ? { ...s, status: 'active' as const }
+                      : s
+                  )
+                );
+                setCurrentStepIdx(data.clusterIndex);
+                break;
+
+              case 'keyword_start':
+                setCurrentItemLabel(data.keyword);
+                break;
+
+              case 'keyword_complete':
+                setCompletedItems(data.keywordIndex);
+                setCurrentItemLabel(`${data.keyword} (${data.score})`);
+                break;
+
+              case 'cluster_complete':
+                setProgressSteps(prev =>
+                  prev.map((s, i) =>
+                    i === data.clusterIndex
+                      ? { ...s, status: 'done' as const, detail: `Score: ${data.score.opportunityScore}` }
+                      : s
+                  )
+                );
+                break;
+
+              case 'complete':
+                setClusterScores(data.clusterScores);
+                setCurrentStep('scores');
+                break;
+
+              case 'error':
+                throw new Error(data.message);
+            }
+          }
+        }
+      }
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        return; // User cancelled
+      }
       setError(err instanceof Error ? err.message : 'Scoring failed');
     } finally {
       setIsLoading(false);
-      setLoadingMessage('');
+      setProgressSteps([]);
+      setProgressTitle('');
+      abortControllerRef.current = null;
     }
   }, [clusters, sessionId, entryType, entryValue, country]);
 
-  // Step 3 & 4: Gap analysis and recommendations
+  // Step 3 & 4: Gap analysis and recommendations with streaming progress
   const handleAnalyze = useCallback(async () => {
     if (clusterScores.length === 0) {
       setError('No scored clusters to analyze');
@@ -208,38 +411,143 @@ export default function AppIdeaFinder() {
 
     setIsLoading(true);
     setError(null);
-    setLoadingMessage('Analyzing top clusters...');
+    setProgressTitle('Analyzing Markets');
+
+    // Get top 3 clusters
+    const topClusters = [...clusterScores]
+      .sort((a, b) => b.opportunityScore - a.opportunityScore)
+      .slice(0, 3);
+
+    // Build initial progress steps - gap + recommendation for each cluster
+    const initialSteps: ProgressStep[] = [
+      ...topClusters.map(c => ({
+        id: `gap-${c.clusterId}`,
+        label: `Analyze: ${c.clusterName}`,
+        status: 'pending' as const,
+      })),
+      ...topClusters.map(c => ({
+        id: `rec-${c.clusterId}`,
+        label: `Recommend: ${c.clusterName}`,
+        status: 'pending' as const,
+      })),
+    ];
+    setProgressSteps(initialSteps);
+    setCurrentStepIdx(0);
+    setCompletedItems(0);
+    setTotalItems(topClusters.length * 2); // gap + rec per cluster
+    setCurrentItemLabel('');
+
+    // Create abort controller for cleanup
+    abortControllerRef.current = new AbortController();
 
     try {
-      const response = await fetch('/api/app-ideas/analyze', {
+      const response = await fetch('/api/app-ideas/analyze/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'analyze',
-          sessionId,
           clusterScores,
+          sessionId,
           country,
           topN: 3,
         }),
+        signal: abortControllerRef.current.signal,
       });
 
-      const data = await response.json();
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Analysis failed');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Analysis failed');
       }
 
-      setGapAnalyses(data.data.gapAnalyses);
-      setRecommendations(data.data.recommendations);
-      setCurrentStep('recommendations');
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('No response body');
 
-      // Refresh past sessions list
-      loadPastSessions();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = JSON.parse(line.slice(6));
+
+            switch (data.type) {
+              case 'start':
+                setTotalItems(data.totalPhases);
+                break;
+
+              case 'phase_start':
+                setProgressSteps(prev =>
+                  prev.map(s =>
+                    s.id === data.phaseId
+                      ? { ...s, status: 'active' as const }
+                      : s
+                  )
+                );
+                setCurrentItemLabel(
+                  data.phaseType === 'gap_analysis'
+                    ? `Analyzing ${data.clusterName}...`
+                    : `Generating recommendation for ${data.clusterName}...`
+                );
+                break;
+
+              case 'phase_complete':
+                setCompletedItems(data.phaseIndex);
+                setProgressSteps(prev =>
+                  prev.map(s =>
+                    s.id === data.phaseId
+                      ? {
+                          ...s,
+                          status: 'done' as const,
+                          detail:
+                            data.phaseType === 'gap_analysis'
+                              ? `${data.appsAnalyzed} apps, ${data.gapsFound} gaps`
+                              : data.headline?.slice(0, 30) + '...',
+                        }
+                      : s
+                  )
+                );
+                break;
+
+              case 'phase_error':
+                setCompletedItems(data.phaseIndex);
+                setProgressSteps(prev =>
+                  prev.map(s =>
+                    s.id === data.phaseId
+                      ? { ...s, status: 'error' as const, detail: 'Failed' }
+                      : s
+                  )
+                );
+                break;
+
+              case 'complete':
+                setGapAnalyses(data.gapAnalyses);
+                setRecommendations(data.recommendations);
+                setCurrentStep('recommendations');
+                loadPastSessions();
+                break;
+
+              case 'error':
+                throw new Error(data.message);
+            }
+          }
+        }
+      }
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        return; // User cancelled
+      }
       setError(err instanceof Error ? err.message : 'Analysis failed');
     } finally {
       setIsLoading(false);
-      setLoadingMessage('');
+      setProgressSteps([]);
+      setProgressTitle('');
+      abortControllerRef.current = null;
     }
   }, [clusterScores, sessionId, country]);
 
@@ -470,13 +778,29 @@ export default function AppIdeaFinder() {
         </div>
       )}
 
-      {/* Loading overlay */}
-      {isLoading && (
+      {/* Loading/Progress display */}
+      {isLoading && progressSteps.length > 0 && (
+        <div className="mb-6">
+          <AppIdeaProgress
+            title={progressTitle}
+            steps={progressSteps}
+            currentStepIndex={currentStepIdx}
+            isActive={isLoading}
+            totalItems={totalItems}
+            completedItems={completedItems}
+            currentItemLabel={currentItemLabel}
+            progressMode={progressMode}
+          />
+        </div>
+      )}
+
+      {/* Fallback loading state (should not happen with streaming) */}
+      {isLoading && progressSteps.length === 0 && (
         <div className="mb-6 p-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
           <div className="flex items-center gap-3">
             <div className="animate-spin h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full" />
             <span className="text-blue-700 dark:text-blue-400 font-medium">
-              {loadingMessage}
+              Processing...
             </span>
           </div>
         </div>

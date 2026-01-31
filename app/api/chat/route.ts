@@ -7,6 +7,7 @@ import {
   clearChatMessages,
   type Review,
 } from '@/lib/supabase';
+import { getEnrichmentForPrompt } from '@/lib/crawl';
 
 // GET /api/chat?projectId=xxx - Fetch all messages for a project
 export async function GET(request: NextRequest) {
@@ -59,8 +60,33 @@ export async function POST(request: NextRequest) {
     const chatHistory = await getChatMessages(projectId);
     const recentHistory = chatHistory.slice(-20);
 
-    // Build system prompt with app context
-    const systemPrompt = buildSystemPrompt(project);
+    // Check if user is asking about something that would benefit from enrichment
+    const shouldEnrich = shouldFetchEnrichment(message);
+    let enrichmentContext = '';
+
+    if (shouldEnrich && (project as any).app_store_id) {
+      try {
+        // Extract keywords from the message for targeted enrichment
+        const keywords = extractKeywordsFromMessage(message);
+
+        enrichmentContext = await getEnrichmentForPrompt({
+          appStoreIds: [(project as any).app_store_id],
+          keywords: keywords.slice(0, 3),
+          options: {
+            includeReviews: true,
+            includeReddit: shouldEnrich === 'reddit' || shouldEnrich === 'both',
+            includeWebsites: false,
+            maxReviewsPerApp: 50,
+            maxRedditPosts: 10,
+          },
+        });
+      } catch (error) {
+        console.log('Enrichment unavailable for chat:', error);
+      }
+    }
+
+    // Build system prompt with app context and optional enrichment
+    const systemPrompt = buildSystemPrompt(project, enrichmentContext);
 
     // Build conversation messages
     const conversationMessages = [
@@ -142,6 +168,47 @@ export async function DELETE(request: NextRequest) {
   }
 }
 
+// Check if the message would benefit from Crawl4AI enrichment
+function shouldFetchEnrichment(message: string): 'reviews' | 'reddit' | 'both' | false {
+  const lowerMessage = message.toLowerCase();
+
+  // Reddit-specific triggers
+  const redditTriggers = [
+    'what do people say', 'reddit', 'discussions', 'community',
+    'what are users saying', 'online sentiment', 'forums',
+  ];
+
+  // Review-specific triggers
+  const reviewTriggers = [
+    'more reviews', 'all reviews', 'extended reviews', 'detailed reviews',
+    'what do users complain', 'user feedback', 'complaints',
+  ];
+
+  // Both triggers
+  const bothTriggers = [
+    'market research', 'competitor analysis', 'full analysis',
+    'deep dive', 'comprehensive',
+  ];
+
+  if (bothTriggers.some(t => lowerMessage.includes(t))) return 'both';
+  if (redditTriggers.some(t => lowerMessage.includes(t))) return 'reddit';
+  if (reviewTriggers.some(t => lowerMessage.includes(t))) return 'reviews';
+
+  return false;
+}
+
+// Extract potential keywords from user message
+function extractKeywordsFromMessage(message: string): string[] {
+  // Simple keyword extraction - words that might be useful for search
+  const words = message.toLowerCase()
+    .replace(/[^\w\s]/g, '')
+    .split(/\s+/)
+    .filter(w => w.length > 3)
+    .filter(w => !['what', 'about', 'this', 'that', 'with', 'from', 'they', 'have', 'more', 'some'].includes(w));
+
+  return [...new Set(words)].slice(0, 5);
+}
+
 // Build system prompt with project context
 function buildSystemPrompt(project: {
   app_name: string;
@@ -151,7 +218,7 @@ function buildSystemPrompt(project: {
   app_primary_genre: string | null;
   reviews: Review[];
   ai_analysis: string | null;
-}): string {
+}, enrichmentContext?: string): string {
   const appName = project.app_name;
   const developer = project.app_developer || 'Unknown';
   const rating = project.app_rating?.toFixed(1) || 'N/A';
@@ -198,7 +265,20 @@ Help the user:
 4. Suggest feature improvements based on user feedback
 5. Generate actionable recommendations for the product team
 
-Be specific, cite reviews when relevant, and be direct. If asked about something not covered in the available data, say so clearly.`;
+Be specific, cite reviews when relevant, and be direct. If asked about something not covered in the available data, say so clearly.${
+  enrichmentContext
+    ? `
+
+---
+## ENRICHED DATA (Extended Reviews & Reddit Discussions)
+
+*Additional context fetched based on your question:*
+
+${enrichmentContext}
+
+Use this enriched data to provide more comprehensive and specific answers.`
+    : ''
+}`;
 }
 
 // Get a diverse sample of reviews (prioritize variety of ratings)

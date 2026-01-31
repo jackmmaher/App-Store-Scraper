@@ -1,7 +1,9 @@
 // Gap Analysis Module
 // Uses Claude to analyze top apps and identify opportunities
+// Enhanced with Crawl4AI for extended review and Reddit enrichment
 
 import { GapAnalysis, GapAnalysisPromptResult, ClusterScore, AnalyzedApp } from './types';
+import { getEnrichmentForPrompt } from '@/lib/crawl';
 
 interface iTunesApp {
   trackId: number;
@@ -131,15 +133,31 @@ export async function analyzeClusterGap(
     description: (app.description || '').substring(0, 500),
   }));
 
+  // NEW: Get enriched data from Crawl4AI (extended reviews + Reddit discussions)
+  const appStoreIds = topApps.slice(0, 3).map(a => a.trackId.toString());
+  const enrichment = await getEnrichmentForPrompt({
+    appStoreIds,
+    keywords: clusterScore.keywords.slice(0, 5),
+    country,
+    options: {
+      includeReviews: true,
+      includeReddit: true,
+      includeWebsites: false,
+      maxReviewsPerApp: 100,
+      maxRedditPosts: 20,
+    },
+  });
+
   const systemPrompt = `You are an app market analyst expert. Analyze competing apps to identify opportunities for a new app.
 
 Your task:
 1. Identify common features across these apps
-2. Infer likely user complaints based on ratings, descriptions, and common patterns
-3. Identify gaps - what's missing that users might want
+2. Identify user complaints based on ratings, descriptions, and the REAL USER REVIEWS provided below
+3. Identify gaps - what's missing that users want (use Reddit discussions for validation)
 4. Summarize monetization patterns
 
 Be specific and actionable. Focus on insights that would help a developer build a better app.
+Use the enriched review and Reddit data to provide more accurate, evidence-based insights.
 
 Return your response as valid JSON with this exact structure:
 {
@@ -154,6 +172,14 @@ Return your response as valid JSON with this exact structure:
 ${JSON.stringify(appSummaries, null, 2)}
 
 Keywords in this cluster: ${clusterScore.keywords.slice(0, 10).join(', ')}
+
+${enrichment ? `
+---
+## ENRICHED DATA (Real User Reviews & Reddit Discussions)
+
+${enrichment}
+---
+` : ''}
 
 Identify features, pain points, gaps, and monetization patterns. Return valid JSON only.`;
 

@@ -1,7 +1,9 @@
 // Review Sentiment Analyzer for Opportunity Scoring
 // Fetches critical reviews from top competitors and extracts common complaints
+// Enhanced with Crawl4AI for extended review fetching (thousands vs RSS 50-100)
 
 import { TopAppData } from './types';
+import { getCrawlOrchestrator, ExtendedReview } from '@/lib/crawl';
 
 // ============================================================================
 // Types
@@ -112,9 +114,57 @@ interface RSSFeed {
 }
 
 /**
- * Fetch critical (1-2 star) reviews for an app from App Store RSS feed
+ * Fetch critical (1-2 star) reviews using Crawl4AI extended reviews
+ * Falls back to RSS if crawl service is unavailable
  */
 async function fetchCriticalReviews(
+  appId: string,
+  appName: string,
+  country: string = 'us',
+  maxPages: number = 3
+): Promise<CriticalReview[]> {
+  // Try Crawl4AI first for extended reviews (thousands vs RSS 50-100)
+  const orchestrator = getCrawlOrchestrator();
+  const isAvailable = await orchestrator.isAvailable();
+
+  if (isAvailable) {
+    try {
+      console.log(`[Crawl4AI] Fetching extended reviews for ${appId}...`);
+      const response = await orchestrator.crawlAppReviews({
+        app_id: appId,
+        country,
+        max_reviews: 500, // Fetch many more than RSS allows
+        max_rating: 2, // Only 1-2 star reviews
+      });
+
+      if (response && response.reviews.length > 0) {
+        console.log(`[Crawl4AI] Found ${response.total_reviews} reviews for ${appId}`);
+        return response.reviews.map((r: ExtendedReview) => ({
+          id: r.id,
+          title: r.title,
+          content: r.content,
+          rating: r.rating,
+          author: r.author,
+          date: r.date,
+          app_id: appId,
+          app_name: appName,
+        }));
+      }
+    } catch (error) {
+      console.error(`[Crawl4AI] Error fetching reviews for ${appId}:`, error);
+      // Fall through to RSS fallback
+    }
+  }
+
+  // Fallback to RSS feed
+  console.log(`[RSS Fallback] Fetching reviews for ${appId}...`);
+  return fetchCriticalReviewsFromRSS(appId, appName, country, maxPages);
+}
+
+/**
+ * Legacy RSS-based review fetching (fallback when Crawl4AI unavailable)
+ */
+async function fetchCriticalReviewsFromRSS(
   appId: string,
   appName: string,
   country: string = 'us',
