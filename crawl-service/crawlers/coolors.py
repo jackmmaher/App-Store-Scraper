@@ -11,6 +11,7 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional, Dict, Any
+import random
 from playwright.async_api import async_playwright, Page, Browser, TimeoutError as PlaywrightTimeout
 
 logger = logging.getLogger(__name__)
@@ -195,34 +196,46 @@ class CoolorsCrawler:
 
         try:
             logger.info("Navigating to Coolors trending palettes...")
+            # Use 'load' instead of 'networkidle' - networkidle hangs on sites with
+            # continuous analytics/tracking activity. 15s timeout to fail fast.
             await page.goto(
                 "https://coolors.co/palettes/trending",
-                wait_until='networkidle',
-                timeout=60000
+                wait_until='load',
+                timeout=15000
             )
 
-            # Wait for palettes to render
-            await asyncio.sleep(3)
+            # Wait for palette elements to appear (more reliable than fixed sleep)
+            try:
+                await page.wait_for_selector('a[href*="/palette/"]', timeout=5000)
+            except PlaywrightTimeout:
+                logger.warning("Palette selector not found, continuing anyway...")
 
-            # Scroll to load more palettes
-            for i in range(scroll_times):
+            # Brief pause for any dynamic rendering
+            await asyncio.sleep(1)
+
+            # Extract palettes from initial load first
+            palettes = await self._extract_palettes(page)
+            existing_colors = {tuple(p.colors) for p in palettes}
+            logger.info(f"Initial load: Found {len(palettes)} palettes")
+
+            # Scroll to load more palettes (reduced scroll times for faster response)
+            for i in range(min(scroll_times, 3)):  # Cap at 3 scrolls max
                 if len(palettes) >= max_palettes:
                     break
 
                 await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                await asyncio.sleep(2)
+                await asyncio.sleep(1)  # Reduced from 2s
 
                 # Extract palettes after each scroll
                 new_palettes = await self._extract_palettes(page)
 
                 # Deduplicate
-                existing_colors = {tuple(p.colors) for p in palettes}
                 for p in new_palettes:
                     if tuple(p.colors) not in existing_colors:
                         palettes.append(p)
                         existing_colors.add(tuple(p.colors))
 
-                logger.info(f"Scroll {i+1}/{scroll_times}: Found {len(palettes)} unique palettes")
+                logger.info(f"Scroll {i+1}: Found {len(palettes)} unique palettes")
 
             logger.info(f"Crawled {len(palettes)} trending palettes from Coolors")
 
@@ -314,8 +327,14 @@ class CoolorsCrawler:
         return palettes
 
 
-def load_cached_palettes() -> Optional[List[ColorPalette]]:
-    """Load palettes from cache if still valid"""
+def load_cached_palettes(check_expiry: bool = True) -> Optional[List[ColorPalette]]:
+    """
+    Load palettes from cache.
+
+    Args:
+        check_expiry: If True, return None if cache is expired (for triggering refresh).
+                      If False, always return cached palettes (for accumulation).
+    """
     if not PALETTE_CACHE_FILE.exists():
         return None
 
@@ -324,12 +343,14 @@ def load_cached_palettes() -> Optional[List[ColorPalette]]:
             cache = json.load(f)
 
         cached_at = datetime.fromisoformat(cache.get('cached_at', '2000-01-01'))
-        if datetime.now() - cached_at > timedelta(hours=CACHE_MAX_AGE_HOURS):
-            logger.info("Palette cache expired")
+        is_expired = datetime.now() - cached_at > timedelta(hours=CACHE_MAX_AGE_HOURS)
+
+        if check_expiry and is_expired:
+            logger.info("Palette cache expired, will refresh and accumulate")
             return None
 
         palettes = [ColorPalette.from_dict(p) for p in cache.get('palettes', [])]
-        logger.info(f"Loaded {len(palettes)} palettes from cache")
+        logger.info(f"Loaded {len(palettes)} palettes from cache (expired={is_expired})")
         return palettes
 
     except Exception as e:
@@ -337,20 +358,47 @@ def load_cached_palettes() -> Optional[List[ColorPalette]]:
         return None
 
 
-def save_palettes_to_cache(palettes: List[ColorPalette]):
-    """Save palettes to cache file"""
+def save_palettes_to_cache(new_palettes: List[ColorPalette], accumulate: bool = True):
+    """
+    Save palettes to cache file.
+
+    Args:
+        new_palettes: Newly scraped palettes
+        accumulate: If True, merge with existing cache. If False, replace entirely.
+    """
     try:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
+        all_palettes = new_palettes
+
+        if accumulate:
+            # Load existing palettes (ignore expiry for accumulation)
+            existing = load_cached_palettes(check_expiry=False) or []
+
+            # Deduplicate by color combination
+            existing_colors = {tuple(p.colors) for p in existing}
+
+            # Add new palettes that don't already exist
+            added_count = 0
+            for p in new_palettes:
+                if tuple(p.colors) not in existing_colors:
+                    existing.append(p)
+                    existing_colors.add(tuple(p.colors))
+                    added_count += 1
+
+            all_palettes = existing
+            logger.info(f"Accumulated {added_count} new palettes, total now: {len(all_palettes)}")
+
         cache = {
             'cached_at': datetime.now().isoformat(),
-            'palettes': [p.to_dict() for p in palettes],
+            'total_accumulated': len(all_palettes),
+            'palettes': [p.to_dict() for p in all_palettes],
         }
 
         with open(PALETTE_CACHE_FILE, 'w') as f:
             json.dump(cache, f, indent=2)
 
-        logger.info(f"Saved {len(palettes)} palettes to cache")
+        logger.info(f"Saved {len(all_palettes)} palettes to cache")
 
     except Exception as e:
         logger.error(f"Error saving palette cache: {e}")
@@ -359,30 +407,59 @@ def save_palettes_to_cache(palettes: List[ColorPalette]):
 async def get_trending_palettes(
     force_refresh: bool = False,
     max_palettes: int = 50,
+    timeout_seconds: int = 8,
 ) -> List[ColorPalette]:
     """
-    Get trending palettes, using cache when available.
+    Get trending palettes, using accumulated cache.
+
+    Palettes are accumulated over time - each scrape adds new unique palettes
+    to the collection rather than replacing it.
 
     Args:
-        force_refresh: Force fetching fresh data from Coolors
+        force_refresh: Force fetching fresh data from Coolors (still accumulates)
         max_palettes: Maximum number of palettes to return
+        timeout_seconds: Overall timeout for crawling (default 8s to fit within API timeouts)
 
     Returns:
-        List of ColorPalette objects
+        List of ColorPalette objects from accumulated collection
     """
-    if not force_refresh:
-        cached = load_cached_palettes()
-        if cached:
-            return cached[:max_palettes]
+    # Check if we should scrape (cache expired or force refresh)
+    should_scrape = force_refresh
+    cached = load_cached_palettes(check_expiry=True)
 
-    # Crawl fresh data
-    async with CoolorsCrawler(headless=True) as crawler:
-        palettes = await crawler.crawl_trending_palettes(max_palettes=max_palettes)
+    if cached is None:
+        # Cache expired or doesn't exist - need to scrape
+        should_scrape = True
+        # But still load existing palettes for accumulation
+        cached = load_cached_palettes(check_expiry=False) or []
 
-    if palettes:
-        save_palettes_to_cache(palettes)
+    if should_scrape:
+        logger.info("Scraping fresh palettes from Coolors...")
+        try:
+            async with asyncio.timeout(timeout_seconds):
+                async with CoolorsCrawler(headless=True) as crawler:
+                    new_palettes = await crawler.crawl_trending_palettes(max_palettes=50)
 
-    return palettes
+            if new_palettes:
+                # Accumulate new palettes with existing
+                save_palettes_to_cache(new_palettes, accumulate=True)
+                # Reload to get full accumulated set
+                cached = load_cached_palettes(check_expiry=False) or new_palettes
+
+        except asyncio.TimeoutError:
+            logger.warning(f"Palette crawl timed out after {timeout_seconds}s")
+            # Return cached if available
+            if cached:
+                logger.info(f"Returning {len(cached)} cached palettes after timeout")
+        except Exception as e:
+            logger.error(f"Error crawling palettes: {e}")
+            # Return cached if available
+
+    if cached:
+        logger.info(f"Returning {min(len(cached), max_palettes)} palettes from collection of {len(cached)}")
+        return cached[:max_palettes]
+
+    return []
 
 
 # =============================================================================
@@ -438,45 +515,70 @@ def select_palette_for_app(
     palettes: List[ColorPalette],
     category: Optional[str] = None,
     mood_hint: Optional[str] = None,
-    top_n: int = 5,
+    top_n: int = 12,
+    randomize: bool = True,
 ) -> List[ColorPalette]:
     """
-    Select the best palettes for an app based on category and mood.
+    Select palettes for an app with variety and randomization.
 
     Args:
         palettes: Available palettes to choose from
         category: App Store category (e.g., "Health & Fitness")
         mood_hint: Optional explicit mood preference
-        top_n: Number of top palettes to return
+        top_n: Number of palettes to return (default 12 for variety)
+        randomize: Whether to add randomization for variety
 
     Returns:
-        List of best matching palettes, sorted by relevance
+        List of palettes with good variety
     """
     if not palettes:
         return []
 
-    # Determine preferred moods
+    # Determine preferred moods (but we'll include others too for variety)
     if mood_hint:
         preferred_moods = [mood_hint]
     elif category and category in CATEGORY_MOOD_MAP:
         preferred_moods = CATEGORY_MOOD_MAP[category]
     else:
-        # Default: professional, calm, neutral
         preferred_moods = ['professional', 'calm', 'neutral']
 
-    # Score each palette
-    def score_palette(p: ColorPalette) -> tuple:
-        mood_score = 0
-        if p.mood in preferred_moods:
-            mood_score = len(preferred_moods) - preferred_moods.index(p.mood)
+    # Group palettes by mood for balanced selection
+    mood_groups: Dict[str, List[ColorPalette]] = {}
+    for p in palettes:
+        mood = p.mood or 'neutral'
+        if mood not in mood_groups:
+            mood_groups[mood] = []
+        mood_groups[mood].append(p)
 
-        # Also consider likes as a quality signal
-        likes_score = min(p.likes / 1000, 10)  # Cap at 10
+    # Shuffle within each group for variety
+    if randomize:
+        for mood in mood_groups:
+            random.shuffle(mood_groups[mood])
 
-        return (mood_score, likes_score, -len(p.colors))  # Prefer 5-color palettes
+    selected: List[ColorPalette] = []
 
-    sorted_palettes = sorted(palettes, key=score_palette, reverse=True)
-    return sorted_palettes[:top_n]
+    # First, pick from preferred moods (but not all from one mood)
+    for mood in preferred_moods:
+        if mood in mood_groups:
+            # Take up to 3 from each preferred mood
+            selected.extend(mood_groups[mood][:3])
+
+    # Then add variety from other moods
+    other_moods = [m for m in mood_groups.keys() if m not in preferred_moods]
+    if randomize:
+        random.shuffle(other_moods)
+
+    for mood in other_moods:
+        if len(selected) >= top_n:
+            break
+        # Take 1-2 from each other mood for variety
+        selected.extend(mood_groups[mood][:2])
+
+    # Final shuffle to mix moods together (not grouped)
+    if randomize:
+        random.shuffle(selected)
+
+    return selected[:top_n]
 
 
 def format_palettes_for_prompt(palettes: List[ColorPalette], max_palettes: int = 5) -> str:

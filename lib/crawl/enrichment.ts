@@ -392,15 +392,18 @@ export interface PaletteResponse {
 /**
  * Fetch curated color palettes for Design System generation
  *
+ * Palettes are accumulated over time from Coolors.co trending.
+ * Each call returns a randomized selection for variety.
+ *
  * @param category - App Store category (e.g., "Health & Fitness")
  * @param mood - Optional explicit mood (professional, playful, calm, bold, warm, cool)
- * @param maxPalettes - Number of palettes to return
+ * @param maxPalettes - Number of palettes to return (default 12 for good variety)
  * @returns Formatted markdown string with palette options
  */
 export async function getColorPalettesForDesignSystem(
   category?: string,
   mood?: string,
-  maxPalettes: number = 5
+  maxPalettes: number = 12
 ): Promise<string> {
   const orchestrator = getCrawlOrchestrator();
 
@@ -422,7 +425,7 @@ export async function getColorPalettesForDesignSystem(
         category,
         mood,
         max_palettes: maxPalettes,
-        force_refresh: false,
+        force_refresh: false,  // Let cache accumulate, Python side handles refresh timing
       }),
       signal: AbortSignal.timeout(10000), // 10 second timeout - fail fast to fallback
     });
@@ -433,13 +436,19 @@ export async function getColorPalettesForDesignSystem(
     }
 
     const data: PaletteResponse = await response.json();
+    console.log(`Received ${data.palettes?.length || 0} palettes (total cached: ${data.total_cached || 'unknown'})`);
+
+    if (data.palettes && data.palettes.length > 0) {
+      // Shuffle for variety on each request
+      const shuffled = shuffleArray([...data.palettes]);
+      return formatPalettesForPrompt(shuffled, maxPalettes, data.total_cached);
+    }
 
     if (data.prompt_text) {
       return data.prompt_text;
     }
 
-    // Format palettes manually if prompt_text not provided
-    return formatPalettesForPrompt(data.palettes, maxPalettes);
+    return getFallbackPalettes(category);
   } catch (error) {
     console.error('Error fetching palettes:', error);
     return getFallbackPalettes(category);
@@ -447,14 +456,29 @@ export async function getColorPalettesForDesignSystem(
 }
 
 /**
+ * Fisher-Yates shuffle for randomizing palette order
+ */
+function shuffleArray<T>(array: T[]): T[] {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+}
+
+/**
  * Format palette data for prompt inclusion
  */
-function formatPalettesForPrompt(palettes: ColorPalette[], max: number): string {
+function formatPalettesForPrompt(palettes: ColorPalette[], max: number, totalCached?: number): string {
   if (!palettes || palettes.length === 0) {
     return '';
   }
 
   const lines = ['## Curated Color Palettes (from Coolors.co Trending)', ''];
+  if (totalCached && totalCached > max) {
+    lines.push(`*Showing ${Math.min(palettes.length, max)} of ${totalCached} accumulated palettes*`);
+    lines.push('');
+  }
   lines.push(
     'Select ONE palette below or derive colors inspired by these. Do NOT invent generic colors.'
   );
