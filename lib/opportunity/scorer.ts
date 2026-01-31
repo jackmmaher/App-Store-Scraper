@@ -29,7 +29,7 @@ import {
   explainExecutionFeasibility,
   estimateDevelopmentEffort,
 } from './dimension-calculators';
-import { fetchTrendData } from './trend-fetcher';
+import { fetchTrendData, fetchPainPointSignals } from './trend-fetcher';
 import { getAutosuggestData } from '../keywords/autosuggest';
 import { upsertApps, AppResult } from '../supabase';
 
@@ -123,6 +123,24 @@ function extractTopAppData(
   const hasIAP = detectHasIAP(app, description);
   const hasSubscription = detectHasSubscription(description);
 
+  // Calculate days since last update
+  const lastUpdated = app.currentVersionReleaseDate || app.releaseDate || '';
+  const daysSinceUpdate = lastUpdated
+    ? Math.floor((Date.now() - new Date(lastUpdated).getTime()) / (1000 * 60 * 60 * 24))
+    : 999;
+
+  // Estimate downloads (industry rule: reviews × 50-100, we use 70 as middle ground)
+  const reviewCount = app.userRatingCount || 0;
+  const downloadEstimate = reviewCount * 70;
+
+  // Estimate revenue based on monetization model
+  const revenueEstimate = estimateRevenue(
+    app.price || 0,
+    hasIAP,
+    hasSubscription,
+    downloadEstimate
+  );
+
   return {
     id: app.trackId.toString(),
     name: app.trackName,
@@ -138,7 +156,57 @@ function extractTopAppData(
     description_length: description.length,
     feature_count: featureCount,
     requires_hardware: hardwareRequirements,
+    // Enriched KPIs
+    last_updated: lastUpdated,
+    developer_name: app.artistName || 'Unknown',
+    developer_id: app.artistId?.toString() || '',
+    days_since_update: daysSinceUpdate,
+    download_estimate: downloadEstimate,
+    revenue_estimate: revenueEstimate,
   };
+}
+
+/**
+ * Estimate monthly revenue based on monetization model
+ */
+function estimateRevenue(
+  price: number,
+  hasIAP: boolean,
+  hasSubscription: boolean,
+  downloads: number
+): TopAppData['revenue_estimate'] {
+  // Estimate monthly new downloads (assume 10% of total are monthly)
+  const monthlyDownloads = Math.round(downloads * 0.1);
+
+  if (hasSubscription) {
+    // Subscription: assume $5-10/month, 2-5% conversion
+    return {
+      monthly_low: Math.round(monthlyDownloads * 0.02 * 5),
+      monthly_high: Math.round(monthlyDownloads * 0.05 * 10),
+      model: 'subscription',
+    };
+  } else if (price > 0) {
+    // Paid app: direct revenue from sales
+    return {
+      monthly_low: Math.round(monthlyDownloads * price * 0.7), // 70% after Apple cut
+      monthly_high: Math.round(monthlyDownloads * price * 0.85), // 85% for small dev
+      model: 'paid',
+    };
+  } else if (hasIAP) {
+    // Freemium: assume $2-5 ARPU, 3-8% conversion
+    return {
+      monthly_low: Math.round(monthlyDownloads * 0.03 * 2),
+      monthly_high: Math.round(monthlyDownloads * 0.08 * 5),
+      model: 'freemium',
+    };
+  } else {
+    // Free with no monetization signals
+    return {
+      monthly_low: 0,
+      monthly_high: Math.round(monthlyDownloads * 0.01 * 1), // Minimal ad revenue
+      model: 'free',
+    };
+  }
 }
 
 /**
@@ -232,6 +300,54 @@ async function saveAppsToDatabase(
 }
 
 // ============================================================================
+// Market Estimates Calculation
+// ============================================================================
+
+/**
+ * Calculate market size estimates from top apps data
+ */
+function calculateMarketEstimates(
+  topApps: TopAppData[]
+): OpportunityRawData['market_estimates'] {
+  // Sum up download estimates from all top apps
+  const totalDownloads = topApps.reduce(
+    (sum, app) => sum + (app.download_estimate || 0),
+    0
+  );
+
+  // Sum up revenue estimates
+  const monthlyRevenueLow = topApps.reduce(
+    (sum, app) => sum + (app.revenue_estimate?.monthly_low || 0),
+    0
+  );
+  const monthlyRevenueHigh = topApps.reduce(
+    (sum, app) => sum + (app.revenue_estimate?.monthly_high || 0),
+    0
+  );
+
+  // Determine market size tier
+  let marketSizeTier: 'tiny' | 'small' | 'medium' | 'large' | 'massive';
+  if (monthlyRevenueHigh < 1000) {
+    marketSizeTier = 'tiny';
+  } else if (monthlyRevenueHigh < 10000) {
+    marketSizeTier = 'small';
+  } else if (monthlyRevenueHigh < 100000) {
+    marketSizeTier = 'medium';
+  } else if (monthlyRevenueHigh < 1000000) {
+    marketSizeTier = 'large';
+  } else {
+    marketSizeTier = 'massive';
+  }
+
+  return {
+    total_downloads_estimate: totalDownloads,
+    monthly_revenue_low: monthlyRevenueLow,
+    monthly_revenue_high: monthlyRevenueHigh,
+    market_size_tier: marketSizeTier,
+  };
+}
+
+// ============================================================================
 // Category Data Extraction
 // ============================================================================
 
@@ -281,10 +397,11 @@ export async function scoreOpportunity(
   const normalizedKeyword = keyword.toLowerCase().trim();
 
   // Fetch all data in parallel
-  const [autosuggestData, searchResults, trendData] = await Promise.all([
+  const [autosuggestData, searchResults, trendData, painPointData] = await Promise.all([
     getAutosuggestData(normalizedKeyword, country),
     searchiTunes(normalizedKeyword, country, 200),
     fetchTrendData(normalizedKeyword, category),
+    fetchPainPointSignals(normalizedKeyword, category),
   ]);
 
   // Extract top 10 apps data
@@ -299,6 +416,9 @@ export async function scoreOpportunity(
   // Extract category data
   const categoryData = extractCategoryData(top10Apps);
 
+  // Calculate market estimates from top apps
+  const marketEstimates = calculateMarketEstimates(top10Apps);
+
   // Build raw data object
   const rawData: OpportunityRawData = {
     itunes: {
@@ -309,7 +429,22 @@ export async function scoreOpportunity(
     },
     google_trends: trendData.google_trends,
     reddit: trendData.reddit,
+    pain_points: painPointData.signals.length > 0 ? {
+      signals: painPointData.signals.map(s => ({
+        title: s.title,
+        body: s.body,
+        subreddit: s.subreddit,
+        url: s.url,
+        score: s.score,
+        num_comments: s.num_comments,
+        signal_type: s.signal_type,
+      })),
+      total_signals: painPointData.total_signals,
+      signal_strength: painPointData.signal_strength,
+      top_pain_points: painPointData.top_pain_points,
+    } : null,
     category_data: categoryData,
+    market_estimates: marketEstimates,
   };
 
   // Calculate all dimension scores

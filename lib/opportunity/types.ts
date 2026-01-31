@@ -121,6 +121,22 @@ export interface OpportunityRawData {
     sentiment_score: number;  // -1 to 1
   } | null;
 
+  // Pain Point Signals (Reddit "I wish there was an app" detection)
+  pain_points: {
+    signals: Array<{
+      title: string;
+      body: string;
+      subreddit: string;
+      url: string;
+      score: number;
+      num_comments: number;
+      signal_type: 'wish' | 'looking_for' | 'frustration' | 'recommendation_request';
+    }>;
+    total_signals: number;
+    signal_strength: number;  // 0-100
+    top_pain_points: string[];
+  } | null;
+
   // Category metadata
   category_data: {
     avg_price: number;
@@ -128,6 +144,14 @@ export interface OpportunityRawData {
     iap_app_count: number;
     subscription_app_count: number;
     new_apps_90d: number;
+  };
+
+  // Market size estimates (computed)
+  market_estimates: {
+    total_downloads_estimate: number;
+    monthly_revenue_low: number;
+    monthly_revenue_high: number;
+    market_size_tier: 'tiny' | 'small' | 'medium' | 'large' | 'massive';
   };
 }
 
@@ -146,6 +170,18 @@ export interface TopAppData {
   description_length: number;
   feature_count: number;  // extracted features
   requires_hardware: string[];  // ['camera', 'gps', etc]
+
+  // Enriched KPIs (added for decision-making)
+  last_updated: string;  // currentVersionReleaseDate - when app was last updated
+  developer_name: string;
+  developer_id: string;
+  days_since_update: number;  // computed: how stale is this app?
+  download_estimate: number;  // estimated from review count (reviews × 50-100)
+  revenue_estimate: {
+    monthly_low: number;
+    monthly_high: number;
+    model: 'paid' | 'freemium' | 'subscription' | 'free';
+  };
 }
 
 // ============================================================================

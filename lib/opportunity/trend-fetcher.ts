@@ -365,3 +365,270 @@ export async function isRedditAvailable(): Promise<boolean> {
     return false;
   }
 }
+
+// ============================================================================
+// Pain Point Scanner - Reddit "I wish there was an app" Detection
+// ============================================================================
+
+export interface PainPointSignal {
+  title: string;
+  body: string;
+  subreddit: string;
+  url: string;
+  score: number;
+  num_comments: number;
+  created_utc: number;
+  signal_type: 'wish' | 'looking_for' | 'frustration' | 'recommendation_request';
+}
+
+export interface PainPointResult {
+  signals: PainPointSignal[];
+  total_signals: number;
+  signal_strength: number; // 0-100 based on quality/quantity of signals
+  top_pain_points: string[]; // Extracted pain point summaries
+}
+
+/**
+ * Search Reddit for pain point signals related to a keyword/category
+ * Looks for posts like "I wish there was an app...", "looking for an app that...", etc.
+ */
+export async function fetchPainPointSignals(
+  keyword: string,
+  category: string
+): Promise<PainPointResult> {
+  const signals: PainPointSignal[] = [];
+  const subreddits = CATEGORY_SUBREDDITS[category] || ['all'];
+
+  // Pain point search patterns
+  const painPointQueries = [
+    `"wish there was" ${keyword}`,
+    `"looking for" app ${keyword}`,
+    `"need an app" ${keyword}`,
+    `"anyone know" app ${keyword}`,
+    `"recommend" app ${keyword}`,
+    `"frustrated" ${keyword} app`,
+    `"alternative to" ${keyword}`,
+  ];
+
+  // Search for pain points across subreddits
+  for (const subreddit of subreddits.slice(0, 2)) { // Limit to 2 subreddits to avoid rate limits
+    for (const query of painPointQueries.slice(0, 3)) { // Limit queries
+      try {
+        const posts = await searchRedditPainPoints(subreddit, query);
+        signals.push(...posts);
+        await delay(DEFAULT_CONFIG.RATE_LIMIT_MS);
+      } catch (error) {
+        console.error(`Error searching pain points in r/${subreddit}:`, error);
+      }
+    }
+  }
+
+  // Also search in app-related subreddits
+  const appSubreddits = ['iosapps', 'AppHookup', 'iphone'];
+  for (const subreddit of appSubreddits) {
+    try {
+      const posts = await searchRedditPainPoints(subreddit, keyword);
+      signals.push(...posts);
+      await delay(DEFAULT_CONFIG.RATE_LIMIT_MS);
+    } catch (error) {
+      console.error(`Error searching pain points in r/${subreddit}:`, error);
+    }
+  }
+
+  // Deduplicate signals
+  const uniqueSignals = deduplicateSignals(signals);
+
+  // Calculate signal strength
+  const signalStrength = calculateSignalStrength(uniqueSignals);
+
+  // Extract top pain points
+  const topPainPoints = extractTopPainPoints(uniqueSignals);
+
+  return {
+    signals: uniqueSignals.slice(0, 20), // Limit to top 20
+    total_signals: uniqueSignals.length,
+    signal_strength: signalStrength,
+    top_pain_points: topPainPoints,
+  };
+}
+
+/**
+ * Search a subreddit for pain point posts
+ */
+async function searchRedditPainPoints(
+  subreddit: string,
+  query: string
+): Promise<PainPointSignal[]> {
+  try {
+    const url = `https://www.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(query)}&restrict_sr=on&sort=relevance&limit=25&t=year`;
+
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'AppStoreScraper/1.0',
+      },
+    });
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const data = await response.json();
+    const children = data?.data?.children || [];
+
+    return children
+      .map((child: { data: {
+        title: string;
+        selftext?: string;
+        subreddit: string;
+        permalink: string;
+        score: number;
+        num_comments: number;
+        created_utc: number;
+      }}) => {
+        const post = child.data;
+        const signalType = detectSignalType(post.title, post.selftext || '');
+
+        if (!signalType) return null;
+
+        return {
+          title: post.title,
+          body: (post.selftext || '').slice(0, 500), // Limit body length
+          subreddit: post.subreddit,
+          url: `https://reddit.com${post.permalink}`,
+          score: post.score,
+          num_comments: post.num_comments,
+          created_utc: post.created_utc,
+          signal_type: signalType,
+        };
+      })
+      .filter((signal: PainPointSignal | null): signal is PainPointSignal => signal !== null);
+  } catch (error) {
+    console.error(`Error searching r/${subreddit} for pain points:`, error);
+    return [];
+  }
+}
+
+/**
+ * Detect the type of pain point signal from post content
+ */
+function detectSignalType(
+  title: string,
+  body: string
+): PainPointSignal['signal_type'] | null {
+  const content = `${title} ${body}`.toLowerCase();
+
+  if (
+    content.includes('wish there was') ||
+    content.includes('wish i had') ||
+    content.includes('would love an app') ||
+    content.includes('someone should make')
+  ) {
+    return 'wish';
+  }
+
+  if (
+    content.includes('looking for') ||
+    content.includes('searching for') ||
+    content.includes('need an app') ||
+    content.includes('need a') ||
+    content.includes('any app')
+  ) {
+    return 'looking_for';
+  }
+
+  if (
+    content.includes('frustrated') ||
+    content.includes('annoying') ||
+    content.includes('hate') ||
+    content.includes('terrible') ||
+    content.includes('worst')
+  ) {
+    return 'frustration';
+  }
+
+  if (
+    content.includes('recommend') ||
+    content.includes('alternative') ||
+    content.includes('anyone know') ||
+    content.includes('any suggestions')
+  ) {
+    return 'recommendation_request';
+  }
+
+  return null;
+}
+
+/**
+ * Deduplicate signals by URL
+ */
+function deduplicateSignals(signals: PainPointSignal[]): PainPointSignal[] {
+  const seen = new Set<string>();
+  return signals.filter(signal => {
+    if (seen.has(signal.url)) return false;
+    seen.add(signal.url);
+    return true;
+  }).sort((a, b) => b.score - a.score); // Sort by score
+}
+
+/**
+ * Calculate signal strength (0-100) based on quantity and quality
+ */
+function calculateSignalStrength(signals: PainPointSignal[]): number {
+  if (signals.length === 0) return 0;
+
+  // Quantity score (more signals = higher score, up to 50 points)
+  const quantityScore = Math.min(signals.length * 5, 50);
+
+  // Quality score (based on engagement, up to 50 points)
+  const avgScore = signals.reduce((sum, s) => sum + s.score, 0) / signals.length;
+  const avgComments = signals.reduce((sum, s) => sum + s.num_comments, 0) / signals.length;
+  const qualityScore = Math.min(
+    (Math.log10(avgScore + 1) * 15) + (Math.log10(avgComments + 1) * 15),
+    50
+  );
+
+  // Bonus for "wish" and "looking_for" signals (strongest buying intent)
+  const strongSignals = signals.filter(s =>
+    s.signal_type === 'wish' || s.signal_type === 'looking_for'
+  );
+  const intentBonus = Math.min(strongSignals.length * 3, 15);
+
+  return Math.min(Math.round(quantityScore + qualityScore + intentBonus), 100);
+}
+
+/**
+ * Extract top pain point summaries from signals
+ */
+function extractTopPainPoints(signals: PainPointSignal[]): string[] {
+  // Group by signal type and extract key themes
+  const painPoints: string[] = [];
+
+  const wishSignals = signals.filter(s => s.signal_type === 'wish');
+  const lookingForSignals = signals.filter(s => s.signal_type === 'looking_for');
+  const frustrationSignals = signals.filter(s => s.signal_type === 'frustration');
+
+  if (wishSignals.length > 0) {
+    painPoints.push(`${wishSignals.length} users actively wishing for a solution`);
+  }
+
+  if (lookingForSignals.length > 0) {
+    painPoints.push(`${lookingForSignals.length} users actively searching for apps`);
+  }
+
+  if (frustrationSignals.length > 0) {
+    painPoints.push(`${frustrationSignals.length} users frustrated with existing options`);
+  }
+
+  // Add specific examples from highest-scored posts
+  const topPosts = signals.slice(0, 3);
+  for (const post of topPosts) {
+    if (post.score >= 10) {
+      const snippet = post.title.length > 80
+        ? post.title.slice(0, 80) + '...'
+        : post.title;
+      painPoints.push(`"${snippet}" (${post.score} upvotes)`);
+    }
+  }
+
+  return painPoints.slice(0, 5);
+}

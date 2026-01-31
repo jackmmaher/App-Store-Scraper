@@ -41,6 +41,369 @@ function Tooltip({ children, content }: { children: React.ReactNode; content: Re
 }
 
 // ============================================================================
+// Trend Chart Component (Simple SVG line chart)
+// ============================================================================
+
+function TrendChart({
+  data,
+  slope,
+  height = 60,
+  width = 200,
+}: {
+  data: number[];
+  slope: number;
+  height?: number;
+  width?: number;
+}) {
+  if (!data || data.length === 0) {
+    return (
+      <div className="text-xs text-gray-400 text-center py-2">No trend data</div>
+    );
+  }
+
+  const max = Math.max(...data, 1);
+  const min = Math.min(...data);
+  const range = max - min || 1;
+
+  // Generate SVG path
+  const points = data.map((value, index) => {
+    const x = (index / (data.length - 1)) * width;
+    const y = height - ((value - min) / range) * (height - 10) - 5;
+    return `${x},${y}`;
+  });
+
+  const pathD = `M ${points.join(' L ')}`;
+
+  // Determine color based on slope
+  const strokeColor = slope > 2 ? '#10b981' : slope > 0 ? '#84cc16' : slope > -2 ? '#f59e0b' : '#ef4444';
+  const trendLabel = slope > 2 ? 'Rising Fast' : slope > 0 ? 'Growing' : slope > -2 ? 'Stable' : 'Declining';
+  const trendIcon = slope > 0 ? '↑' : slope < 0 ? '↓' : '→';
+
+  return (
+    <div className="flex flex-col">
+      <svg width={width} height={height} className="overflow-visible">
+        {/* Grid lines */}
+        <line x1="0" y1={height / 2} x2={width} y2={height / 2} stroke="#e5e7eb" strokeDasharray="2,2" />
+        {/* Trend line */}
+        <path
+          d={pathD}
+          fill="none"
+          stroke={strokeColor}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {/* Area fill */}
+        <path
+          d={`${pathD} L ${width},${height} L 0,${height} Z`}
+          fill={strokeColor}
+          fillOpacity="0.1"
+        />
+        {/* Start and end points */}
+        <circle cx="0" cy={height - ((data[0] - min) / range) * (height - 10) - 5} r="3" fill={strokeColor} />
+        <circle cx={width} cy={height - ((data[data.length - 1] - min) / range) * (height - 10) - 5} r="3" fill={strokeColor} />
+      </svg>
+      <div className="flex justify-between items-center mt-1 text-xs">
+        <span className="text-gray-400">12mo ago</span>
+        <span className={`font-medium ${slope > 0 ? 'text-green-600' : slope < 0 ? 'text-red-600' : 'text-yellow-600'}`}>
+          {trendIcon} {trendLabel} ({slope > 0 ? '+' : ''}{slope.toFixed(1)})
+        </span>
+        <span className="text-gray-400">Now</span>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Market Estimates Card Component
+// ============================================================================
+
+function MarketEstimatesCard({
+  estimates,
+}: {
+  estimates: OpportunityRawData['market_estimates'] | undefined;
+}) {
+  if (!estimates) return null;
+
+  const tierColors = {
+    tiny: 'bg-gray-100 text-gray-700',
+    small: 'bg-yellow-100 text-yellow-700',
+    medium: 'bg-green-100 text-green-700',
+    large: 'bg-blue-100 text-blue-700',
+    massive: 'bg-purple-100 text-purple-700',
+  };
+
+  const formatMoney = (val: number) => {
+    if (val >= 1000000) return `$${(val / 1000000).toFixed(1)}M`;
+    if (val >= 1000) return `$${(val / 1000).toFixed(0)}K`;
+    return `$${val}`;
+  };
+
+  return (
+    <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-4">
+      <h4 className="font-semibold text-green-900 mb-2 flex items-center gap-2">
+        <span>💰</span> Market Size Estimate
+      </h4>
+      <div className="grid grid-cols-3 gap-3 text-center">
+        <div>
+          <div className="text-xs text-gray-500">Downloads (est.)</div>
+          <div className="text-lg font-bold text-gray-900">
+            {(estimates.total_downloads_estimate / 1000).toFixed(0)}K
+          </div>
+        </div>
+        <div>
+          <div className="text-xs text-gray-500">Monthly Revenue</div>
+          <div className="text-lg font-bold text-green-700">
+            {formatMoney(estimates.monthly_revenue_low)} - {formatMoney(estimates.monthly_revenue_high)}
+          </div>
+        </div>
+        <div>
+          <div className="text-xs text-gray-500">Market Tier</div>
+          <div className={`inline-block px-2 py-1 rounded-full text-sm font-medium mt-1 ${tierColors[estimates.market_size_tier]}`}>
+            {estimates.market_size_tier.charAt(0).toUpperCase() + estimates.market_size_tier.slice(1)}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Pain Points Card Component
+// ============================================================================
+
+function PainPointsCard({
+  painPoints,
+}: {
+  painPoints: OpportunityRawData['pain_points'] | undefined | null;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (!painPoints || painPoints.total_signals === 0) {
+    return (
+      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+        <h4 className="font-semibold text-gray-700 mb-1 flex items-center gap-2">
+          <span>🔍</span> Pain Point Signals
+        </h4>
+        <p className="text-sm text-gray-500">No pain point signals found on Reddit for this keyword.</p>
+      </div>
+    );
+  }
+
+  const strengthColor = painPoints.signal_strength >= 70 ? 'text-green-600' :
+    painPoints.signal_strength >= 40 ? 'text-yellow-600' : 'text-gray-600';
+
+  return (
+    <div className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-lg p-4">
+      <div className="flex justify-between items-start mb-2">
+        <h4 className="font-semibold text-orange-900 flex items-center gap-2">
+          <span>🔥</span> Pain Point Signals
+          <span className={`text-sm font-normal ${strengthColor}`}>
+            ({painPoints.signal_strength}/100 strength)
+          </span>
+        </h4>
+        <span className="text-xs bg-orange-200 text-orange-800 px-2 py-0.5 rounded-full">
+          {painPoints.total_signals} signals
+        </span>
+      </div>
+
+      {/* Summary pain points */}
+      <ul className="text-sm text-gray-700 space-y-1 mb-2">
+        {painPoints.top_pain_points.slice(0, expanded ? undefined : 3).map((point, idx) => (
+          <li key={idx} className="flex items-start gap-2">
+            <span className="text-orange-500 mt-0.5">•</span>
+            <span>{point}</span>
+          </li>
+        ))}
+      </ul>
+
+      {/* Expandable signals list */}
+      {painPoints.signals.length > 0 && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="text-xs text-orange-700 hover:text-orange-900 font-medium"
+        >
+          {expanded ? '▲ Hide Reddit posts' : `▼ Show ${painPoints.signals.length} Reddit posts`}
+        </button>
+      )}
+
+      {expanded && (
+        <div className="mt-2 space-y-2 max-h-48 overflow-y-auto">
+          {painPoints.signals.slice(0, 10).map((signal, idx) => (
+            <a
+              key={idx}
+              href={signal.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block text-xs bg-white rounded p-2 hover:bg-orange-100 transition-colors"
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <span className={`px-1.5 py-0.5 rounded text-xs ${
+                  signal.signal_type === 'wish' ? 'bg-green-100 text-green-700' :
+                  signal.signal_type === 'looking_for' ? 'bg-blue-100 text-blue-700' :
+                  signal.signal_type === 'frustration' ? 'bg-red-100 text-red-700' :
+                  'bg-gray-100 text-gray-700'
+                }`}>
+                  {signal.signal_type.replace('_', ' ')}
+                </span>
+                <span className="text-gray-400">r/{signal.subreddit}</span>
+                <span className="text-gray-400">↑{signal.score}</span>
+              </div>
+              <div className="text-gray-700 line-clamp-2">{signal.title}</div>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// Comparison Modal Component
+// ============================================================================
+
+function ComparisonModal({
+  opportunities,
+  onClose,
+  onRemove,
+}: {
+  opportunities: Opportunity[];
+  onClose: () => void;
+  onRemove: (id: string) => void;
+}) {
+  if (opportunities.length < 2) return null;
+
+  const [opp1, opp2] = opportunities;
+
+  const compareValue = (val1: number | null, val2: number | null) => {
+    if (val1 === null || val2 === null) return { winner: 'none', diff: 0 };
+    if (val1 > val2) return { winner: '1', diff: val1 - val2 };
+    if (val2 > val1) return { winner: '2', diff: val2 - val1 };
+    return { winner: 'tie', diff: 0 };
+  };
+
+  const dimensions = [
+    { key: 'opportunity_score', label: 'Overall Score', val1: opp1.opportunity_score, val2: opp2.opportunity_score },
+    { key: 'competition_gap', label: 'Competition Gap', val1: opp1.competition_gap_score, val2: opp2.competition_gap_score },
+    { key: 'market_demand', label: 'Market Demand', val1: opp1.market_demand_score, val2: opp2.market_demand_score },
+    { key: 'revenue_potential', label: 'Revenue Potential', val1: opp1.revenue_potential_score, val2: opp2.revenue_potential_score },
+    { key: 'trend_momentum', label: 'Trend Momentum', val1: opp1.trend_momentum_score, val2: opp2.trend_momentum_score },
+    { key: 'execution_feasibility', label: 'Feasibility', val1: opp1.execution_feasibility_score, val2: opp2.execution_feasibility_score },
+  ];
+
+  // Count wins
+  const wins1 = dimensions.filter(d => compareValue(d.val1, d.val2).winner === '1').length;
+  const wins2 = dimensions.filter(d => compareValue(d.val1, d.val2).winner === '2').length;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-xl font-bold text-gray-900">Compare Opportunities</h2>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+          </div>
+
+          {/* Header row with keywords */}
+          <div className="grid grid-cols-3 gap-4 mb-4">
+            <div className="text-sm font-medium text-gray-500">Dimension</div>
+            <div className="text-center">
+              <div className="font-bold text-gray-900">{opp1.keyword}</div>
+              <div className="text-xs text-gray-500">{CATEGORY_NAMES[opp1.category] || opp1.category}</div>
+              <button
+                onClick={() => onRemove(opp1.id)}
+                className="text-xs text-red-500 hover:text-red-700 mt-1"
+              >
+                Remove
+              </button>
+            </div>
+            <div className="text-center">
+              <div className="font-bold text-gray-900">{opp2.keyword}</div>
+              <div className="text-xs text-gray-500">{CATEGORY_NAMES[opp2.category] || opp2.category}</div>
+              <button
+                onClick={() => onRemove(opp2.id)}
+                className="text-xs text-red-500 hover:text-red-700 mt-1"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+
+          {/* Comparison rows */}
+          <div className="space-y-2">
+            {dimensions.map(({ key, label, val1, val2 }) => {
+              const comparison = compareValue(val1, val2);
+              return (
+                <div key={key} className="grid grid-cols-3 gap-4 py-2 border-b items-center">
+                  <div className="text-sm text-gray-600">{label}</div>
+                  <div className={`text-center text-lg font-bold ${comparison.winner === '1' ? 'text-green-600' : 'text-gray-700'}`}>
+                    {val1?.toFixed(1) || '-'}
+                    {comparison.winner === '1' && <span className="ml-1 text-xs text-green-500">✓</span>}
+                  </div>
+                  <div className={`text-center text-lg font-bold ${comparison.winner === '2' ? 'text-green-600' : 'text-gray-700'}`}>
+                    {val2?.toFixed(1) || '-'}
+                    {comparison.winner === '2' && <span className="ml-1 text-xs text-green-500">✓</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Winner summary */}
+          <div className="mt-6 p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg">
+            <div className="text-center">
+              <div className="text-sm text-gray-600 mb-1">Dimension Wins</div>
+              <div className="flex justify-center items-center gap-4">
+                <div className={`text-2xl font-bold ${wins1 > wins2 ? 'text-green-600' : 'text-gray-600'}`}>
+                  {wins1}
+                </div>
+                <div className="text-gray-400">vs</div>
+                <div className={`text-2xl font-bold ${wins2 > wins1 ? 'text-green-600' : 'text-gray-600'}`}>
+                  {wins2}
+                </div>
+              </div>
+              {wins1 !== wins2 && (
+                <div className="mt-2 text-sm font-medium text-purple-700">
+                  "{wins1 > wins2 ? opp1.keyword : opp2.keyword}" leads in more dimensions
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Market comparison */}
+          <div className="mt-4 grid grid-cols-2 gap-4">
+            {[opp1, opp2].map((opp, idx) => (
+              <div key={opp.id} className="bg-gray-50 rounded-lg p-3">
+                <div className="text-xs text-gray-500 mb-2">Market Estimate</div>
+                {opp.raw_data?.market_estimates ? (
+                  <div className="text-sm">
+                    <div>Downloads: <span className="font-medium">{(opp.raw_data.market_estimates.total_downloads_estimate / 1000).toFixed(0)}K</span></div>
+                    <div>Revenue: <span className="font-medium text-green-600">
+                      ${(opp.raw_data.market_estimates.monthly_revenue_high / 1000).toFixed(0)}K/mo
+                    </span></div>
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-400">No estimate</div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-6 flex justify-end">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // Score Badge Component
 // ============================================================================
 
@@ -514,6 +877,17 @@ interface TopAppData {
   description_length: number;
   feature_count: number;
   requires_hardware: string[];
+  // Enriched KPIs
+  last_updated?: string;
+  developer_name?: string;
+  developer_id?: string;
+  days_since_update?: number;
+  download_estimate?: number;
+  revenue_estimate?: {
+    monthly_low: number;
+    monthly_high: number;
+    model: 'paid' | 'freemium' | 'subscription' | 'free';
+  };
 }
 
 function TopAppsTable({
@@ -540,6 +914,24 @@ function TopAppsTable({
   const allSelected = apps.length > 0 && apps.every(app => selectedAppIds.has(app.id));
   const someSelected = apps.some(app => selectedAppIds.has(app.id));
 
+  // Helper to format days since update
+  const formatDaysSince = (days?: number) => {
+    if (days === undefined || days === null) return '-';
+    if (days < 30) return <span className="text-green-600">{days}d</span>;
+    if (days < 90) return <span className="text-yellow-600">{Math.round(days / 30)}mo</span>;
+    if (days < 365) return <span className="text-orange-600">{Math.round(days / 30)}mo</span>;
+    return <span className="text-red-600">{Math.round(days / 365)}y</span>;
+  };
+
+  // Helper to format revenue estimate
+  const formatRevenue = (rev?: TopAppData['revenue_estimate']) => {
+    if (!rev) return '-';
+    if (rev.monthly_high === 0) return <span className="text-gray-400">$0</span>;
+    if (rev.monthly_high < 1000) return <span className="text-gray-500">${rev.monthly_high}</span>;
+    if (rev.monthly_high < 10000) return <span className="text-yellow-600">${(rev.monthly_high / 1000).toFixed(1)}K</span>;
+    return <span className="text-green-600">${(rev.monthly_high / 1000).toFixed(0)}K</span>;
+  };
+
   return (
     <div className="overflow-x-auto">
       <table className="min-w-full text-sm">
@@ -560,7 +952,8 @@ function TopAppsTable({
             <th className="text-left py-2 px-2 font-medium text-gray-600">App</th>
             <th className="text-center py-2 px-2 font-medium text-gray-600">Rating</th>
             <th className="text-center py-2 px-2 font-medium text-gray-600">Reviews</th>
-            <th className="text-center py-2 px-2 font-medium text-gray-600">Price</th>
+            <th className="text-center py-2 px-2 font-medium text-gray-600" title="Days since last update">Updated</th>
+            <th className="text-center py-2 px-2 font-medium text-gray-600" title="Estimated monthly revenue">Rev/mo</th>
             <th className="text-center py-2 px-2 font-medium text-gray-600">Signals</th>
           </tr>
         </thead>
@@ -592,14 +985,12 @@ function TopAppsTable({
                     />
                   )}
                   <div className="min-w-0">
-                    <div className="font-medium text-gray-900 truncate max-w-[180px]" title={app.name}>
+                    <div className="font-medium text-gray-900 truncate max-w-[160px]" title={app.name}>
                       {app.name}
                     </div>
-                    {app.has_keyword_in_title && (
-                      <span className="text-xs text-orange-600">
-                        Has "{keyword}" in title
-                      </span>
-                    )}
+                    <div className="text-xs text-gray-400 truncate max-w-[160px]" title={app.developer_name}>
+                      {app.developer_name || 'Unknown'}
+                    </div>
                   </div>
                 </div>
               </td>
@@ -611,15 +1002,14 @@ function TopAppsTable({
               <td className="py-2 px-2 text-center text-gray-600">
                 {app.reviews?.toLocaleString() || '-'}
               </td>
-              <td className="py-2 px-2 text-center">
-                {app.price === 0 ? (
-                  <span className="text-green-600">Free</span>
-                ) : (
-                  <span>${app.price}</span>
-                )}
+              <td className="py-2 px-2 text-center text-xs">
+                {formatDaysSince(app.days_since_update)}
+              </td>
+              <td className="py-2 px-2 text-center text-xs">
+                {formatRevenue(app.revenue_estimate)}
               </td>
               <td className="py-2 px-2 text-center">
-                <div className="flex gap-1 justify-center">
+                <div className="flex gap-1 justify-center flex-wrap">
                   {app.has_iap && (
                     <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-xs rounded" title="Has In-App Purchases">
                       IAP
@@ -630,9 +1020,9 @@ function TopAppsTable({
                       SUB
                     </span>
                   )}
-                  {app.requires_hardware && app.requires_hardware.length > 0 && (
-                    <span className="px-1.5 py-0.5 bg-gray-100 text-gray-700 text-xs rounded" title={`Requires: ${app.requires_hardware.join(', ')}`}>
-                      HW
+                  {app.days_since_update && app.days_since_update > 365 && (
+                    <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-xs rounded" title="Not updated in over a year - potential zombie app">
+                      STALE
                     </span>
                   )}
                 </div>
@@ -653,10 +1043,16 @@ function OpportunityDetailModal({
   opportunity,
   onClose,
   onAddToProjects,
+  onToggleShortlist,
+  onAddToCompare,
+  isInCompareList,
 }: {
   opportunity: Opportunity;
   onClose: () => void;
   onAddToProjects: (apps: TopAppData[], opportunity: Opportunity, navigateToBlueprint: boolean) => Promise<{ success: boolean; count: number; projectId?: string }>;
+  onToggleShortlist: (opp: Opportunity) => void;
+  onAddToCompare: (opp: Opportunity) => void;
+  isInCompareList: boolean;
 }) {
   const [selectedAppIds, setSelectedAppIds] = useState<Set<string>>(new Set());
   const [showApps, setShowApps] = useState(true);
@@ -665,6 +1061,7 @@ function OpportunityDetailModal({
 
   // Extract top apps from raw_data
   const topApps: TopAppData[] = opportunity.raw_data?.itunes?.top_10_apps || [];
+  const isShortlisted = opportunity.status === 'selected' || opportunity.status === 'blueprinted';
 
   const handleToggleApp = (app: TopAppData) => {
     setSelectedAppIds(prev => {
@@ -725,6 +1122,30 @@ function OpportunityDetailModal({
                   Scored {new Date(opportunity.scored_at).toLocaleDateString()}
                 </span>
               </div>
+              {/* Quick action buttons */}
+              <div className="flex gap-2 mt-2">
+                <button
+                  onClick={() => onToggleShortlist(opportunity)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                    isShortlisted
+                      ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {isShortlisted ? '★ Shortlisted' : '☆ Add to Shortlist'}
+                </button>
+                <button
+                  onClick={() => onAddToCompare(opportunity)}
+                  disabled={isInCompareList}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                    isInCompareList
+                      ? 'bg-blue-100 text-blue-700'
+                      : 'bg-gray-100 text-gray-600 hover:bg-blue-50 hover:text-blue-600'
+                  }`}
+                >
+                  {isInCompareList ? '⚖️ In Compare' : '⚖️ Compare'}
+                </button>
+              </div>
             </div>
             <button
               onClick={onClose}
@@ -773,6 +1194,47 @@ function OpportunityDetailModal({
                 <ScoreBadge score={score} size="lg" />
               </div>
             ))}
+          </div>
+
+          {/* Trend Visualization & Market Estimates */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            {/* Google Trends Chart */}
+            {opportunity.raw_data?.google_trends && (
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <h4 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  <span>📈</span> 12-Month Search Trend
+                  {opportunity.raw_data.google_trends.source === 'serpapi' && (
+                    <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">Real Data</span>
+                  )}
+                </h4>
+                <TrendChart
+                  data={opportunity.raw_data.google_trends.interest_over_time}
+                  slope={opportunity.raw_data.google_trends.slope}
+                  width={240}
+                  height={80}
+                />
+                {opportunity.raw_data.google_trends.related_queries?.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-gray-200">
+                    <div className="text-xs text-gray-500 mb-1">Related rising queries:</div>
+                    <div className="flex flex-wrap gap-1">
+                      {opportunity.raw_data.google_trends.related_queries.slice(0, 5).map((q, i) => (
+                        <span key={i} className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">
+                          {q}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Market Estimates */}
+            <MarketEstimatesCard estimates={opportunity.raw_data?.market_estimates} />
+          </div>
+
+          {/* Pain Points Section */}
+          <div className="mb-6">
+            <PainPointsCard painPoints={opportunity.raw_data?.pain_points} />
           </div>
 
           {/* Data Source Indicator */}
@@ -1096,6 +1558,13 @@ export default function OpportunityDashboard() {
     sort: 'opportunity_score',
   });
 
+  // Shortlist / Watchlist state
+  const [showShortlistOnly, setShowShortlistOnly] = useState(false);
+
+  // Comparison state
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareOpportunities, setCompareOpportunities] = useState<Opportunity[]>([]);
+
   // Fetch stats and overview data
   const fetchStats = useCallback(async () => {
     try {
@@ -1122,6 +1591,7 @@ export default function OpportunityDashboard() {
       params.set('sort_dir', 'desc');
       if (filters.category) params.set('category', filters.category);
       if (filters.minScore) params.set('min_score', filters.minScore.toString());
+      if (showShortlistOnly) params.set('status', 'selected');
       params.set('limit', '50');
 
       const res = await fetch(`/api/opportunity/search?${params.toString()}`);
@@ -1135,7 +1605,65 @@ export default function OpportunityDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [filters]);
+  }, [filters, showShortlistOnly]);
+
+  // Toggle shortlist status for an opportunity
+  const handleToggleShortlist = async (opportunity: Opportunity) => {
+    const isCurrentlyShortlisted = opportunity.status === 'selected';
+    const newAction = isCurrentlyShortlisted ? 'unselect' : 'select';
+
+    try {
+      const res = await fetch(`/api/opportunity/${opportunity.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: newAction }),
+      });
+
+      if (res.ok) {
+        // Update local state
+        setOpportunities(prev =>
+          prev.map(opp =>
+            opp.id === opportunity.id
+              ? { ...opp, status: isCurrentlyShortlisted ? 'scored' : 'selected' }
+              : opp
+          )
+        );
+
+        // Also update selectedOpportunity if it's the one being toggled
+        if (selectedOpportunity?.id === opportunity.id) {
+          setSelectedOpportunity({
+            ...selectedOpportunity,
+            status: isCurrentlyShortlisted ? 'scored' : 'selected',
+          } as Opportunity);
+        }
+
+        setSuccessMessage(isCurrentlyShortlisted ? 'Removed from shortlist' : 'Added to shortlist');
+        setTimeout(() => setSuccessMessage(null), 2000);
+      }
+    } catch (err) {
+      setError('Failed to update shortlist');
+      console.error('Error toggling shortlist:', err);
+    }
+  };
+
+  // Add opportunity to comparison
+  const handleAddToCompare = (opportunity: Opportunity) => {
+    if (compareOpportunities.length >= 2) {
+      // Replace the oldest one
+      setCompareOpportunities([compareOpportunities[1], opportunity]);
+    } else if (!compareOpportunities.find(o => o.id === opportunity.id)) {
+      setCompareOpportunities([...compareOpportunities, opportunity]);
+    }
+    setCompareMode(true);
+  };
+
+  // Remove from comparison
+  const handleRemoveFromCompare = (opportunityId: string) => {
+    setCompareOpportunities(prev => prev.filter(o => o.id !== opportunityId));
+    if (compareOpportunities.length <= 1) {
+      setCompareMode(false);
+    }
+  };
 
   // Initial load
   useEffect(() => {
@@ -1728,6 +2256,52 @@ export default function OpportunityDashboard() {
         />
       )}
 
+      {/* Compare Mode Bar */}
+      {compareMode && compareOpportunities.length > 0 && (
+        <div className="mb-4 bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <span className="text-sm font-medium text-blue-700">
+              ⚖️ Comparing {compareOpportunities.length} opportunit{compareOpportunities.length === 1 ? 'y' : 'ies'}:
+            </span>
+            <div className="flex gap-2">
+              {compareOpportunities.map(opp => (
+                <span
+                  key={opp.id}
+                  className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm flex items-center gap-1"
+                >
+                  {opp.keyword}
+                  <button
+                    onClick={() => handleRemoveFromCompare(opp.id)}
+                    className="text-blue-600 hover:text-blue-800 ml-1"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            {compareOpportunities.length === 2 && (
+              <button
+                onClick={() => setCompareMode(true)}
+                className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+              >
+                View Comparison
+              </button>
+            )}
+            <button
+              onClick={() => {
+                setCompareOpportunities([]);
+                setCompareMode(false);
+              }}
+              className="px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg text-sm hover:bg-gray-300"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Filters & Discovery - Sidebar */}
@@ -1736,6 +2310,23 @@ export default function OpportunityDashboard() {
           <div className="bg-white rounded-lg p-4 shadow">
             <h3 className="font-semibold mb-3">Filters</h3>
             <div className="space-y-3">
+              {/* Shortlist Toggle */}
+              <div>
+                <button
+                  onClick={() => setShowShortlistOnly(!showShortlistOnly)}
+                  className={`w-full px-3 py-2 rounded-lg border-2 transition-colors flex items-center justify-center gap-2 ${
+                    showShortlistOnly
+                      ? 'border-yellow-400 bg-yellow-50 text-yellow-700'
+                      : 'border-gray-200 bg-white text-gray-600 hover:border-yellow-300'
+                  }`}
+                >
+                  <span>{showShortlistOnly ? '★' : '☆'}</span>
+                  <span className="text-sm font-medium">
+                    {showShortlistOnly ? 'Showing Shortlist' : 'Show Shortlist Only'}
+                  </span>
+                </button>
+              </div>
+
               <div>
                 <label className="block text-sm text-gray-600 mb-1">Category</label>
                 <select
@@ -1893,6 +2484,18 @@ export default function OpportunityDashboard() {
           opportunity={selectedOpportunity}
           onClose={() => setSelectedOpportunity(null)}
           onAddToProjects={handleAddToProjects}
+          onToggleShortlist={handleToggleShortlist}
+          onAddToCompare={handleAddToCompare}
+          isInCompareList={compareOpportunities.some(o => o.id === selectedOpportunity.id)}
+        />
+      )}
+
+      {/* Comparison Modal */}
+      {compareMode && compareOpportunities.length === 2 && (
+        <ComparisonModal
+          opportunities={compareOpportunities}
+          onClose={() => setCompareMode(false)}
+          onRemove={handleRemoveFromCompare}
         />
       )}
     </div>
