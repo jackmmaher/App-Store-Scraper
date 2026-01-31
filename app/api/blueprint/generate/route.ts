@@ -5,10 +5,58 @@ import {
   getProject,
   updateBlueprintSectionStatus,
   updateBlueprintSection,
+  updateBlueprintPalette,
   getBlueprintSectionAttachments,
   type BlueprintSection,
+  type BlueprintColorPalette,
 } from '@/lib/supabase';
 import { getBlueprintPrompt, getBlueprintPromptWithEnrichment, getBuildManifestPrompt } from '@/lib/blueprint-prompts';
+
+// Sections that need a color palette
+const COLOR_SECTIONS: BlueprintSection[] = ['identity', 'design_system', 'wireframes', 'aso'];
+
+// Category to palette mapping for auto-selection
+const CATEGORY_PALETTES: Record<string, BlueprintColorPalette> = {
+  // Professional/Business
+  'Finance': { colors: ['1D3557', '457B9D', 'A8DADC', 'F1FAEE', 'E63946'], mood: 'professional' },
+  'Business': { colors: ['003049', 'D62828', 'F77F00', 'FCBF49', 'EAE2B7'], mood: 'professional' },
+  'Productivity': { colors: ['264653', '2A9D8F', 'E9C46A', 'F4A261', 'E76F51'], mood: 'professional' },
+
+  // Health & Wellness
+  'Health & Fitness': { colors: ['606C38', '283618', 'FEFAE0', 'DDA15E', 'BC6C25'], mood: 'calm' },
+  'Medical': { colors: ['CCD5AE', 'E9EDC9', 'FEFAE0', 'FAEDCD', 'D4A373'], mood: 'calm' },
+  'Lifestyle': { colors: ['D4A373', 'CCD5AE', 'E9EDC9', 'FEFAE0', 'FAEDCD'], mood: 'warm' },
+
+  // Creative/Entertainment
+  'Entertainment': { colors: ['FF6B6B', '4ECDC4', '45B7D1', '96CEB4', 'FFEAA7'], mood: 'playful' },
+  'Games': { colors: ['F72585', 'B5179E', '7209B7', '560BAD', '480CA8'], mood: 'bold' },
+  'Photo & Video': { colors: ['0D1B2A', '1B263B', '415A77', '778DA9', 'E0E1DD'], mood: 'dark' },
+  'Music': { colors: ['14213D', 'FCA311', 'E5E5E5', '000000', 'FFFFFF'], mood: 'bold' },
+
+  // Social
+  'Social Networking': { colors: ['FFBE0B', 'FB5607', 'FF006E', '8338EC', '3A86FF'], mood: 'playful' },
+
+  // Education
+  'Education': { colors: ['03045E', '0077B6', '00B4D8', '90E0EF', 'CAF0F8'], mood: 'cool' },
+  'Books': { colors: ['606C38', '283618', 'FEFAE0', 'DDA15E', 'BC6C25'], mood: 'calm' },
+
+  // Utility
+  'Utilities': { colors: ['212529', '343A40', '495057', '6C757D', 'ADB5BD'], mood: 'dark' },
+  'Developer Tools': { colors: ['0D1B2A', '1B263B', '415A77', '778DA9', 'E0E1DD'], mood: 'dark' },
+
+  // Shopping/Food
+  'Shopping': { colors: ['FF6B6B', '4ECDC4', '45B7D1', '96CEB4', 'FFEAA7'], mood: 'warm' },
+  'Food & Drink': { colors: ['D4A373', 'CCD5AE', 'E9EDC9', 'FEFAE0', 'FAEDCD'], mood: 'warm' },
+
+  // Travel
+  'Travel': { colors: ['FFBE0B', 'FB5607', 'FF006E', '8338EC', '3A86FF'], mood: 'playful' },
+};
+
+// Default palette if category not matched
+const DEFAULT_PALETTE: BlueprintColorPalette = {
+  colors: ['264653', '2A9D8F', 'E9C46A', 'F4A261', 'E76F51'],
+  mood: 'professional'
+};
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -85,13 +133,29 @@ export async function POST(request: NextRequest) {
       ? await getBlueprintSectionAttachments(blueprintId, 'wireframes')
       : [];
 
+    // Auto-select color palette for color-related sections if not already set
+    let colorPalette = blueprint.color_palette;
+    if (COLOR_SECTIONS.includes(section) && !colorPalette?.colors?.length) {
+      // Select palette based on app category
+      const category = project.app_primary_genre || '';
+      const selectedPalette = CATEGORY_PALETTES[category] || DEFAULT_PALETTE;
+
+      console.log(`[Blueprint] Auto-selecting palette for category "${category}":`, selectedPalette.colors);
+
+      // Save the auto-selected palette to the database
+      const updated = await updateBlueprintPalette(blueprintId, selectedPalette, 'auto');
+      if (updated) {
+        colorPalette = updated.color_palette;
+      } else {
+        // Use in memory if save failed
+        colorPalette = selectedPalette;
+      }
+    }
+
     // Build prompt - manifest uses a different prompt function
     // For pareto and design_system, use async version with enrichment (palettes, reviews, etc.)
     const sectionsNeedingEnrichment = ['pareto', 'design_system'];
     let prompt: string;
-
-    // Get stored color palette for color-related sections
-    const colorPalette = blueprint.color_palette;
 
     if (section === 'manifest') {
       prompt = getBuildManifestPrompt(
