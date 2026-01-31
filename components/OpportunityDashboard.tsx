@@ -1507,7 +1507,13 @@ export default function OpportunityDashboard() {
       />
 
       {/* Category Heatmap */}
-      {stats && <CategoryHeatmap categoryStats={stats.by_category} />}
+      {stats && (
+        <CategoryHeatmap
+          categoryStats={stats.by_category}
+          selectedCategory={filters.category}
+          onCategoryClick={(category) => setFilters((f) => ({ ...f, category }))}
+        />
+      )}
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
