@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isAuthenticated } from '@/lib/auth';
-import { getBlueprint, getProject } from '@/lib/supabase';
+import { getBlueprint, getProject, getBlueprintAttachments } from '@/lib/supabase';
+import { extractAppNameFromIdentity } from '@/lib/blueprint-prompts';
 import JSZip from 'jszip';
 
 export const runtime = 'nodejs';
@@ -25,9 +26,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Blueprint not found' }, { status: 404 });
     }
 
-    // Fetch project for naming
+    // Fetch project for context
     const project = await getProject(blueprint.project_id);
-    const appName = project?.app_name || 'App';
+
+    // Use the chosen app name from identity, fallback to competitor name
+    const chosenAppName = blueprint.app_identity
+      ? extractAppNameFromIdentity(blueprint.app_identity)
+      : null;
+    const appName = chosenAppName || project?.app_name || 'App';
     const safeName = appName.replace(/[^a-z0-9]/gi, '-').toLowerCase();
 
     // Create ZIP
@@ -181,6 +187,39 @@ export async function GET(request: NextRequest) {
     ].join('\n');
 
     zip.file('0-complete-blueprint.md', combined);
+
+    // Fetch and include attachments (icons, wireframe images, etc.)
+    const attachments = await getBlueprintAttachments(blueprintId);
+    if (attachments.length > 0) {
+      const assetsFolder = zip.folder('assets');
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+
+      for (const attachment of attachments) {
+        try {
+          // Build the public URL for the attachment
+          const publicUrl = `${supabaseUrl}/storage/v1/object/public/blueprint-attachments/${attachment.storage_path}`;
+
+          // Fetch the file
+          const response = await fetch(publicUrl);
+          if (response.ok) {
+            const arrayBuffer = await response.arrayBuffer();
+
+            // Determine folder based on section
+            const sectionFolder = attachment.section === 'identity' ? 'icons' : attachment.section;
+            const folder = assetsFolder?.folder(sectionFolder);
+
+            // Add to ZIP with original filename
+            folder?.file(attachment.file_name, arrayBuffer);
+
+            console.log(`[Export] Added attachment: ${sectionFolder}/${attachment.file_name}`);
+          } else {
+            console.warn(`[Export] Failed to fetch attachment: ${attachment.file_name}`);
+          }
+        } catch (err) {
+          console.error(`[Export] Error fetching attachment ${attachment.file_name}:`, err);
+        }
+      }
+    }
 
     // Generate ZIP as blob
     const zipBlob = await zip.generateAsync({ type: 'blob' });
