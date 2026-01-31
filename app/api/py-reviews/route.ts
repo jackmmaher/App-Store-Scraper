@@ -113,49 +113,59 @@ export async function POST(request: NextRequest) {
           const data = await response.json();
           const reviews = data.reviews || [];
 
-          // Stream reviews in batches to simulate progress
-          const batchSize = 50;
-          let sent = 0;
+          // Format all reviews
+          const formattedReviews = reviews.map((r: Record<string, unknown>) => ({
+            id: r.id || `review-${Date.now()}-${Math.random()}`,
+            author: r.author || 'Anonymous',
+            rating: r.rating || 5,
+            title: r.title || '',
+            content: r.content || r.text || '',
+            date: r.date || new Date().toISOString(),
+            version: r.version || null,
+            isEdited: false,
+          }));
 
-          for (let i = 0; i < reviews.length; i += batchSize) {
-            const batch = reviews.slice(i, i + batchSize);
-            sent += batch.length;
+          // Stream progress updates in batches
+          const batchSize = 50;
+          for (let i = 0; i < formattedReviews.length; i += batchSize) {
+            const sent = Math.min(i + batchSize, formattedReviews.length);
 
             // Send progress event
             sendEvent({
               type: 'progress',
               filter: filters[0]?.sort || 'mostRecent',
+              filterIndex: 0,
+              page: Math.floor(i / batchSize) + 1,
+              maxPages: Math.ceil(formattedReviews.length / batchSize),
+              reviewsThisPage: Math.min(batchSize, formattedReviews.length - i),
+              totalUnique: sent,
               filterReviewsTotal: sent,
-              totalReviewsCollected: sent,
+              nextDelayMs: 0,
             });
 
-            // Send reviews batch
-            sendEvent({
-              type: 'reviews',
-              reviews: batch.map((r: Record<string, unknown>) => ({
-                id: r.id || `review-${Date.now()}-${Math.random()}`,
-                author: r.author || 'Anonymous',
-                rating: r.rating || 5,
-                title: r.title || '',
-                content: r.content || r.text || '',
-                date: r.date || new Date().toISOString(),
-                version: r.version || null,
-                isEdited: false,
-              })),
-            });
-
-            // Small delay between batches
-            await new Promise((r) => setTimeout(r, 100));
+            // Small delay between progress updates
+            await new Promise((r) => setTimeout(r, 50));
           }
 
-          // Send complete event
+          // Calculate stats
+          const ratings = formattedReviews.map((r: { rating: number }) => r.rating);
+          const avgRating = ratings.length > 0
+            ? ratings.reduce((a: number, b: number) => a + b, 0) / ratings.length
+            : 0;
+
+          const ratingDistribution: Record<string, number> = { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 };
+          for (const rating of ratings) {
+            ratingDistribution[String(rating)] = (ratingDistribution[String(rating)] || 0) + 1;
+          }
+
+          // Send complete event with all reviews
           sendEvent({
             type: 'complete',
-            totalReviews: reviews.length,
-            stats: data.stats || {
-              total: reviews.length,
-              average_rating: 0,
-              rating_distribution: {},
+            reviews: formattedReviews,
+            stats: {
+              total: formattedReviews.length,
+              averageRating: Math.round(avgRating * 10) / 10,
+              ratingDistribution,
             },
           });
         } catch (error) {
