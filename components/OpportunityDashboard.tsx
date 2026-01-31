@@ -259,6 +259,112 @@ function PainPointsCard({
 }
 
 // ============================================================================
+// Review Sentiment Card Component
+// ============================================================================
+
+function ReviewSentimentCard({
+  reviewSentiment,
+}: {
+  reviewSentiment: OpportunityRawData['review_sentiment'] | undefined | null;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (!reviewSentiment || reviewSentiment.total_critical_reviews === 0) {
+    return (
+      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+        <h4 className="font-semibold text-gray-700 mb-1 flex items-center gap-2">
+          <span>⭐</span> Competitor Reviews Analysis
+        </h4>
+        <p className="text-sm text-gray-500">No critical reviews analyzed. Competitors may have strong ratings.</p>
+      </div>
+    );
+  }
+
+  // Count high-severity themes
+  const highSeverityCount = reviewSentiment.complaint_themes.filter(t => t.severity === 'high').length;
+  const severityColor = highSeverityCount >= 3 ? 'text-green-600' : highSeverityCount >= 1 ? 'text-yellow-600' : 'text-gray-600';
+
+  return (
+    <div className="bg-gradient-to-r from-red-50 to-rose-50 border border-red-200 rounded-lg p-4">
+      <div className="flex justify-between items-start mb-2">
+        <h4 className="font-semibold text-red-900 flex items-center gap-2">
+          <span>⭐</span> Competitor Review Analysis
+          <span className={`text-sm font-normal ${severityColor}`}>
+            ({reviewSentiment.total_critical_reviews} critical reviews)
+          </span>
+        </h4>
+        <span className="text-xs bg-red-200 text-red-800 px-2 py-0.5 rounded-full">
+          {reviewSentiment.apps_analyzed} apps analyzed
+        </span>
+      </div>
+
+      {/* Opportunity signals derived from complaints */}
+      {reviewSentiment.opportunity_signals.length > 0 && (
+        <div className="mb-3">
+          <div className="text-xs text-red-700 font-medium mb-1">💡 Opportunities from complaints:</div>
+          <ul className="text-sm text-gray-700 space-y-1">
+            {reviewSentiment.opportunity_signals.map((signal, idx) => (
+              <li key={idx} className="flex items-start gap-2">
+                <span className="text-green-500 mt-0.5">✓</span>
+                <span>{signal}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Complaint themes */}
+      {reviewSentiment.complaint_themes.length > 0 && (
+        <div className="mb-2">
+          <div className="text-xs text-red-700 font-medium mb-1">Top complaint themes:</div>
+          <div className="flex flex-wrap gap-2">
+            {reviewSentiment.complaint_themes.slice(0, expanded ? undefined : 5).map((theme, idx) => (
+              <span
+                key={idx}
+                className={`text-xs px-2 py-1 rounded-full ${
+                  theme.severity === 'high' ? 'bg-red-100 text-red-700' :
+                  theme.severity === 'medium' ? 'bg-yellow-100 text-yellow-700' :
+                  'bg-gray-100 text-gray-700'
+                }`}
+              >
+                {theme.theme}: {theme.count}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Expandable sample reviews */}
+      {reviewSentiment.sample_reviews && reviewSentiment.sample_reviews.length > 0 && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="text-xs text-red-700 hover:text-red-900 font-medium mt-2"
+        >
+          {expanded ? '▲ Hide sample reviews' : `▼ Show ${reviewSentiment.sample_reviews.length} sample reviews`}
+        </button>
+      )}
+
+      {expanded && reviewSentiment.sample_reviews && (
+        <div className="mt-2 space-y-2 max-h-48 overflow-y-auto">
+          {reviewSentiment.sample_reviews.slice(0, 6).map((review, idx) => (
+            <div key={idx} className="text-xs bg-white rounded p-2 border border-red-100">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-red-500">{'★'.repeat(review.rating)}{'☆'.repeat(5 - review.rating)}</span>
+                <span className="text-gray-500 truncate">{review.app_name}</span>
+              </div>
+              {review.title && (
+                <div className="font-medium text-gray-800 mb-0.5">{review.title}</div>
+              )}
+              <div className="text-gray-600 line-clamp-2">{review.content}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
 // Comparison Modal Component
 // ============================================================================
 
@@ -1237,6 +1343,11 @@ function OpportunityDetailModal({
             <PainPointsCard painPoints={opportunity.raw_data?.pain_points} />
           </div>
 
+          {/* Review Sentiment Analysis */}
+          <div className="mb-6">
+            <ReviewSentimentCard reviewSentiment={opportunity.raw_data?.review_sentiment} />
+          </div>
+
           {/* Data Source Indicator */}
           {opportunity.raw_data?.google_trends && (
             <div className="mb-4 flex items-center gap-2 text-xs text-gray-500">
@@ -1787,6 +1898,7 @@ export default function OpportunityDashboard() {
     const pollProgress = async () => {
       try {
         const res = await fetch(`/api/opportunity/daily-run?_t=${Date.now()}`);
+        if (!res.ok) return; // Silently skip if polling fails
         const data = await res.json();
 
         if (data.success && data.data) {
@@ -1847,6 +1959,12 @@ export default function OpportunityDashboard() {
       if (pollInterval) {
         clearInterval(pollInterval);
         pollInterval = null;
+      }
+
+      // Check if response is OK before parsing JSON
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Server error (${res.status}): ${errorText.substring(0, 200)}`);
       }
 
       const data = await res.json();
