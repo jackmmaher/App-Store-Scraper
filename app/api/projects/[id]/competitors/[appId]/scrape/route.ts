@@ -55,10 +55,9 @@ export async function POST(
       rating: r.rating,
       author: r.author,
       version: r.version || 'Unknown',
-      vote_count: 0,
-      vote_sum: 0,
+      vote_count: r.helpful_count || 0,
+      vote_sum: r.helpful_count || 0,
       country: r.country,
-      sort_source: r.sort_source,
     }));
 
     if (reviews.length === 0) {
