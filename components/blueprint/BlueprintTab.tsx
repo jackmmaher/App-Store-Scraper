@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import type { BlueprintSection as BlueprintSectionType, BlueprintAttachment, ProjectBlueprint, BlueprintColorPalette } from '@/lib/supabase';
-import { updateBlueprintPalette } from '@/lib/supabase';
 import { useBlueprint } from '@/hooks/useBlueprint';
 import { useBlueprintGenerate } from '@/hooks/useBlueprintGenerate';
 import BlueprintSectionNav from './BlueprintSectionNav';
@@ -72,9 +71,25 @@ export default function BlueprintTab({ projectId }: BlueprintTabProps) {
   ) => {
     if (!blueprint) return;
 
-    // Update palette in database
-    const updated = await updateBlueprintPalette(blueprint.id, palette, 'user_selected');
-    if (updated) {
+    // Update palette via API route (uses service key to bypass RLS)
+    try {
+      const response = await fetch('/api/blueprint/palette', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          blueprintId: blueprint.id,
+          palette,
+          source: 'user_selected',
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        console.error('Failed to update palette:', data.error);
+        return;
+      }
+
+      const { blueprint: updated } = await response.json();
       setBlueprint(updated);
 
       // Regenerate selected sections
@@ -83,6 +98,8 @@ export default function BlueprintTab({ projectId }: BlueprintTabProps) {
         await new Promise(resolve => setTimeout(resolve, 500));
         generateSection(section, blueprint.id);
       }
+    } catch (error) {
+      console.error('Error updating palette:', error);
     }
   }, [blueprint, setBlueprint, generateSection]);
 
