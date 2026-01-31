@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { clsx } from 'clsx';
 import ProjectsSidebar from './ProjectsSidebar';
+import CrawlServiceStatus from './CrawlServiceStatus';
 
 export default function Header() {
   const pathname = usePathname();
@@ -151,6 +152,9 @@ export default function Header() {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Crawl Service Status */}
+            <CrawlServiceStatus />
+
             <button
               onClick={handleLogout}
               className="hidden md:flex items-center justify-center p-2 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"

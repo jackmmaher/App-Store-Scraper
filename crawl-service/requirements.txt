@@ -8,6 +8,7 @@ crawl4ai>=0.4.0
 fastapi>=0.109.0
 uvicorn[standard]>=0.27.0
 python-multipart>=0.0.6
+sse-starlette>=2.0.0
 
 # Async support
 aiohttp>=3.9.0

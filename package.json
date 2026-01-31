@@ -4,6 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:full": "concurrently --names \"next,crawl\" --prefix-colors \"blue,green\" \"next dev\" \"cd crawl-service && uvicorn main:app --host 0.0.0.0 --port 8000\"",
+    "crawl-service": "cd crawl-service && uvicorn main:app --host 0.0.0.0 --port 8000",
+    "crawl-service:install": "cd crawl-service && pip install -r requirements.txt && playwright install chromium",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
@@ -26,6 +29,7 @@
     "zustand": "^4.5.7"
   },
   "devDependencies": {
+    "concurrently": "^8.2.2",
     "@types/node": "^22.7.4",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.0",

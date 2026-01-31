@@ -23,27 +23,24 @@ async function checkAuth(request: NextRequest): Promise<boolean> {
 
 /**
  * GET /api/crawl
- * Health check and service status
+ * Health check and service status (no auth required for status check)
  */
-export async function GET(request: NextRequest) {
-  if (!(await checkAuth(request))) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
+export async function GET() {
   try {
     const orchestrator = getCrawlOrchestrator();
     const isAvailable = await orchestrator.isAvailable();
 
     return NextResponse.json({
       enabled: process.env.CRAWL_ENABLED !== 'false',
-      available: isAvailable,
+      serviceAvailable: isAvailable,
       serviceUrl: process.env.CRAWL_SERVICE_URL || 'http://localhost:8000',
     });
-  } catch (error) {
-    return NextResponse.json(
-      { error: 'Failed to check crawl service status' },
-      { status: 500 }
-    );
+  } catch {
+    return NextResponse.json({
+      enabled: false,
+      serviceAvailable: false,
+      serviceUrl: process.env.CRAWL_SERVICE_URL || 'http://localhost:8000',
+    });
   }
 }
 
