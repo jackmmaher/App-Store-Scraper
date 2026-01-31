@@ -1,4 +1,4 @@
-"""Pydantic models for the Crawl4AI service."""
+"""Pydantic models for the Crawl service."""
 
 from .schemas import (
     # Request models

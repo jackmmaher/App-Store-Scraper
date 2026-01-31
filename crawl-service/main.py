@@ -1,17 +1,13 @@
 """
-Crawl4AI Deep Integration Service
+Crawl Service - Web Scraping with Browser Automation
 
 FastAPI service providing crawling capabilities for:
-- App Store reviews (extended, thousands vs RSS 50-100)
-- App Store What's New / version history
-- App Store privacy labels
-- Reddit discussions (web scraping, no API)
-- Competitor websites
-
-All data is used to enrich AI components in the App Store Scraper.
+- App Store reviews via iTunes RSS API (fast, limited to ~1000)
+- App Store reviews via Browser automation (slower, unlimited)
+- Reddit discussions via Reddit JSON API
+- Competitor websites via httpx/BeautifulSoup
 """
 
-import asyncio
 import logging
 import os
 import time
@@ -21,43 +17,24 @@ from datetime import datetime
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Security, BackgroundTasks, Query
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import APIKeyHeader
+from pydantic import BaseModel
 from pydantic_settings import BaseSettings
-from sse_starlette.sse import EventSourceResponse
 
 # Load environment variables
 load_dotenv()
 
-# Models
-from models.schemas import (
-    AppStoreReviewRequest,
-    AppStoreReviewResponse,
-    AppStoreWhatsNewRequest,
-    AppStoreWhatsNewResponse,
-    AppStorePrivacyRequest,
-    AppStorePrivacyResponse,
-    RedditCrawlRequest,
-    RedditCrawlResponse,
-    WebsiteCrawlRequest,
-    WebsiteCrawlResponse,
-    BatchCrawlRequest,
-    BatchCrawlResponse,
-    CrawlJob,
-    CrawlJobStatus,
-    CrawlType,
-    HealthResponse,
-)
-
 # Crawlers
 from crawlers.app_store import AppStoreCrawler
+from crawlers.app_store_browser import AppStoreBrowserCrawler
 from crawlers.reddit import RedditCrawler
 from crawlers.websites import WebsiteCrawler
-
-# Utilities
-from utils.rate_limiter import RateLimiter
-from utils.cache import CacheManager
+from crawlers.coolors import (
+    get_trending_palettes,
+    select_palette_for_app,
+    format_palettes_for_prompt,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -73,21 +50,7 @@ logger = logging.getLogger(__name__)
 
 class Settings(BaseSettings):
     """Application settings from environment variables."""
-
-    # API Security
     crawl_service_api_key: str = ""
-
-    # Supabase
-    supabase_url: str = ""
-    supabase_service_key: str = ""
-
-    # Rate Limits
-    crawl_max_concurrent: int = 5
-    crawl_requests_per_minute: int = 30
-    crawl_cache_ttl_hours: int = 24
-
-    # Crawl4AI
-    crawl4ai_headless: bool = True
 
     class Config:
         env_file = ".env"
@@ -95,23 +58,52 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-
-# ============================================================================
-# Globals
-# ============================================================================
-
 # Service start time for uptime tracking
 start_time = time.time()
 
-# In-memory job storage (for async job tracking)
-jobs: dict[str, CrawlJob] = {}
 
-# Shared instances (initialized in lifespan)
-rate_limiter: Optional[RateLimiter] = None
-cache_manager: Optional[CacheManager] = None
-app_store_crawler: Optional[AppStoreCrawler] = None
-reddit_crawler: Optional[RedditCrawler] = None
-website_crawler: Optional[WebsiteCrawler] = None
+# ============================================================================
+# Request/Response Models
+# ============================================================================
+
+class AppStoreReviewRequest(BaseModel):
+    app_id: str
+    country: str = "us"
+    max_reviews: int = 1000
+    min_rating: Optional[int] = None
+    max_rating: Optional[int] = None
+    use_browser: bool = False  # Use browser automation for multi-country scraping
+    multi_country: bool = True  # When using browser, scrape from multiple country stores
+
+
+class RedditCrawlRequest(BaseModel):
+    keywords: list[str]
+    subreddits: Optional[list[str]] = None
+    max_posts: int = 50
+    max_comments_per_post: int = 20
+    time_filter: str = "year"
+    sort: str = "relevance"
+
+
+class WebsiteCrawlRequest(BaseModel):
+    url: str
+    max_pages: int = 10
+    include_subpages: bool = True
+    extract_pricing: bool = True
+    extract_features: bool = True
+
+
+class ColorPaletteRequest(BaseModel):
+    category: Optional[str] = None  # App Store category for palette selection
+    mood: Optional[str] = None  # Explicit mood: professional, playful, calm, bold, warm, cool
+    max_palettes: int = 5
+    force_refresh: bool = False  # Force fresh crawl from Coolors
+
+
+class HealthResponse(BaseModel):
+    status: str
+    uptime_seconds: float
+    version: str
 
 
 # ============================================================================
@@ -121,64 +113,10 @@ website_crawler: Optional[WebsiteCrawler] = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize and cleanup resources."""
-    global rate_limiter, cache_manager
-    global app_store_crawler, reddit_crawler, website_crawler
-
-    logger.info("Starting Crawl4AI service...")
-
-    # Initialize rate limiter
-    rate_limiter = RateLimiter(
-        requests_per_minute=settings.crawl_requests_per_minute,
-        max_concurrent=settings.crawl_max_concurrent,
-        per_domain_rpm={
-            "apps.apple.com": 20,
-            "old.reddit.com": 15,
-        },
-    )
-
-    # Initialize cache manager (with Supabase if configured)
-    supabase_client = None
-    if settings.supabase_url and settings.supabase_service_key:
-        try:
-            from supabase import create_client
-            supabase_client = create_client(
-                settings.supabase_url,
-                settings.supabase_service_key,
-            )
-            logger.info("Connected to Supabase for caching")
-        except Exception as e:
-            logger.warning(f"Could not connect to Supabase: {e}")
-
-    cache_manager = CacheManager(
-        supabase_client=supabase_client,
-        default_ttl_hours=settings.crawl_cache_ttl_hours,
-    )
-
-    # Initialize crawlers
-    app_store_crawler = AppStoreCrawler(
-        rate_limiter=rate_limiter,
-        cache_manager=cache_manager,
-        headless=settings.crawl4ai_headless,
-    )
-
-    reddit_crawler = RedditCrawler(
-        rate_limiter=rate_limiter,
-        cache_manager=cache_manager,
-        headless=settings.crawl4ai_headless,
-    )
-
-    website_crawler = WebsiteCrawler(
-        rate_limiter=rate_limiter,
-        cache_manager=cache_manager,
-        headless=settings.crawl4ai_headless,
-    )
-
-    logger.info("Crawl4AI service ready")
-
+    logger.info("Starting Crawl service...")
+    logger.info("Crawl service ready")
     yield
-
-    # Cleanup
-    logger.info("Shutting down Crawl4AI service...")
+    logger.info("Shutting down Crawl service...")
 
 
 # ============================================================================
@@ -186,16 +124,16 @@ async def lifespan(app: FastAPI):
 # ============================================================================
 
 app = FastAPI(
-    title="Crawl4AI Deep Integration Service",
-    description="Crawl service for enriching App Store Scraper with extended data",
-    version="1.0.0",
+    title="Crawl Service",
+    description="Web scraping service with browser automation for unlimited App Store reviews",
+    version="3.0.0",
     lifespan=lifespan,
 )
 
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, restrict to your Next.js domain
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -203,33 +141,16 @@ app.add_middleware(
 
 
 # ============================================================================
-# Security
-# ============================================================================
-
-api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
-
-
-async def verify_api_key(api_key: str = Security(api_key_header)):
-    """Verify API key if configured."""
-    if settings.crawl_service_api_key:
-        if not api_key or api_key != settings.crawl_service_api_key:
-            raise HTTPException(status_code=401, detail="Invalid or missing API key")
-    return api_key
-
-
-# ============================================================================
 # Health Check
 # ============================================================================
 
-@app.get("/health", response_model=HealthResponse, tags=["Health"])
+@app.get("/health", response_model=HealthResponse)
 async def health_check():
-    """Check service health."""
+    """Health check endpoint."""
     return HealthResponse(
         status="healthy",
-        version="1.0.0",
-        crawl4ai_ready=app_store_crawler is not None,
-        supabase_connected=cache_manager is not None and cache_manager.client is not None,
         uptime_seconds=time.time() - start_time,
+        version="3.0.0",
     )
 
 
@@ -237,415 +158,255 @@ async def health_check():
 # App Store Endpoints
 # ============================================================================
 
-@app.post(
-    "/crawl/app-store/reviews",
-    response_model=AppStoreReviewResponse,
-    tags=["App Store"],
-    dependencies=[Security(verify_api_key)],
-)
+@app.post("/crawl/app-store/reviews")
 async def crawl_app_store_reviews(request: AppStoreReviewRequest):
     """
-    Crawl extended reviews for an App Store app.
+    Crawl App Store reviews for an app.
 
-    Uses browser automation to scroll and load thousands of reviews,
-    far exceeding the RSS limit of 50-100.
+    Set use_browser=True for unlimited review scraping (slower but no limits).
+    Default uses RSS API which is faster but limited to ~1000 reviews.
     """
-    if not app_store_crawler:
-        raise HTTPException(status_code=503, detail="Crawler not initialized")
+    mode = "browser" if request.use_browser else "RSS API"
+    logger.info(f"Crawling reviews for app {request.app_id} using {mode}")
 
     try:
-        result = await app_store_crawler.crawl_reviews(
-            app_id=request.app_id,
-            country=request.country,
-            max_reviews=request.max_reviews,
-            min_rating=request.min_rating,
-            max_rating=request.max_rating,
-            force_refresh=request.force_refresh,
-        )
-        return result
+        if request.use_browser:
+            # Use browser automation for multi-country scraping
+            async with AppStoreBrowserCrawler(headless=True) as crawler:
+                reviews = await crawler.crawl_reviews(
+                    app_id=request.app_id,
+                    country=request.country,
+                    max_reviews=request.max_reviews,
+                    min_rating=request.min_rating,
+                    max_rating=request.max_rating,
+                    multi_country=request.multi_country,
+                )
+        else:
+            # Use fast RSS API (limited to ~1000 reviews)
+            async with AppStoreCrawler() as crawler:
+                reviews = await crawler.crawl_reviews(
+                    app_id=request.app_id,
+                    country=request.country,
+                    max_reviews=request.max_reviews,
+                    min_rating=request.min_rating,
+                    max_rating=request.max_rating,
+                )
 
+        # Calculate stats
+        if reviews:
+            ratings = [r["rating"] for r in reviews if r.get("rating")]
+            if ratings:
+                stats = {
+                    "total": len(reviews),
+                    "average_rating": round(sum(ratings) / len(ratings), 2),
+                    "rating_distribution": {
+                        str(i): len([r for r in ratings if r == i])
+                        for i in range(1, 6)
+                    },
+                    "scrape_mode": mode,
+                }
+            else:
+                stats = {"total": len(reviews), "average_rating": 0, "rating_distribution": {}, "scrape_mode": mode}
+        else:
+            stats = {"total": 0, "average_rating": 0, "rating_distribution": {}, "scrape_mode": mode}
+
+        return {
+            "app_id": request.app_id,
+            "country": request.country,
+            "reviews": reviews,
+            "stats": stats,
+        }
     except Exception as e:
-        logger.error(f"Error crawling reviews: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception(f"Error crawling reviews for {request.app_id}")
+        raise HTTPException(status_code=500, detail=f"Failed to crawl reviews: {str(e)}")
 
 
-@app.post(
-    "/crawl/app-store/whats-new",
-    response_model=AppStoreWhatsNewResponse,
-    tags=["App Store"],
-    dependencies=[Security(verify_api_key)],
-)
-async def crawl_app_store_whats_new(request: AppStoreWhatsNewRequest):
-    """
-    Crawl What's New / version history for an App Store app.
-    """
-    if not app_store_crawler:
-        raise HTTPException(status_code=503, detail="Crawler not initialized")
+@app.post("/crawl/app-store/whats-new")
+async def crawl_app_store_whats_new(app_id: str, country: str = "us"):
+    """Get version history for an app."""
+    logger.info(f"Crawling What's New for app {app_id}")
 
     try:
-        result = await app_store_crawler.crawl_whats_new(
-            app_id=request.app_id,
-            country=request.country,
-            max_versions=request.max_versions,
-            force_refresh=request.force_refresh,
-        )
-        return result
+        async with AppStoreCrawler() as crawler:
+            versions = await crawler.crawl_whats_new(
+                app_id=app_id,
+                country=country,
+            )
 
+        return {
+            "app_id": app_id,
+            "country": country,
+            "versions": versions,
+        }
     except Exception as e:
-        logger.error(f"Error crawling What's New: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception(f"Error crawling What's New for {app_id}")
+        raise HTTPException(status_code=500, detail=f"Failed to crawl What's New: {str(e)}")
 
 
-@app.post(
-    "/crawl/app-store/privacy",
-    response_model=AppStorePrivacyResponse,
-    tags=["App Store"],
-    dependencies=[Security(verify_api_key)],
-)
-async def crawl_app_store_privacy(request: AppStorePrivacyRequest):
-    """
-    Crawl privacy nutrition labels for an App Store app.
-    """
-    if not app_store_crawler:
-        raise HTTPException(status_code=503, detail="Crawler not initialized")
+@app.post("/crawl/app-store/privacy")
+async def crawl_app_store_privacy(app_id: str, country: str = "us"):
+    """Get privacy labels for an app."""
+    logger.info(f"Crawling privacy labels for app {app_id}")
 
     try:
-        result = await app_store_crawler.crawl_privacy_labels(
-            app_id=request.app_id,
-            country=request.country,
-            force_refresh=request.force_refresh,
-        )
-        return result
+        async with AppStoreCrawler() as crawler:
+            labels = await crawler.crawl_privacy_labels(
+                app_id=app_id,
+                country=country,
+            )
 
+        return {
+            "app_id": app_id,
+            "country": country,
+            "privacy_labels": labels,
+        }
     except Exception as e:
-        logger.error(f"Error crawling privacy labels: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception(f"Error crawling privacy labels for {app_id}")
+        raise HTTPException(status_code=500, detail=f"Failed to crawl privacy labels: {str(e)}")
 
 
 # ============================================================================
 # Reddit Endpoints
 # ============================================================================
 
-@app.post(
-    "/crawl/reddit",
-    response_model=RedditCrawlResponse,
-    tags=["Reddit"],
-    dependencies=[Security(verify_api_key)],
-)
+@app.post("/crawl/reddit")
 async def crawl_reddit(request: RedditCrawlRequest):
-    """
-    Crawl Reddit discussions for keywords.
-
-    Uses web scraping (no API registration needed) to find real user
-    discussions about apps, features, and pain points.
-    """
-    if not reddit_crawler:
-        raise HTTPException(status_code=503, detail="Crawler not initialized")
+    """Crawl Reddit discussions matching keywords."""
+    logger.info(f"Crawling Reddit for keywords: {request.keywords}")
 
     try:
-        result = await reddit_crawler.crawl_search(
-            keywords=request.keywords,
-            subreddits=request.subreddits,
-            max_posts=request.max_posts,
-            max_comments_per_post=request.max_comments_per_post,
-            time_filter=request.time_filter,
-            sort=request.sort,
-            force_refresh=request.force_refresh,
-        )
-        return result
+        async with RedditCrawler() as crawler:
+            result = await crawler.crawl_discussions(
+                keywords=request.keywords,
+                subreddits=request.subreddits,
+                max_posts=request.max_posts,
+                max_comments_per_post=request.max_comments_per_post,
+                time_filter=request.time_filter,
+                sort=request.sort,
+            )
 
+        return result
     except Exception as e:
-        logger.error(f"Error crawling Reddit: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception(f"Error crawling Reddit for {request.keywords}")
+        raise HTTPException(status_code=500, detail=f"Failed to crawl Reddit: {str(e)}")
 
 
 # ============================================================================
 # Website Endpoints
 # ============================================================================
 
-@app.post(
-    "/crawl/website",
-    response_model=WebsiteCrawlResponse,
-    tags=["Website"],
-    dependencies=[Security(verify_api_key)],
-)
+@app.post("/crawl/website")
 async def crawl_website(request: WebsiteCrawlRequest):
-    """
-    Crawl a competitor website.
-
-    Extracts features, pricing, testimonials, and other relevant content.
-    """
-    if not website_crawler:
-        raise HTTPException(status_code=503, detail="Crawler not initialized")
+    """Crawl a competitor website."""
+    logger.info(f"Crawling website: {request.url}")
 
     try:
-        result = await website_crawler.crawl_website(
-            url=str(request.url),
-            max_pages=request.max_pages,
-            include_subpages=request.include_subpages,
-            extract_pricing=request.extract_pricing,
-            extract_features=request.extract_features,
-            force_refresh=request.force_refresh,
-        )
+        async with WebsiteCrawler() as crawler:
+            result = await crawler.crawl_website(
+                url=request.url,
+                max_pages=request.max_pages,
+                include_subpages=request.include_subpages,
+                extract_pricing=request.extract_pricing,
+                extract_features=request.extract_features,
+            )
+
         return result
-
     except Exception as e:
-        logger.error(f"Error crawling website: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception(f"Error crawling website {request.url}")
+        raise HTTPException(status_code=500, detail=f"Failed to crawl website: {str(e)}")
 
 
 # ============================================================================
-# Batch & Async Job Endpoints
+# Color Palette Endpoints
 # ============================================================================
 
-@app.post(
-    "/crawl/batch",
-    response_model=BatchCrawlResponse,
-    tags=["Batch"],
-    dependencies=[Security(verify_api_key)],
-)
-async def start_batch_crawl(
-    request: BatchCrawlRequest,
-    background_tasks: BackgroundTasks,
-):
+@app.post("/crawl/palettes")
+async def crawl_color_palettes(request: ColorPaletteRequest):
     """
-    Start a batch crawl job.
+    Get curated color palettes from Coolors.co trending.
 
-    Returns immediately with a job ID. Use /job/{id} to check status.
+    Palettes are cached for 24 hours. Use force_refresh=true to fetch fresh data.
+    Provide category or mood to get palettes matched to your app context.
     """
-    job_id = str(uuid.uuid4())
-
-    # Count total tasks
-    total_tasks = 0
-    if request.app_store_reviews:
-        total_tasks += len(request.app_store_reviews)
-    if request.reddit:
-        total_tasks += len(request.reddit)
-    if request.websites:
-        total_tasks += len(request.websites)
-
-    if total_tasks == 0:
-        raise HTTPException(status_code=400, detail="No crawl tasks provided")
-
-    # Create job
-    job = CrawlJob(
-        id=job_id,
-        type=CrawlType.APP_STORE_REVIEWS,  # Will be mixed
-        status=CrawlJobStatus.PENDING,
-        request=request.model_dump(),
-        progress=0.0,
-    )
-    jobs[job_id] = job
-
-    # Start background processing
-    background_tasks.add_task(process_batch_job, job_id, request)
-
-    return BatchCrawlResponse(
-        job_id=job_id,
-        status=CrawlJobStatus.PENDING,
-        total_tasks=total_tasks,
-        completed_tasks=0,
-    )
-
-
-async def process_batch_job(job_id: str, request: BatchCrawlRequest):
-    """Process a batch crawl job in the background."""
-    job = jobs.get(job_id)
-    if not job:
-        return
-
-    job.status = CrawlJobStatus.RUNNING
-    job.started_at = datetime.utcnow()
-
-    results = {
-        "app_store_reviews": [],
-        "reddit": [],
-        "websites": [],
-    }
-    completed = 0
-    total = 0
-
-    if request.app_store_reviews:
-        total += len(request.app_store_reviews)
-    if request.reddit:
-        total += len(request.reddit)
-    if request.websites:
-        total += len(request.websites)
+    logger.info(f"Fetching color palettes (category={request.category}, mood={request.mood})")
 
     try:
-        # Process App Store reviews
-        if request.app_store_reviews and app_store_crawler:
-            for req in request.app_store_reviews:
-                try:
-                    result = await app_store_crawler.crawl_reviews(**req.model_dump())
-                    results["app_store_reviews"].append(result.model_dump())
-                except Exception as e:
-                    logger.error(f"Batch review crawl error: {e}")
-                completed += 1
-                job.progress = completed / total
+        # Get trending palettes (from cache or fresh crawl)
+        all_palettes = await get_trending_palettes(
+            force_refresh=request.force_refresh,
+            max_palettes=50,
+        )
 
-        # Process Reddit
-        if request.reddit and reddit_crawler:
-            for req in request.reddit:
-                try:
-                    result = await reddit_crawler.crawl_search(**req.model_dump())
-                    results["reddit"].append(result.model_dump())
-                except Exception as e:
-                    logger.error(f"Batch Reddit crawl error: {e}")
-                completed += 1
-                job.progress = completed / total
+        if not all_palettes:
+            return {
+                "palettes": [],
+                "prompt_text": "",
+                "message": "No palettes available. Try force_refresh=true.",
+            }
 
-        # Process websites
-        if request.websites and website_crawler:
-            for req in request.websites:
-                try:
-                    result = await website_crawler.crawl_website(
-                        url=str(req.url),
-                        max_pages=req.max_pages,
-                        include_subpages=req.include_subpages,
-                        extract_pricing=req.extract_pricing,
-                        extract_features=req.extract_features,
-                        force_refresh=req.force_refresh,
-                    )
-                    results["websites"].append(result.model_dump())
-                except Exception as e:
-                    logger.error(f"Batch website crawl error: {e}")
-                completed += 1
-                job.progress = completed / total
+        # Select best palettes for the app context
+        selected = select_palette_for_app(
+            palettes=all_palettes,
+            category=request.category,
+            mood_hint=request.mood,
+            top_n=request.max_palettes,
+        )
 
-        job.result = results
-        job.status = CrawlJobStatus.COMPLETED
+        # Format for prompt inclusion
+        prompt_text = format_palettes_for_prompt(selected, max_palettes=request.max_palettes)
+
+        return {
+            "palettes": [p.to_dict() for p in selected],
+            "prompt_text": prompt_text,
+            "total_cached": len(all_palettes),
+            "category": request.category,
+            "mood": request.mood,
+        }
 
     except Exception as e:
-        logger.error(f"Batch job error: {e}")
-        job.status = CrawlJobStatus.FAILED
-        job.error = str(e)
-
-    job.completed_at = datetime.utcnow()
+        logger.exception(f"Error fetching color palettes")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch palettes: {str(e)}")
 
 
-@app.get(
-    "/job/{job_id}",
-    response_model=CrawlJob,
-    tags=["Jobs"],
-    dependencies=[Security(verify_api_key)],
-)
-async def get_job_status(job_id: str):
-    """Get the status and result of a crawl job."""
-    job = jobs.get(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return job
+@app.get("/crawl/palettes/refresh")
+async def refresh_color_palettes():
+    """Force refresh the palette cache from Coolors.co"""
+    logger.info("Force refreshing palette cache...")
 
-
-@app.get(
-    "/job/{job_id}/stream",
-    tags=["Jobs"],
-    dependencies=[Security(verify_api_key)],
-)
-async def stream_job_progress(job_id: str):
-    """
-    Stream job progress via Server-Sent Events.
-
-    Events:
-    - progress: {progress: 0.0-1.0}
-    - complete: {result: ...}
-    - error: {error: "message"}
-    """
-    job = jobs.get(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-
-    async def event_generator():
-        last_progress = -1
-
-        while True:
-            current_job = jobs.get(job_id)
-            if not current_job:
-                yield {"event": "error", "data": '{"error": "Job not found"}'}
-                break
-
-            # Send progress updates
-            if current_job.progress != last_progress:
-                last_progress = current_job.progress
-                yield {
-                    "event": "progress",
-                    "data": f'{{"progress": {current_job.progress:.2f}}}',
-                }
-
-            # Check completion
-            if current_job.status == CrawlJobStatus.COMPLETED:
-                import json
-                yield {
-                    "event": "complete",
-                    "data": json.dumps(current_job.result or {}),
-                }
-                break
-
-            if current_job.status == CrawlJobStatus.FAILED:
-                yield {
-                    "event": "error",
-                    "data": f'{{"error": "{current_job.error}"}}',
-                }
-                break
-
-            await asyncio.sleep(1)
-
-    return EventSourceResponse(event_generator())
+    try:
+        palettes = await get_trending_palettes(force_refresh=True, max_palettes=50)
+        return {
+            "message": f"Refreshed {len(palettes)} palettes from Coolors",
+            "palettes_count": len(palettes),
+        }
+    except Exception as e:
+        logger.exception("Error refreshing palettes")
+        raise HTTPException(status_code=500, detail=f"Failed to refresh palettes: {str(e)}")
 
 
 # ============================================================================
-# Cache Management
+# Root
 # ============================================================================
 
-@app.get(
-    "/cache/stats",
-    tags=["Cache"],
-    dependencies=[Security(verify_api_key)],
-)
-async def get_cache_stats():
-    """Get cache statistics."""
-    if not cache_manager:
-        raise HTTPException(status_code=503, detail="Cache not initialized")
-    return await cache_manager.get_stats()
-
-
-@app.delete(
-    "/cache/type/{cache_type}",
-    tags=["Cache"],
-    dependencies=[Security(verify_api_key)],
-)
-async def invalidate_cache_type(cache_type: str):
-    """Invalidate all cache entries of a specific type."""
-    if not cache_manager:
-        raise HTTPException(status_code=503, detail="Cache not initialized")
-    count = await cache_manager.invalidate_type(cache_type)
-    return {"invalidated": count}
-
-
-@app.post(
-    "/cache/cleanup",
-    tags=["Cache"],
-    dependencies=[Security(verify_api_key)],
-)
-async def cleanup_expired_cache():
-    """Remove all expired cache entries."""
-    if not cache_manager:
-        raise HTTPException(status_code=503, detail="Cache not initialized")
-    count = await cache_manager.cleanup_expired()
-    return {"removed": count}
-
-
-# ============================================================================
-# Main
-# ============================================================================
-
-if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-    )
+@app.get("/")
+async def root():
+    """Root endpoint with service info."""
+    return {
+        "service": "Crawl Service",
+        "version": "3.0.0",
+        "status": "running",
+        "features": {
+            "browser_scraping": "Set use_browser=true for unlimited App Store reviews",
+            "rss_api": "Default fast mode, limited to ~1000 reviews",
+        },
+        "endpoints": [
+            "/health",
+            "/crawl/app-store/reviews",
+            "/crawl/app-store/whats-new",
+            "/crawl/app-store/privacy",
+            "/crawl/reddit",
+            "/crawl/website",
+            "/crawl/palettes",
+            "/crawl/palettes/refresh",
+        ],
+    }

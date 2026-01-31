@@ -1,262 +1,108 @@
-"""Base crawler class with common functionality."""
+"""
+Base Crawler - Simplified version using httpx instead of crawl4ai
+Works with Python 3.14 without compilation issues
+"""
 
 import asyncio
 import logging
-from abc import ABC, abstractmethod
-from typing import Any, Optional
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
-
-from utils.rate_limiter import RateLimiter
-from utils.cache import CacheManager
+import random
+from typing import Optional
+import httpx
 
 logger = logging.getLogger(__name__)
 
 
-class BaseCrawler(ABC):
-    """
-    Base class for all crawlers.
+class BaseCrawler:
+    """Base class for all crawlers using httpx"""
 
-    Provides common functionality:
-    - Browser automation via Crawl4AI
-    - Rate limiting
-    - Caching
-    - Error handling
-    """
+    def __init__(self, max_retries: int = 3, base_delay: float = 1.0):
+        self.client: Optional[httpx.AsyncClient] = None
+        self.max_retries = max_retries
+        self.base_delay = base_delay
+        self.headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+        }
 
-    def __init__(
-        self,
-        rate_limiter: Optional[RateLimiter] = None,
-        cache_manager: Optional[CacheManager] = None,
-        headless: bool = True,
-    ):
-        """
-        Initialize base crawler.
-
-        Args:
-            rate_limiter: Optional rate limiter instance
-            cache_manager: Optional cache manager instance
-            headless: Whether to run browser in headless mode
-        """
-        self.rate_limiter = rate_limiter or RateLimiter()
-        self.cache_manager = cache_manager
-        self.headless = headless
-
-        # Browser configuration for Crawl4AI
-        self.browser_config = BrowserConfig(
-            browser_type="chromium",
-            headless=headless,
-            viewport_width=1280,
-            viewport_height=800,
-            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            # Extra args for stability
-            extra_args=[
-                "--disable-gpu",
-                "--disable-dev-shm-usage",
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-            ],
+    async def __aenter__(self):
+        self.client = httpx.AsyncClient(
+            headers=self.headers,
+            timeout=httpx.Timeout(60.0, connect=10.0),
+            follow_redirects=True,
+            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
         )
+        return self
 
-        # Default crawler run config
-        self.default_run_config = CrawlerRunConfig(
-            cache_mode=CacheMode.BYPASS,  # We handle caching ourselves
-            wait_until="networkidle",
-            page_timeout=60000,  # 60 second timeout
-            verbose=False,
-        )
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.client:
+            await self.client.aclose()
 
-    @property
-    @abstractmethod
-    def cache_type(self) -> str:
-        """Return the cache type identifier for this crawler."""
-        pass
+    async def _retry_with_backoff(self, coro_factory, url: str):
+        """Execute a coroutine with exponential backoff retry"""
+        last_exception = None
 
-    async def crawl_page(
-        self,
-        url: str,
-        run_config: Optional[CrawlerRunConfig] = None,
-        js_code: Optional[str] = None,
-        wait_for: Optional[str] = None,
-    ) -> Optional[dict]:
-        """
-        Crawl a single page using Crawl4AI.
-
-        Args:
-            url: URL to crawl
-            run_config: Optional custom run configuration
-            js_code: Optional JavaScript to execute on page
-            wait_for: Optional CSS selector to wait for
-
-        Returns:
-            Dict with crawl results or None on failure
-        """
-        await self.rate_limiter.acquire(url)
-
-        try:
-            config = run_config or self.default_run_config
-
-            # Add JS code and wait_for if provided
-            if js_code:
-                config = CrawlerRunConfig(
-                    **{**config.__dict__, "js_code": js_code}
-                )
-            if wait_for:
-                config = CrawlerRunConfig(
-                    **{**config.__dict__, "wait_for": f"css:{wait_for}"}
-                )
-
-            async with AsyncWebCrawler(config=self.browser_config) as crawler:
-                result = await crawler.arun(url=url, config=config)
-
-                if result.success:
-                    return {
-                        "url": url,
-                        "html": result.html,
-                        "markdown": result.markdown,
-                        "cleaned_html": result.cleaned_html,
-                        "links": result.links,
-                        "media": result.media,
-                        "metadata": result.metadata,
-                    }
+        for attempt in range(self.max_retries):
+            try:
+                return await coro_factory()
+            except httpx.HTTPStatusError as e:
+                last_exception = e
+                if e.response.status_code == 429:
+                    # Rate limited - wait longer
+                    delay = self.base_delay * (2 ** attempt) + random.uniform(1, 3)
+                    logger.warning(f"Rate limited on {url}, waiting {delay:.1f}s (attempt {attempt + 1}/{self.max_retries})")
+                    await asyncio.sleep(delay)
+                elif e.response.status_code >= 500:
+                    # Server error - retry with backoff
+                    delay = self.base_delay * (2 ** attempt)
+                    logger.warning(f"Server error {e.response.status_code} on {url}, retrying in {delay:.1f}s")
+                    await asyncio.sleep(delay)
                 else:
-                    logger.error(f"Crawl failed for {url}: {result.error_message}")
+                    # Client error (4xx except 429) - don't retry
+                    logger.error(f"HTTP {e.response.status_code} error fetching {url}: {e}")
                     return None
+            except (httpx.ConnectError, httpx.ReadTimeout, httpx.ConnectTimeout) as e:
+                last_exception = e
+                delay = self.base_delay * (2 ** attempt)
+                logger.warning(f"Connection error on {url}, retrying in {delay:.1f}s (attempt {attempt + 1}/{self.max_retries}): {e}")
+                await asyncio.sleep(delay)
+            except Exception as e:
+                logger.error(f"Unexpected error fetching {url}: {e}")
+                return None
 
-        except Exception as e:
-            logger.error(f"Error crawling {url}: {e}")
+        logger.error(f"Failed to fetch {url} after {self.max_retries} attempts: {last_exception}")
+        return None
+
+    async def fetch(self, url: str, extra_headers: Optional[dict] = None) -> Optional[str]:
+        """Fetch a URL and return the content with retry logic"""
+        if not self.client:
+            raise RuntimeError("Crawler not initialized. Use 'async with' context.")
+
+        async def do_fetch():
+            headers = {**self.headers, **(extra_headers or {})}
+            response = await self.client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.text
+
+        return await self._retry_with_backoff(do_fetch, url)
+
+    async def fetch_json(self, url: str, extra_headers: Optional[dict] = None) -> Optional[dict]:
+        """Fetch a URL and return JSON with retry logic"""
+        if not self.client:
+            raise RuntimeError("Crawler not initialized. Use 'async with' context.")
+
+        async def do_fetch():
+            headers = {**self.headers, **(extra_headers or {})}
+            response = await self.client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+
+        result = await self._retry_with_backoff(do_fetch, url)
+        if result is None:
             return None
 
-        finally:
-            self.rate_limiter.release()
-
-    async def crawl_with_pagination(
-        self,
-        base_url: str,
-        page_param: str = "page",
-        max_pages: int = 10,
-        items_selector: str = "",
-        next_button_selector: Optional[str] = None,
-        js_scroll: bool = False,
-    ) -> list[dict]:
-        """
-        Crawl multiple pages with pagination support.
-
-        Args:
-            base_url: Base URL to paginate
-            page_param: Query parameter for page number (if using URL pagination)
-            max_pages: Maximum pages to crawl
-            items_selector: CSS selector for items to extract
-            next_button_selector: CSS selector for next button (for click-based pagination)
-            js_scroll: Whether to use infinite scroll
-
-        Returns:
-            List of crawl results from all pages
-        """
-        results = []
-
-        if js_scroll:
-            # Infinite scroll pagination
-            scroll_js = """
-            async () => {
-                let lastHeight = document.body.scrollHeight;
-                let scrollCount = 0;
-                const maxScrolls = %d;
-
-                while (scrollCount < maxScrolls) {
-                    window.scrollTo(0, document.body.scrollHeight);
-                    await new Promise(r => setTimeout(r, 2000));
-
-                    const newHeight = document.body.scrollHeight;
-                    if (newHeight === lastHeight) break;
-
-                    lastHeight = newHeight;
-                    scrollCount++;
-                }
-            }
-            """ % max_pages
-
-            result = await self.crawl_page(base_url, js_code=scroll_js)
-            if result:
-                results.append(result)
-
-        elif next_button_selector:
-            # Click-based pagination
-            for page in range(max_pages):
-                if page == 0:
-                    result = await self.crawl_page(base_url)
-                else:
-                    # Click next button
-                    click_js = f"""
-                    const btn = document.querySelector('{next_button_selector}');
-                    if (btn && !btn.disabled) btn.click();
-                    """
-                    result = await self.crawl_page(base_url, js_code=click_js)
-
-                if result:
-                    results.append(result)
-                else:
-                    break
-
-                # Small delay between pages
-                await asyncio.sleep(0.5)
-
-        else:
-            # URL-based pagination
-            for page in range(1, max_pages + 1):
-                separator = "&" if "?" in base_url else "?"
-                url = f"{base_url}{separator}{page_param}={page}"
-
-                result = await self.crawl_page(url)
-                if result:
-                    results.append(result)
-                else:
-                    break
-
-                # Small delay between pages
-                await asyncio.sleep(0.5)
-
-        return results
-
-    async def get_cached_or_crawl(
-        self,
-        identifier: str,
-        crawl_func,
-        params: Optional[dict] = None,
-        force_refresh: bool = False,
-    ) -> Any:
-        """
-        Get data from cache or crawl if not cached.
-
-        Args:
-            identifier: Cache identifier
-            crawl_func: Async function to call if cache miss
-            params: Additional cache parameters
-            force_refresh: Skip cache and always crawl
-
-        Returns:
-            Cached or freshly crawled data
-        """
-        if self.cache_manager and not force_refresh:
-            cached = await self.cache_manager.get(self.cache_type, identifier, params)
-            if cached:
-                logger.info(f"Cache hit for {self.cache_type}:{identifier}")
-                return cached
-
-        # Crawl fresh data
-        logger.info(f"Crawling fresh data for {self.cache_type}:{identifier}")
-        data = await crawl_func()
-
-        # Cache the result
-        if self.cache_manager and data:
-            await self.cache_manager.set(self.cache_type, identifier, data, params)
-
-        return data
-
-    @abstractmethod
-    async def crawl(self, **kwargs) -> Any:
-        """
-        Perform the crawl operation.
-
-        Must be implemented by subclasses.
-        """
-        pass
+        try:
+            return result
+        except Exception as e:
+            logger.error(f"Error parsing JSON from {url}: {e}")
+            return None

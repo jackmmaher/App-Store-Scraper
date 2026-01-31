@@ -1,37 +1,21 @@
-"""Website crawler for competitor landing pages."""
+"""
+Website Crawler - Simplified version using httpx and BeautifulSoup
+"""
 
 import asyncio
 import logging
 import re
-from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
-from crawl4ai import CrawlerRunConfig
 
 from .base import BaseCrawler
-from models.schemas import WebsiteContent, WebsiteCrawlResponse
 
 logger = logging.getLogger(__name__)
 
 
 class WebsiteCrawler(BaseCrawler):
-    """
-    Crawler for competitor websites.
-
-    Extracts:
-    - Landing page content
-    - Feature lists
-    - Pricing information
-    - Screenshots
-    - Testimonials
-    - Technology stack hints
-    - Social links
-    """
-
-    @property
-    def cache_type(self) -> str:
-        return "website"
+    """Crawl competitor websites for features, pricing, etc."""
 
     async def crawl_website(
         self,
@@ -40,436 +24,185 @@ class WebsiteCrawler(BaseCrawler):
         include_subpages: bool = True,
         extract_pricing: bool = True,
         extract_features: bool = True,
-        force_refresh: bool = False,
-    ) -> WebsiteCrawlResponse:
+    ) -> dict:
         """
-        Crawl a competitor website.
-
-        Args:
-            url: Website URL
-            max_pages: Maximum pages to crawl
-            include_subpages: Whether to follow links
-            extract_pricing: Extract pricing information
-            extract_features: Extract feature lists
-            force_refresh: Bypass cache
-
-        Returns:
-            WebsiteCrawlResponse with extracted content
+        Crawl a website and extract useful information.
         """
-        cache_params = {
-            "max_pages": max_pages,
-            "include_subpages": include_subpages,
+        parsed_url = urlparse(url)
+        base_domain = f"{parsed_url.scheme}://{parsed_url.netloc}"
+
+        result = {
+            "url": url,
+            "domain": parsed_url.netloc,
+            "title": "",
+            "description": "",
+            "main_content": "",
+            "features": [],
+            "pricing_info": None,
+            "screenshots": [],
+            "testimonials": [],
+            "social_links": {},
+            "crawled_pages": 0,
         }
 
-        # Normalize URL
-        if not url.startswith("http"):
-            url = f"https://{url}"
+        # Crawl main page
+        html = await self.fetch(url)
+        if not html:
+            return result
 
-        parsed = urlparse(url)
-        base_domain = parsed.netloc
+        soup = BeautifulSoup(html, "html.parser")
+        result.update(self._extract_page_info(soup, url))
+        result["crawled_pages"] = 1
 
-        async def do_crawl():
-            content = {
-                "url": url,
-                "title": "",
-                "description": "",
-                "main_content": "",
-                "features": [],
-                "pricing_info": None,
-                "screenshots": [],
-                "testimonials": [],
-                "technology_stack": [],
-                "social_links": {},
-                "crawled_pages": 0,
-            }
+        if extract_features:
+            result["features"] = self._extract_features(soup)
 
-            visited = set()
-            to_visit = [url]
+        if extract_pricing:
+            # Try to find and crawl pricing page
+            pricing_urls = self._find_pricing_links(soup, base_domain)
+            for pricing_url in pricing_urls[:1]:  # Only try first pricing link
+                pricing_html = await self.fetch(pricing_url)
+                if pricing_html:
+                    pricing_soup = BeautifulSoup(pricing_html, "html.parser")
+                    result["pricing_info"] = self._extract_pricing(pricing_soup)
+                    result["crawled_pages"] += 1
+                    break
+                await asyncio.sleep(0.5)
 
-            while to_visit and len(visited) < max_pages:
-                current_url = to_visit.pop(0)
+        # Extract testimonials
+        result["testimonials"] = self._extract_testimonials(soup)
 
-                if current_url in visited:
-                    continue
+        # Extract social links
+        result["social_links"] = self._extract_social_links(soup)
 
-                try:
-                    result = await self.crawl_page(current_url)
+        return result
 
-                    if not result or not result.get("html"):
-                        continue
+    def _extract_page_info(self, soup: BeautifulSoup, url: str) -> dict:
+        """Extract basic page information"""
+        title = ""
+        if soup.title:
+            title = soup.title.string or ""
 
-                    visited.add(current_url)
-                    content["crawled_pages"] += 1
-
-                    soup = BeautifulSoup(result["html"], "lxml")
-
-                    # Extract content based on page type
-                    if current_url == url:
-                        # Main landing page
-                        self._extract_main_page_content(soup, content)
-                    else:
-                        # Subpage - check if it's pricing or features
-                        if self._is_pricing_page(current_url, soup):
-                            content["pricing_info"] = self._extract_pricing(soup)
-                        elif self._is_features_page(current_url, soup):
-                            content["features"].extend(self._extract_features(soup))
-
-                    # Find more links to crawl
-                    if include_subpages and len(visited) < max_pages:
-                        links = self._find_relevant_links(soup, base_domain, visited)
-                        to_visit.extend(links[:max_pages - len(visited)])
-
-                    # Rate limiting
-                    await asyncio.sleep(0.5)
-
-                except Exception as e:
-                    logger.warning(f"Error crawling {current_url}: {e}")
-
-            # Deduplicate features
-            content["features"] = list(set(content["features"]))
-
-            return content
-
-        cached_or_fresh = await self.get_cached_or_crawl(
-            identifier=base_domain,
-            crawl_func=do_crawl,
-            params=cache_params,
-            force_refresh=force_refresh,
-        )
-
-        return WebsiteCrawlResponse(
-            url=url,
-            content=WebsiteContent(**cached_or_fresh),
-            cached=not force_refresh and self.cache_manager is not None,
-        )
-
-    def _extract_main_page_content(self, soup: BeautifulSoup, content: dict) -> None:
-        """Extract content from the main landing page."""
-        # Title
-        title_elem = soup.find("title")
-        if title_elem:
-            content["title"] = title_elem.get_text(strip=True)
-
-        # Meta description
+        description = ""
         meta_desc = soup.find("meta", attrs={"name": "description"})
         if meta_desc:
-            content["description"] = meta_desc.get("content", "")
+            description = meta_desc.get("content", "")
 
-        # OG description as fallback
-        if not content["description"]:
-            og_desc = soup.find("meta", attrs={"property": "og:description"})
-            if og_desc:
-                content["description"] = og_desc.get("content", "")
-
-        # Main content (hero, headlines)
-        main_content_parts = []
-
-        # Hero section
-        for selector in ["hero", "jumbotron", "banner", "[class*='hero']", "header"]:
-            hero = soup.select_one(selector)
-            if hero:
-                text = hero.get_text(" ", strip=True)[:1000]
-                if text:
-                    main_content_parts.append(text)
+        # Extract main content (simplified)
+        main_content = ""
+        for tag in ["main", "article", "[role='main']"]:
+            main = soup.select_one(tag)
+            if main:
+                main_content = main.get_text(separator=" ", strip=True)[:2000]
                 break
 
-        # Main headings
-        for h in soup.find_all(["h1", "h2"], limit=10):
-            text = h.get_text(strip=True)
-            if text and len(text) > 10:
-                main_content_parts.append(text)
+        if not main_content:
+            body = soup.find("body")
+            if body:
+                main_content = body.get_text(separator=" ", strip=True)[:2000]
 
-        content["main_content"] = "\n\n".join(main_content_parts[:5])
+        return {
+            "title": title.strip(),
+            "description": description.strip(),
+            "main_content": main_content,
+        }
 
-        # Features
-        content["features"] = self._extract_features(soup)
-
-        # Pricing (if on main page)
-        pricing = self._extract_pricing(soup)
-        if pricing:
-            content["pricing_info"] = pricing
-
-        # Screenshots/images
-        content["screenshots"] = self._extract_screenshots(soup)
-
-        # Testimonials
-        content["testimonials"] = self._extract_testimonials(soup)
-
-        # Technology hints
-        content["technology_stack"] = self._detect_technology(soup)
-
-        # Social links
-        content["social_links"] = self._extract_social_links(soup)
-
-    def _extract_features(self, soup: BeautifulSoup) -> list[str]:
-        """Extract feature list from page."""
+    def _extract_features(self, soup: BeautifulSoup) -> List[str]:
+        """Extract feature list from page"""
         features = []
 
-        # Look for features section
+        # Look for feature lists
         feature_selectors = [
-            "[class*='feature']",
-            "[class*='benefit']",
-            "[id*='feature']",
-            ".capabilities li",
-            ".services li",
+            ".features li",
+            ".feature-list li",
+            "[class*='feature'] li",
+            ".benefits li",
+            "ul.features li",
         ]
 
         for selector in feature_selectors:
-            elements = soup.select(selector)
-            for elem in elements[:20]:
-                # Get heading or strong text
-                heading = elem.select_one("h2, h3, h4, strong, b")
-                if heading:
-                    text = heading.get_text(strip=True)
-                    if text and 5 < len(text) < 100:
-                        features.append(text)
+            items = soup.select(selector)
+            for item in items[:20]:
+                text = item.get_text(strip=True)
+                if text and len(text) > 5 and len(text) < 200:
+                    features.append(text)
 
-        # Also look for list items in feature-like sections
-        feature_sections = soup.select("[class*='feature'], [class*='benefit']")
-        for section in feature_sections[:5]:
-            for li in section.select("li")[:10]:
-                text = li.get_text(strip=True)
-                if text and 5 < len(text) < 200:
-                    features.append(text[:100])
+        # Deduplicate
+        return list(dict.fromkeys(features))[:15]
 
-        return list(set(features))[:30]
+    def _find_pricing_links(self, soup: BeautifulSoup, base_domain: str) -> List[str]:
+        """Find links to pricing pages"""
+        pricing_urls = []
+
+        for link in soup.find_all("a", href=True):
+            href = link.get("href", "")
+            text = link.get_text(strip=True).lower()
+
+            if any(word in text for word in ["pricing", "plans", "price"]) or \
+               any(word in href.lower() for word in ["pricing", "plans", "price"]):
+                full_url = urljoin(base_domain, href)
+                if full_url not in pricing_urls:
+                    pricing_urls.append(full_url)
+
+        return pricing_urls
 
     def _extract_pricing(self, soup: BeautifulSoup) -> Optional[dict]:
-        """Extract pricing information from page."""
+        """Extract pricing information"""
         pricing = {
             "plans": [],
-            "has_free_tier": False,
             "currency": "USD",
         }
 
         # Look for pricing cards/tables
-        pricing_containers = soup.select(
-            "[class*='pricing'], [class*='plan'], [id*='pricing']"
-        )
+        price_patterns = [
+            r'\$(\d+(?:\.\d{2})?)',
+            r'(\d+(?:\.\d{2})?)\s*(?:USD|EUR|GBP)',
+        ]
 
-        for container in pricing_containers[:10]:
-            plan = {}
+        price_containers = soup.select("[class*='price'], [class*='plan'], [class*='tier']")
 
-            # Plan name
-            name_elem = container.select_one("h2, h3, .plan-name, [class*='title']")
-            if name_elem:
-                plan["name"] = name_elem.get_text(strip=True)
-
-            # Price
-            price_elem = container.select_one("[class*='price'], .amount")
-            if price_elem:
-                price_text = price_elem.get_text(strip=True)
-                plan["price_text"] = price_text
-
-                # Check for free tier
-                if any(word in price_text.lower() for word in ["free", "$0", "0/mo"]):
-                    pricing["has_free_tier"] = True
-
-                # Extract currency
-                if "$" in price_text:
-                    pricing["currency"] = "USD"
-                elif "€" in price_text:
-                    pricing["currency"] = "EUR"
-                elif "£" in price_text:
-                    pricing["currency"] = "GBP"
-
-            # Features for this plan
-            feature_list = container.select("li, .feature")
-            plan["features"] = [
-                f.get_text(strip=True)[:100]
-                for f in feature_list[:10]
-                if f.get_text(strip=True)
-            ]
-
-            if plan.get("name") or plan.get("price_text"):
-                pricing["plans"].append(plan)
+        for container in price_containers[:5]:
+            text = container.get_text(separator=" ", strip=True)
+            for pattern in price_patterns:
+                matches = re.findall(pattern, text)
+                if matches:
+                    pricing["plans"].append({
+                        "text": text[:200],
+                        "prices_found": matches[:3],
+                    })
+                    break
 
         return pricing if pricing["plans"] else None
 
-    def _extract_screenshots(self, soup: BeautifulSoup) -> list[str]:
-        """Extract screenshot/product image URLs."""
-        screenshots = []
-
-        # Look for app screenshots, product images
-        img_selectors = [
-            "img[class*='screenshot']",
-            "img[class*='product']",
-            "img[class*='preview']",
-            "img[alt*='screenshot']",
-            "[class*='gallery'] img",
-            "[class*='carousel'] img",
-        ]
-
-        for selector in img_selectors:
-            for img in soup.select(selector)[:10]:
-                src = img.get("src") or img.get("data-src")
-                if src and not any(skip in src.lower() for skip in ["icon", "logo", "avatar", "profile"]):
-                    screenshots.append(src)
-
-        # Deduplicate
-        return list(set(screenshots))[:10]
-
-    def _extract_testimonials(self, soup: BeautifulSoup) -> list[str]:
-        """Extract testimonials/reviews from page."""
+    def _extract_testimonials(self, soup: BeautifulSoup) -> List[str]:
+        """Extract testimonials/reviews"""
         testimonials = []
 
-        # Look for testimonial sections
-        testimonial_containers = soup.select(
-            "[class*='testimonial'], [class*='review'], [class*='quote'], blockquote"
-        )
+        selectors = [
+            ".testimonial",
+            ".review",
+            "[class*='testimonial']",
+            "blockquote",
+        ]
 
-        for container in testimonial_containers[:10]:
-            text = container.get_text(strip=True)
-            if text and 20 < len(text) < 500:
-                testimonials.append(text[:300])
+        for selector in selectors:
+            items = soup.select(selector)
+            for item in items[:5]:
+                text = item.get_text(strip=True)
+                if text and len(text) > 20 and len(text) < 500:
+                    testimonials.append(text)
 
         return testimonials[:5]
 
-    def _detect_technology(self, soup: BeautifulSoup) -> list[str]:
-        """Detect technology stack from page hints."""
-        tech_hints = []
-
-        # Check for common technology indicators in scripts/links
-        html = str(soup)
-
-        tech_patterns = {
-            "React": [r"react", r"_reactRoot"],
-            "Vue.js": [r"vue", r"__vue__"],
-            "Angular": [r"ng-app", r"angular"],
-            "Next.js": [r"__NEXT_DATA__", r"next/"],
-            "Nuxt.js": [r"__nuxt", r"nuxt"],
-            "Tailwind CSS": [r"tailwind"],
-            "Bootstrap": [r"bootstrap"],
-            "jQuery": [r"jquery"],
-            "WordPress": [r"wp-content", r"wordpress"],
-            "Shopify": [r"shopify", r"cdn.shopify"],
-            "Webflow": [r"webflow"],
-            "Stripe": [r"stripe\.js", r"stripe\.com"],
-            "Intercom": [r"intercom"],
-            "Segment": [r"segment\.com", r"analytics\.js"],
-            "Google Analytics": [r"google-analytics", r"gtag"],
-            "Hotjar": [r"hotjar"],
-            "Cloudflare": [r"cloudflare"],
-        }
-
-        for tech, patterns in tech_patterns.items():
-            for pattern in patterns:
-                if re.search(pattern, html, re.IGNORECASE):
-                    tech_hints.append(tech)
-                    break
-
-        return list(set(tech_hints))
-
-    def _extract_social_links(self, soup: BeautifulSoup) -> dict[str, str]:
-        """Extract social media links."""
-        social_links = {}
-
-        social_patterns = {
-            "twitter": r"twitter\.com/(\w+)",
-            "facebook": r"facebook\.com/(\w+)",
-            "linkedin": r"linkedin\.com/(company|in)/(\w+)",
-            "instagram": r"instagram\.com/(\w+)",
-            "youtube": r"youtube\.com/(c|channel|user)/(\w+)",
-            "github": r"github\.com/(\w+)",
-            "discord": r"discord\.(gg|com)",
-        }
+    def _extract_social_links(self, soup: BeautifulSoup) -> dict:
+        """Extract social media links"""
+        social = {}
+        platforms = ["twitter", "facebook", "linkedin", "instagram", "youtube", "github"]
 
         for link in soup.find_all("a", href=True):
-            href = link.get("href", "")
+            href = link.get("href", "").lower()
+            for platform in platforms:
+                if platform in href and platform not in social:
+                    social[platform] = link.get("href")
 
-            for platform, pattern in social_patterns.items():
-                if platform not in social_links:
-                    match = re.search(pattern, href, re.IGNORECASE)
-                    if match:
-                        social_links[platform] = href
-
-        return social_links
-
-    def _find_relevant_links(
-        self,
-        soup: BeautifulSoup,
-        base_domain: str,
-        visited: set[str]
-    ) -> list[str]:
-        """Find relevant subpages to crawl."""
-        relevant_links = []
-
-        # Priority keywords for relevant pages
-        priority_keywords = [
-            "pricing", "price", "plans",
-            "features", "capabilities",
-            "about", "company",
-            "testimonials", "reviews", "customers",
-            "faq", "help",
-        ]
-
-        for link in soup.find_all("a", href=True):
-            href = link.get("href", "")
-
-            # Skip external links, anchors, and already visited
-            if href.startswith("#") or href.startswith("mailto:") or href.startswith("tel:"):
-                continue
-
-            # Make absolute URL
-            if not href.startswith("http"):
-                href = urljoin(f"https://{base_domain}", href)
-
-            parsed = urlparse(href)
-
-            # Must be same domain
-            if parsed.netloc and parsed.netloc != base_domain:
-                continue
-
-            # Skip if already visited
-            if href in visited:
-                continue
-
-            # Prioritize relevant pages
-            href_lower = href.lower()
-            link_text = link.get_text(strip=True).lower()
-
-            for keyword in priority_keywords:
-                if keyword in href_lower or keyword in link_text:
-                    if href not in relevant_links:
-                        relevant_links.insert(0, href)  # Priority at front
-                    break
-            else:
-                if href not in relevant_links:
-                    relevant_links.append(href)
-
-        return relevant_links
-
-    def _is_pricing_page(self, url: str, soup: BeautifulSoup) -> bool:
-        """Check if this is a pricing page."""
-        url_lower = url.lower()
-        if any(kw in url_lower for kw in ["pricing", "price", "plans", "subscription"]):
-            return True
-
-        title = soup.find("title")
-        if title and any(kw in title.get_text().lower() for kw in ["pricing", "plans"]):
-            return True
-
-        return False
-
-    def _is_features_page(self, url: str, soup: BeautifulSoup) -> bool:
-        """Check if this is a features page."""
-        url_lower = url.lower()
-        if any(kw in url_lower for kw in ["features", "capabilities", "product"]):
-            return True
-
-        title = soup.find("title")
-        if title and any(kw in title.get_text().lower() for kw in ["features", "capabilities"]):
-            return True
-
-        return False
-
-    async def crawl(self, **kwargs) -> WebsiteCrawlResponse:
-        """Crawl a website."""
-        return await self.crawl_website(
-            url=kwargs["url"],
-            max_pages=kwargs.get("max_pages", 10),
-            include_subpages=kwargs.get("include_subpages", True),
-            extract_pricing=kwargs.get("extract_pricing", True),
-            extract_features=kwargs.get("extract_features", True),
-            force_refresh=kwargs.get("force_refresh", False),
-        )
+        return social
