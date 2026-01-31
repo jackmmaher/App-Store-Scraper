@@ -79,7 +79,13 @@ function processChildrenForHex(children: ReactNode): ReactNode {
     }
 
     // If it's a valid React element with children, recursively process
+    // BUT skip 'code' elements - they're already handled by the custom code renderer
     if (isValidElement(child) && child.props.children) {
+      // Skip code elements to avoid double-processing hex codes
+      if (child.type === 'code') {
+        return child;
+      }
+
       return cloneElement(child, {
         ...child.props,
         children: processChildrenForHex(child.props.children),
