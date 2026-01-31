@@ -510,14 +510,19 @@ export default function KeywordResearch({ initialQuery, initialCountry }: Keywor
         }
       }
 
+      // Wait a moment for DB writes to complete, then refresh
+      await new Promise(r => setTimeout(r, 500));
+
       // Refresh keywords list
-      fetchKeywords();
+      await fetchKeywords();
+
       // Refresh stats
-      fetch(`/api/keywords/stats?country=${filters.country}`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.success) setStats(data.data.stats);
-        });
+      const statsRes = await fetch(`/api/keywords/stats?country=${filters.country}`);
+      const statsData = await statsRes.json();
+      if (statsData.success) {
+        setStats(statsData.data.stats);
+        setRecentJobs(statsData.data.recentJobs || []);
+      }
     } catch (error) {
       console.error('Discovery error:', error);
       setDiscoveryProgress({
@@ -725,17 +730,35 @@ export default function KeywordResearch({ initialQuery, initialCountry }: Keywor
 
         {/* Discovery Progress */}
         {discoveryProgress && (
-          <div className="mt-4 p-3 bg-gray-50 rounded-md">
+          <div className={`mt-4 p-3 rounded-md ${
+            discoveryProgress.message.startsWith('Error')
+              ? 'bg-red-50 border border-red-200'
+              : discoveryProgress.message.startsWith('Complete') && discoveryProgress.discovered === 0
+                ? 'bg-yellow-50 border border-yellow-200'
+                : 'bg-gray-50'
+          }`}>
             <div className="flex items-center gap-4">
               {discovering && (
                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
               )}
-              <div>
-                <span className="font-medium">{discoveryProgress.message}</span>
+              <div className="flex-1">
+                <span className={`font-medium ${
+                  discoveryProgress.message.startsWith('Error') ? 'text-red-700' : ''
+                }`}>
+                  {discoveryProgress.message}
+                </span>
                 {discoveryProgress.discovered > 0 && (
                   <span className="text-gray-500 ml-2">
                     ({discoveryProgress.discovered} found, {discoveryProgress.scored} scored)
                   </span>
+                )}
+                {/* Help text for zero results */}
+                {!discovering && discoveryProgress.discovered === 0 && !discoveryProgress.message.startsWith('Error') && (
+                  <div className="text-sm text-yellow-700 mt-1">
+                    {discoveryMethod === 'autosuggest'
+                      ? 'Try a different seed keyword, or use a more general term (e.g., "photo" instead of "photo editor pro").'
+                      : 'This category may have limited data. Try a different category or use seed keyword expansion.'}
+                  </div>
                 )}
               </div>
             </div>

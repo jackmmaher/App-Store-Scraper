@@ -8,22 +8,36 @@ import { expandSeedKeyword } from './autosuggest';
 // Stop Words (shared with existing keyword extraction)
 // ============================================================================
 
+// Stop words for filtering - ONLY truly meaningless words
+// Note: We intentionally KEEP words like "free", "pro", "best" as they are valuable search modifiers
 const STOP_WORDS = new Set([
+  // Articles and basic connectors
   'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with',
   'by', 'from', 'as', 'is', 'was', 'are', 'were', 'been', 'be', 'have', 'has', 'had',
+  // Auxiliary verbs
   'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must',
-  'shall', 'can', 'need', 'it', 'its', 'this', 'that', 'these', 'those', 'i', 'me',
-  'my', 'we', 'our', 'you', 'your', 'he', 'him', 'his', 'she', 'her', 'they', 'them',
-  'their', 'what', 'which', 'who', 'when', 'where', 'why', 'how', 'all', 'each',
-  'every', 'both', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor', 'not',
-  'only', 'own', 'same', 'so', 'than', 'too', 'very', 'just', 'also', 'now', 'here',
-  'there', 'then', 'once', 'any', 'app', 'apps', 'really', 'much', 'many', 'get',
-  'got', 'use', 'used', 'using', 'like', 'dont', 'doesnt', 'cant', 'wont', 'one',
-  'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'year',
-  'years', 'day', 'days', 'time', 'times', 'week', 'weeks', 'month', 'months',
+  'shall', 'can', 'need',
+  // Pronouns
+  'it', 'its', 'this', 'that', 'these', 'those', 'i', 'me', 'my', 'we', 'our',
+  'you', 'your', 'he', 'him', 'his', 'she', 'her', 'they', 'them', 'their',
+  // Question words (but keep for phrases)
+  'what', 'which', 'who', 'when', 'where', 'why', 'how',
+  // Quantity words
+  'all', 'each', 'every', 'both', 'few', 'more', 'most', 'other', 'some', 'such',
+  'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 'just',
+  'also', 'now', 'here', 'there', 'then', 'once', 'any',
+  // Common verbs that don't add meaning alone
+  'really', 'much', 'many', 'get', 'got', 'use', 'used', 'using', 'like',
+  'dont', 'doesnt', 'cant', 'wont',
+  // Numbers (but keep for specific phrases)
+  'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
+  // Time words (generic)
+  'year', 'years', 'day', 'days', 'time', 'times', 'week', 'weeks', 'month', 'months',
+  // Filler words
   'thing', 'things', 'lot', 'way', 'point', 'please', 'thank', 'thanks', 'sorry',
-  'okay', 'ok', 'yes', 'no', 'yeah', 'sure', 'free', 'best', 'good', 'great', 'new',
-  'top', 'pro', 'lite', 'plus', 'premium', 'version',
+  'okay', 'ok', 'yes', 'yeah', 'sure',
+  // REMOVED: 'free', 'best', 'good', 'great', 'new', 'top', 'pro', 'lite', 'plus', 'premium', 'version'
+  // These are valuable ASO modifiers that users actually search for!
 ]);
 
 // ============================================================================
@@ -177,7 +191,43 @@ Example format: ["keyword one", "keyword two", "keyword three"]`;
 interface RSSApp {
   id: string;
   name: string;
+  summary?: string;
 }
+
+interface EnrichedApp {
+  id: string;
+  name: string;
+  subtitle?: string;
+  description?: string;
+}
+
+// Map category name to genre ID
+const CATEGORY_IDS: Record<string, number> = {
+  'books': 6018,
+  'business': 6000,
+  'developer-tools': 6026,
+  'education': 6017,
+  'entertainment': 6016,
+  'finance': 6015,
+  'food-drink': 6023,
+  'games': 6014,
+  'graphics-design': 6027,
+  'health-fitness': 6013,
+  'lifestyle': 6012,
+  'medical': 6020,
+  'music': 6011,
+  'navigation': 6010,
+  'news': 6009,
+  'photo-video': 6008,
+  'productivity': 6007,
+  'reference': 6006,
+  'shopping': 6024,
+  'social-networking': 6005,
+  'sports': 6004,
+  'travel': 6003,
+  'utilities': 6002,
+  'weather': 6001,
+};
 
 /**
  * Fetch top apps from a category via iTunes RSS
@@ -187,34 +237,6 @@ async function fetchCategoryApps(
   country: string = 'us',
   limit: number = 200
 ): Promise<RSSApp[]> {
-  // Map category name to genre ID
-  const CATEGORY_IDS: Record<string, number> = {
-    'books': 6018,
-    'business': 6000,
-    'developer-tools': 6026,
-    'education': 6017,
-    'entertainment': 6016,
-    'finance': 6015,
-    'food-drink': 6023,
-    'games': 6014,
-    'graphics-design': 6027,
-    'health-fitness': 6013,
-    'lifestyle': 6012,
-    'medical': 6020,
-    'music': 6011,
-    'navigation': 6010,
-    'news': 6009,
-    'photo-video': 6008,
-    'productivity': 6007,
-    'reference': 6006,
-    'shopping': 6024,
-    'social-networking': 6005,
-    'sports': 6004,
-    'travel': 6003,
-    'utilities': 6002,
-    'weather': 6001,
-  };
-
   const genreId = CATEGORY_IDS[category.toLowerCase()];
   if (!genreId) {
     console.error(`Unknown category: ${category}`);
@@ -240,16 +262,57 @@ async function fetchCategoryApps(
       const idObj = entry.id as Record<string, unknown> | undefined;
       const attrs = idObj?.attributes as Record<string, unknown> | undefined;
       const nameObj = entry['im:name'] as Record<string, unknown> | undefined;
+      const summaryObj = entry.summary as Record<string, unknown> | undefined;
 
       return {
         id: (attrs?.['im:id'] as string) || '',
         name: (nameObj?.label as string) || '',
+        summary: (summaryObj?.label as string) || '',
       };
     });
   } catch (error) {
     console.error('Error fetching category apps:', error);
     return [];
   }
+}
+
+/**
+ * Enrich apps with iTunes lookup data (subtitle, description)
+ */
+async function enrichAppsWithiTunes(
+  appIds: string[],
+  country: string = 'us'
+): Promise<Map<string, EnrichedApp>> {
+  const enriched = new Map<string, EnrichedApp>();
+
+  // Batch lookup (iTunes allows up to 200 IDs)
+  const batchSize = 100;
+  for (let i = 0; i < appIds.length; i += batchSize) {
+    const batch = appIds.slice(i, i + batchSize);
+    const url = `https://itunes.apple.com/lookup?id=${batch.join(',')}&country=${country}`;
+
+    try {
+      const response = await fetch(url);
+      if (!response.ok) continue;
+
+      const data = await response.json();
+      for (const app of data.results || []) {
+        enriched.set(app.trackId.toString(), {
+          id: app.trackId.toString(),
+          name: app.trackName || '',
+          subtitle: app.subtitle || '',
+          description: (app.description || '').slice(0, 500), // First 500 chars
+        });
+      }
+
+      // Rate limiting
+      await new Promise(r => setTimeout(r, 200));
+    } catch (error) {
+      console.error('Error enriching apps:', error);
+    }
+  }
+
+  return enriched;
 }
 
 /**
@@ -281,7 +344,58 @@ function extractNgrams(text: string, maxN: number = 3): string[] {
 }
 
 /**
+ * Extract keywords from text (names, subtitles, descriptions)
+ * More lenient version for category crawl
+ */
+function extractKeywordsFromText(text: string): string[] {
+  const normalized = text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const words = normalized.split(' ').filter((w) => w.length >= 2);
+  const keywords: string[] = [];
+
+  // Single meaningful words (3+ chars, not stop words)
+  for (const word of words) {
+    if (word.length >= 3 && !STOP_WORDS.has(word)) {
+      keywords.push(word);
+    }
+  }
+
+  // Bigrams (skip if both words are stop words)
+  for (let i = 0; i < words.length - 1; i++) {
+    const w1 = words[i];
+    const w2 = words[i + 1];
+    if (!STOP_WORDS.has(w1) || !STOP_WORDS.has(w2)) {
+      const bigram = `${w1} ${w2}`;
+      if (bigram.length >= 5) {
+        keywords.push(bigram);
+      }
+    }
+  }
+
+  // Trigrams
+  for (let i = 0; i < words.length - 2; i++) {
+    const w1 = words[i];
+    const w2 = words[i + 1];
+    const w3 = words[i + 2];
+    // At least one non-stop word
+    if (!STOP_WORDS.has(w1) || !STOP_WORDS.has(w2) || !STOP_WORDS.has(w3)) {
+      const trigram = `${w1} ${w2} ${w3}`;
+      if (trigram.length >= 7) {
+        keywords.push(trigram);
+      }
+    }
+  }
+
+  return keywords;
+}
+
+/**
  * Discover keywords by crawling top apps in a category
+ * Enhanced version with multiple data sources and smarter filtering
  */
 export async function discoverFromCategory(
   category: string,
@@ -289,41 +403,89 @@ export async function discoverFromCategory(
   apiKey?: string,
   onKeyword?: (keyword: DiscoveredKeyword) => void
 ): Promise<DiscoveredKeyword[]> {
-  // Fetch top apps
-  const apps = await fetchCategoryApps(category, country, 200);
+  // Fetch top apps from RSS
+  const rssApps = await fetchCategoryApps(category, country, 200);
 
-  if (apps.length === 0) {
+  if (rssApps.length === 0) {
+    console.log(`No apps found for category: ${category}`);
     return [];
   }
 
-  // Extract n-grams from all app names
-  const ngramCounts = new Map<string, number>();
+  console.log(`Found ${rssApps.length} apps in ${category}, enriching with iTunes data...`);
 
-  for (const app of apps) {
-    const ngrams = extractNgrams(app.name);
-    for (const ngram of ngrams) {
-      ngramCounts.set(ngram, (ngramCounts.get(ngram) || 0) + 1);
+  // Enrich with iTunes lookup data (subtitles, descriptions)
+  const appIds = rssApps.map(a => a.id).filter(Boolean);
+  const enrichedApps = await enrichAppsWithiTunes(appIds, country);
+
+  // Extract keywords from all sources
+  const keywordCounts = new Map<string, number>();
+  const keywordSources = new Map<string, Set<string>>(); // Track which apps use each keyword
+
+  for (const rssApp of rssApps) {
+    const enriched = enrichedApps.get(rssApp.id);
+
+    // Combine all text sources with different weights
+    const textSources = [
+      { text: rssApp.name, weight: 3 },           // App name is most important
+      { text: enriched?.subtitle || '', weight: 2 }, // Subtitle is ASO-optimized
+      { text: rssApp.summary || '', weight: 1 },    // RSS summary
+      { text: enriched?.description?.slice(0, 200) || '', weight: 1 }, // First 200 chars of description
+    ];
+
+    for (const source of textSources) {
+      if (!source.text) continue;
+
+      const keywords = extractKeywordsFromText(source.text);
+      for (const keyword of keywords) {
+        keywordCounts.set(keyword, (keywordCounts.get(keyword) || 0) + source.weight);
+
+        // Track which apps use this keyword
+        if (!keywordSources.has(keyword)) {
+          keywordSources.set(keyword, new Set());
+        }
+        keywordSources.get(keyword)!.add(rssApp.id);
+      }
     }
   }
 
-  // Filter to n-grams that appear at least twice
-  const frequentNgrams = Array.from(ngramCounts.entries())
-    .filter(([, count]) => count >= 2)
+  // Dynamic threshold based on category size
+  // For small categories, accept keywords appearing once
+  // For large categories, require more frequency
+  const minFrequency = rssApps.length > 100 ? 2 : 1;
+  const minApps = 1; // Keyword must appear in at least 1 app
+
+  // Filter and sort by weighted frequency
+  let candidateKeywords = Array.from(keywordCounts.entries())
+    .filter(([keyword, count]) => {
+      const appCount = keywordSources.get(keyword)?.size || 0;
+      return count >= minFrequency && appCount >= minApps && keyword.length >= 3;
+    })
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 200)
-    .map(([ngram]) => ngram);
+    .slice(0, 300) // Take top 300 candidates
+    .map(([keyword]) => keyword);
 
-  // If we have Claude API key, filter to valid search keywords
-  let validKeywords = frequentNgrams;
+  console.log(`Extracted ${candidateKeywords.length} candidate keywords from ${category}`);
 
-  if (apiKey && frequentNgrams.length > 0) {
-    validKeywords = await filterWithClaude(frequentNgrams, category, apiKey);
+  // Claude filtering is now OPTIONAL and LESS AGGRESSIVE
+  // Only use if we have too many candidates (>100) and API key is available
+  if (apiKey && candidateKeywords.length > 100) {
+    console.log(`Filtering ${candidateKeywords.length} keywords with Claude...`);
+    const filtered = await filterWithClaudeLenient(candidateKeywords.slice(0, 150), category, apiKey);
+    if (filtered.length > 0) {
+      candidateKeywords = filtered;
+    }
+    // If Claude returns empty, keep original candidates
   }
+
+  // Limit final output
+  const finalKeywords = candidateKeywords.slice(0, 100);
+
+  console.log(`Final ${finalKeywords.length} keywords for ${category}`);
 
   // Convert to discovered keywords
   const discovered: DiscoveredKeyword[] = [];
 
-  for (const kw of validKeywords) {
+  for (const kw of finalKeywords) {
     const item: DiscoveredKeyword = {
       keyword: kw,
       discovered_via: 'category_crawl',
@@ -340,31 +502,35 @@ export async function discoverFromCategory(
 }
 
 /**
- * Use Claude to filter n-grams to valid search keywords
+ * Use Claude to filter n-grams to valid search keywords (LENIENT version)
+ * Only removes obvious non-keywords, keeps most terms
  */
-async function filterWithClaude(
+async function filterWithClaudeLenient(
   terms: string[],
   category: string,
   apiKey: string
 ): Promise<string[]> {
-  const prompt = `Filter this list to only valid App Store search keywords for the "${category}" category.
+  const prompt = `You are filtering potential App Store search keywords for the "${category}" category.
 
-Remove:
-- Brand names and trademarked terms
-- Single letters or very short words
-- Common words that aren't search keywords
-- Nonsense or incomplete phrases
+BE LENIENT - when in doubt, KEEP the keyword. Users search for all kinds of terms.
 
-Keep:
-- Feature keywords (e.g., "photo editor")
-- Use-case keywords (e.g., "budget tracker")
-- App type keywords (e.g., "calculator app")
-- Action keywords (e.g., "scan documents")
+ONLY remove terms that are:
+- Obviously a specific brand name (e.g., "Facebook", "Instagram") - but keep generic brand-like terms
+- Completely meaningless (random letters, single characters)
+- Clearly incomplete fragments that no one would search for
 
-Terms to filter:
+KEEP everything else including:
+- Feature keywords (e.g., "photo editor", "scanner")
+- Generic descriptors (e.g., "free", "pro", "best") when combined with other words
+- Use-case phrases (e.g., "track expenses", "edit photos")
+- Single meaningful words (e.g., "calculator", "timer", "notes")
+- Compound terms even if unusual
+
+Input keywords (${terms.length} total):
 ${JSON.stringify(terms)}
 
-Return ONLY a JSON array of valid keywords. No explanations.`;
+Return a JSON array with the FILTERED keywords. Keep at least 70% of the input if they are reasonable search terms.
+Return ONLY the JSON array, no explanations.`;
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -376,14 +542,14 @@ Return ONLY a JSON array of valid keywords. No explanations.`;
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 2000,
+        max_tokens: 4000,
         messages: [{ role: 'user', content: prompt }],
       }),
     });
 
     if (!response.ok) {
       console.error('Claude API error:', response.status);
-      return terms.slice(0, 50); // Fallback to top 50 unfiltered
+      return terms; // Return all terms on error
     }
 
     const data = await response.json();
@@ -391,14 +557,35 @@ Return ONLY a JSON array of valid keywords. No explanations.`;
 
     const jsonMatch = content.match(/\[[\s\S]*\]/);
     if (!jsonMatch) {
-      return terms.slice(0, 50);
+      console.error('No JSON array in Claude response');
+      return terms;
     }
 
-    return JSON.parse(jsonMatch[0]);
+    const filtered = JSON.parse(jsonMatch[0]);
+
+    // If Claude filtered too aggressively (less than 30% remaining), return original
+    if (filtered.length < terms.length * 0.3) {
+      console.warn(`Claude filtered too aggressively (${filtered.length}/${terms.length}), using original`);
+      return terms;
+    }
+
+    return filtered;
   } catch (error) {
     console.error('Error filtering with Claude:', error);
-    return terms.slice(0, 50);
+    return terms;
   }
+}
+
+/**
+ * Use Claude to filter n-grams to valid search keywords (STRICT version - legacy)
+ */
+async function filterWithClaude(
+  terms: string[],
+  category: string,
+  apiKey: string
+): Promise<string[]> {
+  // Use lenient version by default
+  return filterWithClaudeLenient(terms, category, apiKey);
 }
 
 // ============================================================================
