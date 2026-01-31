@@ -136,18 +136,44 @@ export async function POST(request: NextRequest) {
     // Auto-select color palette for color-related sections if not already set
     let colorPalette = blueprint.color_palette;
     if (COLOR_SECTIONS.includes(section) && !colorPalette?.colors?.length) {
-      // Select palette based on app category
       const category = project.app_primary_genre || '';
-      const selectedPalette = CATEGORY_PALETTES[category] || DEFAULT_PALETTE;
+      console.log(`[Blueprint] No palette set, auto-selecting for category "${category}"...`);
 
-      console.log(`[Blueprint] Auto-selecting palette for category "${category}":`, selectedPalette.colors);
+      // Try to fetch from Coolors via our API
+      let selectedPalette: BlueprintColorPalette | null = null;
+      try {
+        const palettesResponse = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/blueprint/palettes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ category, max_palettes: 1 }),
+        });
+
+        if (palettesResponse.ok) {
+          const data = await palettesResponse.json();
+          if (data.palettes?.[0]) {
+            selectedPalette = {
+              colors: data.palettes[0].colors,
+              mood: data.palettes[0].mood,
+              source_url: data.palettes[0].source_url,
+            };
+            console.log(`[Blueprint] Selected Coolors palette:`, selectedPalette.colors);
+          }
+        }
+      } catch (error) {
+        console.error('[Blueprint] Failed to fetch Coolors palettes:', error);
+      }
+
+      // Fallback to category-based palette if Coolors failed
+      if (!selectedPalette) {
+        selectedPalette = CATEGORY_PALETTES[category] || DEFAULT_PALETTE;
+        console.log(`[Blueprint] Using fallback palette for "${category}":`, selectedPalette.colors);
+      }
 
       // Save the auto-selected palette to the database
       const updated = await updateBlueprintPalette(blueprintId, selectedPalette, 'auto');
       if (updated) {
         colorPalette = updated.color_palette;
       } else {
-        // Use in memory if save failed
         colorPalette = selectedPalette;
       }
     }

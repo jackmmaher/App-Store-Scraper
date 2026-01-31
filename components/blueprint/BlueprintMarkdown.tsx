@@ -2,14 +2,15 @@
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ReactNode } from 'react';
+import { ReactNode, Children, isValidElement, cloneElement } from 'react';
 
 interface BlueprintMarkdownProps {
   content: string;
 }
 
-// Regex to match hex color codes: #XXXXXX or #XXX
-const HEX_PATTERN = /#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})\b/g;
+// Regex to match hex color codes: #XXXXXX or #XXX (with word boundaries that work)
+// This pattern matches # followed by exactly 6 or 3 hex chars, not followed by more hex chars
+const HEX_PATTERN = /#([A-Fa-f0-9]{6})(?![A-Fa-f0-9])|#([A-Fa-f0-9]{3})(?![A-Fa-f0-9])/g;
 
 /**
  * Custom markdown renderer that displays hex color codes as inline swatches
@@ -28,7 +29,7 @@ export function BlueprintMarkdown({ content }: BlueprintMarkdownProps) {
             return (
               <span className="inline-flex items-center gap-1">
                 <span
-                  className="inline-block w-4 h-4 rounded border border-gray-300 dark:border-gray-600 align-middle"
+                  className="inline-block w-4 h-4 rounded border border-gray-300 dark:border-gray-600 align-middle flex-shrink-0"
                   style={{ backgroundColor: text }}
                   title={text}
                 />
@@ -47,20 +48,19 @@ export function BlueprintMarkdown({ content }: BlueprintMarkdownProps) {
           );
         },
 
-        // Custom paragraph renderer to catch hex codes in plain text
-        p: ({ children, ...props }) => {
-          return <p {...props}>{processChildrenForHex(children)}</p>;
-        },
-
-        // Custom table cell renderer
-        td: ({ children, ...props }) => {
-          return <td {...props}>{processChildrenForHex(children)}</td>;
-        },
-
-        // Custom list item renderer
-        li: ({ children, ...props }) => {
-          return <li {...props}>{processChildrenForHex(children)}</li>;
-        },
+        // Process all text-containing elements
+        p: ({ children, ...props }) => <p {...props}>{processChildrenForHex(children)}</p>,
+        td: ({ children, ...props }) => <td {...props}>{processChildrenForHex(children)}</td>,
+        th: ({ children, ...props }) => <th {...props}>{processChildrenForHex(children)}</th>,
+        li: ({ children, ...props }) => <li {...props}>{processChildrenForHex(children)}</li>,
+        strong: ({ children, ...props }) => <strong {...props}>{processChildrenForHex(children)}</strong>,
+        em: ({ children, ...props }) => <em {...props}>{processChildrenForHex(children)}</em>,
+        h1: ({ children, ...props }) => <h1 {...props}>{processChildrenForHex(children)}</h1>,
+        h2: ({ children, ...props }) => <h2 {...props}>{processChildrenForHex(children)}</h2>,
+        h3: ({ children, ...props }) => <h3 {...props}>{processChildrenForHex(children)}</h3>,
+        h4: ({ children, ...props }) => <h4 {...props}>{processChildrenForHex(children)}</h4>,
+        h5: ({ children, ...props }) => <h5 {...props}>{processChildrenForHex(children)}</h5>,
+        h6: ({ children, ...props }) => <h6 {...props}>{processChildrenForHex(children)}</h6>,
       }}
     >
       {content}
@@ -69,23 +69,26 @@ export function BlueprintMarkdown({ content }: BlueprintMarkdownProps) {
 }
 
 /**
- * Process children to find and render hex codes with swatches
+ * Recursively process children to find and render hex codes with swatches
  */
 function processChildrenForHex(children: ReactNode): ReactNode {
-  if (typeof children === 'string') {
-    return renderHexWithSwatches(children);
-  }
+  return Children.map(children, (child) => {
+    // If it's a string, process for hex codes
+    if (typeof child === 'string') {
+      return renderHexWithSwatches(child);
+    }
 
-  if (Array.isArray(children)) {
-    return children.map((child, i) => {
-      if (typeof child === 'string') {
-        return <span key={i}>{renderHexWithSwatches(child)}</span>;
-      }
-      return child;
-    });
-  }
+    // If it's a valid React element with children, recursively process
+    if (isValidElement(child) && child.props.children) {
+      return cloneElement(child, {
+        ...child.props,
+        children: processChildrenForHex(child.props.children),
+      });
+    }
 
-  return children;
+    // Return as-is
+    return child;
+  });
 }
 
 /**
@@ -94,26 +97,28 @@ function processChildrenForHex(children: ReactNode): ReactNode {
 function renderHexWithSwatches(text: string): ReactNode {
   const parts: ReactNode[] = [];
   let lastIndex = 0;
-  let match;
 
   // Reset regex state
   HEX_PATTERN.lastIndex = 0;
 
+  let match;
   while ((match = HEX_PATTERN.exec(text)) !== null) {
     // Add text before the match
     if (match.index > lastIndex) {
       parts.push(text.slice(lastIndex, match.index));
     }
 
+    // Get the full hex code (either 6-digit or 3-digit)
     const hex = match[0];
+
     parts.push(
-      <span key={match.index} className="inline-flex items-center gap-1">
+      <span key={`${match.index}-${hex}`} className="inline-flex items-center gap-1 mx-0.5">
         <span
-          className="inline-block w-3.5 h-3.5 rounded border border-gray-300 dark:border-gray-600 align-middle"
+          className="inline-block w-4 h-4 rounded border border-gray-300 dark:border-gray-600 align-middle flex-shrink-0"
           style={{ backgroundColor: hex }}
           title={hex}
         />
-        <code className="text-xs font-mono bg-gray-100 dark:bg-gray-800 px-1 rounded">
+        <code className="text-xs font-mono bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">
           {hex}
         </code>
       </span>
@@ -127,5 +132,10 @@ function renderHexWithSwatches(text: string): ReactNode {
     parts.push(text.slice(lastIndex));
   }
 
-  return parts.length === 1 ? parts[0] : parts;
+  // Return original text if no hex codes found
+  if (parts.length === 0) {
+    return text;
+  }
+
+  return parts.length === 1 ? parts[0] : <>{parts}</>;
 }
