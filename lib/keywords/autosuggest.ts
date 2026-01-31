@@ -61,7 +61,28 @@ export async function fetchAutosuggestHints(
       return [];
     }
 
-    const data = await response.json();
+    // Check content type - Apple sometimes returns XML error pages
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('xml') || contentType.includes('html')) {
+      console.warn(`Autosuggest returned non-JSON (${contentType}) for term: ${term}`);
+      return [];
+    }
+
+    const text = await response.text();
+
+    // Check if response looks like XML/HTML
+    if (text.startsWith('<?xml') || text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
+      console.warn(`Autosuggest returned XML/HTML for term: ${term}`);
+      return [];
+    }
+
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      console.warn(`Autosuggest returned invalid JSON for term: ${term}`);
+      return [];
+    }
 
     // Apple returns { hints: [{ term, priority?, ... }, ...] }
     const hints = data?.hints || [];
@@ -157,7 +178,20 @@ export async function extractKeywordsFromiTunesSearch(
     const response = await rateLimitedFetch(url);
     if (!response.ok) return [];
 
-    const data = await response.json();
+    const text = await response.text();
+    if (text.startsWith('<?xml') || text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
+      console.warn('iTunes search returned XML/HTML instead of JSON');
+      return [];
+    }
+
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      console.warn('iTunes search returned invalid JSON');
+      return [];
+    }
+
     const apps = data.results || [];
 
     // Extract keywords from app names and subtitles
