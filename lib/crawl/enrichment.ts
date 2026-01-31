@@ -365,3 +365,180 @@ export function createEnrichmentHeader(
     ? `## Enriched Context\n*Data sources: ${parts.join(', ')}*\n`
     : '';
 }
+
+// ============================================================================
+// Color Palette Enrichment
+// ============================================================================
+
+export interface ColorPalette {
+  colors: string[];
+  name?: string;
+  mood?: string;
+  likes?: number;
+  source_url?: string;
+}
+
+export interface PaletteResponse {
+  palettes: ColorPalette[];
+  prompt_text: string;
+  total_cached?: number;
+  category?: string;
+  mood?: string;
+}
+
+/**
+ * Fetch curated color palettes for Design System generation
+ *
+ * @param category - App Store category (e.g., "Health & Fitness")
+ * @param mood - Optional explicit mood (professional, playful, calm, bold, warm, cool)
+ * @param maxPalettes - Number of palettes to return
+ * @returns Formatted markdown string with palette options
+ */
+export async function getColorPalettesForDesignSystem(
+  category?: string,
+  mood?: string,
+  maxPalettes: number = 5
+): Promise<string> {
+  const orchestrator = getCrawlOrchestrator();
+
+  // Check if crawl service is available
+  const isAvailable = await orchestrator.isAvailable();
+  if (!isAvailable) {
+    console.log('Crawl service unavailable, using fallback palettes');
+    return getFallbackPalettes(category);
+  }
+
+  try {
+    const baseUrl = orchestrator.getBaseUrl();
+    const response = await fetch(`${baseUrl}/crawl/palettes`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        category,
+        mood,
+        max_palettes: maxPalettes,
+        force_refresh: false,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('Palette fetch failed:', response.status);
+      return getFallbackPalettes(category);
+    }
+
+    const data: PaletteResponse = await response.json();
+
+    if (data.prompt_text) {
+      return data.prompt_text;
+    }
+
+    // Format palettes manually if prompt_text not provided
+    return formatPalettesForPrompt(data.palettes, maxPalettes);
+  } catch (error) {
+    console.error('Error fetching palettes:', error);
+    return getFallbackPalettes(category);
+  }
+}
+
+/**
+ * Format palette data for prompt inclusion
+ */
+function formatPalettesForPrompt(palettes: ColorPalette[], max: number): string {
+  if (!palettes || palettes.length === 0) {
+    return '';
+  }
+
+  const lines = ['## Curated Color Palettes (from Coolors.co Trending)', ''];
+  lines.push(
+    'Select ONE palette below or derive colors inspired by these. Do NOT invent generic colors.'
+  );
+  lines.push('');
+
+  for (let i = 0; i < Math.min(palettes.length, max); i++) {
+    const p = palettes[i];
+    const colorsStr = p.colors.map((c) => `\`#${c}\``).join(' | ');
+    const moodStr = p.mood ? ` (${p.mood})` : '';
+    lines.push(`**Palette ${i + 1}**${moodStr}: ${colorsStr}`);
+    if (p.source_url) {
+      lines.push(`  Source: ${p.source_url}`);
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Fallback palettes when crawl service is unavailable
+ * Curated high-quality palettes with category matching
+ */
+function getFallbackPalettes(category?: string): string {
+  // Curated palettes organized by mood
+  const palettes: Record<string, ColorPalette[]> = {
+    professional: [
+      { colors: ['264653', '2A9D8F', 'E9C46A', 'F4A261', 'E76F51'], mood: 'professional' },
+      { colors: ['003049', 'D62828', 'F77F00', 'FCBF49', 'EAE2B7'], mood: 'professional' },
+      { colors: ['1D3557', '457B9D', 'A8DADC', 'F1FAEE', 'E63946'], mood: 'professional' },
+    ],
+    calm: [
+      { colors: ['606C38', '283618', 'FEFAE0', 'DDA15E', 'BC6C25'], mood: 'calm' },
+      { colors: ['CCD5AE', 'E9EDC9', 'FEFAE0', 'FAEDCD', 'D4A373'], mood: 'calm' },
+      { colors: ['F8F9FA', 'E9ECEF', 'DEE2E6', 'CED4DA', 'ADB5BD'], mood: 'calm' },
+    ],
+    playful: [
+      { colors: ['FF6B6B', '4ECDC4', '45B7D1', '96CEB4', 'FFEAA7'], mood: 'playful' },
+      { colors: ['F72585', 'B5179E', '7209B7', '560BAD', '480CA8'], mood: 'playful' },
+      { colors: ['FFBE0B', 'FB5607', 'FF006E', '8338EC', '3A86FF'], mood: 'playful' },
+    ],
+    dark: [
+      { colors: ['0D1B2A', '1B263B', '415A77', '778DA9', 'E0E1DD'], mood: 'dark' },
+      { colors: ['14213D', 'FCA311', 'E5E5E5', '000000', 'FFFFFF'], mood: 'dark' },
+      { colors: ['212529', '343A40', '495057', '6C757D', 'ADB5BD'], mood: 'dark' },
+    ],
+    warm: [
+      { colors: ['D4A373', 'CCD5AE', 'E9EDC9', 'FEFAE0', 'FAEDCD'], mood: 'warm' },
+      { colors: ['BC6C25', 'DDA15E', 'FEFAE0', '283618', '606C38'], mood: 'warm' },
+    ],
+    cool: [
+      { colors: ['03045E', '0077B6', '00B4D8', '90E0EF', 'CAF0F8'], mood: 'cool' },
+      { colors: ['184E77', '1E6091', '1A759F', '168AAD', '34A0A4'], mood: 'cool' },
+    ],
+  };
+
+  // Map category to preferred moods
+  const categoryMoodMap: Record<string, string[]> = {
+    Finance: ['professional', 'dark'],
+    Business: ['professional', 'dark'],
+    Productivity: ['professional', 'calm'],
+    'Health & Fitness': ['calm', 'cool'],
+    Medical: ['calm', 'professional'],
+    Entertainment: ['playful', 'warm'],
+    Games: ['playful', 'dark'],
+    'Social Networking': ['playful', 'warm'],
+    Education: ['calm', 'cool'],
+    Utilities: ['professional', 'dark'],
+    Shopping: ['warm', 'playful'],
+    'Food & Drink': ['warm', 'playful'],
+    Travel: ['warm', 'playful'],
+  };
+
+  // Select palettes based on category
+  const preferredMoods = category
+    ? categoryMoodMap[category] || ['professional', 'calm']
+    : ['professional', 'calm', 'playful'];
+
+  const selected: ColorPalette[] = [];
+  for (const mood of preferredMoods) {
+    if (palettes[mood]) {
+      selected.push(...palettes[mood].slice(0, 2));
+    }
+  }
+
+  if (selected.length === 0) {
+    selected.push(...palettes.professional, ...palettes.calm.slice(0, 2));
+  }
+
+  return formatPalettesForPrompt(selected.slice(0, 5), 5);
+}

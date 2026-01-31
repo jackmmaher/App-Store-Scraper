@@ -1,5 +1,5 @@
 import { AppProject, BlueprintAttachment, Review } from './supabase';
-import { getEnrichmentForBlueprint } from '@/lib/crawl';
+import { getEnrichmentForBlueprint, getColorPalettesForDesignSystem } from '@/lib/crawl';
 
 // =============================================================================
 // DESIGN PHILOSOPHY PREAMBLE
@@ -528,10 +528,16 @@ Format your response in clean Markdown with proper headings and tables.`;
 export function getDesignSystemPrompt(
   project: AppProject,
   paretoStrategy: string,
-  appIdentity: string
+  appIdentity: string,
+  curatedPalettes?: string // Optional: Curated palettes from Coolors
 ): string {
   const notesSection = project.notes && project.notes.trim()
     ? `\n## Researcher's Notes\n${project.notes}\n`
+    : '';
+
+  // Palette section - use provided palettes or empty
+  const paletteSection = curatedPalettes
+    ? `\n${curatedPalettes}\n\n**IMPORTANT:** You MUST select colors from the curated palettes above. Do NOT invent generic colors. These palettes are professionally curated and matched to this app's category.\n`
     : '';
 
   return `You are a senior UI/UX designer specializing in native iOS design systems. Based on the Pareto Strategy and App Identity below, create a comprehensive Design System specification.
@@ -539,7 +545,7 @@ export function getDesignSystemPrompt(
 ${DESIGN_PHILOSOPHY}
 
 ${DESIGN_SYSTEM_ANTI_SLOP}
-
+${paletteSection}
 ---
 
 **IMPORTANT: Native iOS Design**
@@ -1833,9 +1839,35 @@ export async function getBlueprintPromptWithEnrichment(
   },
   attachments: BlueprintAttachment[] = []
 ): Promise<string> {
-  // Only pareto needs enrichment currently - other sections use its output
+  // Pareto needs review/reddit enrichment
   if (section === 'pareto') {
     return getParetoStrategyPromptWithEnrichment(project);
+  }
+
+  // Design System needs curated color palettes
+  if (section === 'design_system') {
+    if (!previousSections.paretoStrategy || !previousSections.appIdentity) {
+      throw new Error('Pareto Strategy and App Identity are required before generating Design System');
+    }
+
+    // Fetch curated palettes based on app category
+    let palettes = '';
+    try {
+      palettes = await getColorPalettesForDesignSystem(
+        project.app_primary_genre || undefined,
+        undefined, // Let the system choose mood based on category
+        5
+      );
+    } catch (error) {
+      console.error('Error fetching palettes for design system:', error);
+    }
+
+    return getDesignSystemPrompt(
+      project,
+      previousSections.paretoStrategy,
+      previousSections.appIdentity,
+      palettes
+    );
   }
 
   // For all other sections, use the standard sync function

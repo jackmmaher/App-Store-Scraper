@@ -8,7 +8,7 @@ import {
   getBlueprintSectionAttachments,
   type BlueprintSection,
 } from '@/lib/supabase';
-import { getBlueprintPrompt, getBuildManifestPrompt } from '@/lib/blueprint-prompts';
+import { getBlueprintPrompt, getBlueprintPromptWithEnrichment, getBuildManifestPrompt } from '@/lib/blueprint-prompts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -86,26 +86,47 @@ export async function POST(request: NextRequest) {
       : [];
 
     // Build prompt - manifest uses a different prompt function
-    const prompt = section === 'manifest'
-      ? getBuildManifestPrompt(
-          project.app_name,
-          blueprint.pareto_strategy!,
-          blueprint.ui_wireframes!,
-          blueprint.tech_stack!
-        )
-      : getBlueprintPrompt(
-          section as 'pareto' | 'identity' | 'design_system' | 'wireframes' | 'tech_stack' | 'xcode_setup' | 'prd' | 'aso',
-          project,
-          {
-            paretoStrategy: blueprint.pareto_strategy || undefined,
-            appIdentity: blueprint.app_identity || undefined,
-            designSystem: blueprint.design_system || undefined,
-            uiWireframes: blueprint.ui_wireframes || undefined,
-            techStack: blueprint.tech_stack || undefined,
-            prd: blueprint.prd_content || undefined,
-          },
-          attachments
-        );
+    // For pareto and design_system, use async version with enrichment (palettes, reviews, etc.)
+    const sectionsNeedingEnrichment = ['pareto', 'design_system'];
+    let prompt: string;
+
+    if (section === 'manifest') {
+      prompt = getBuildManifestPrompt(
+        project.app_name,
+        blueprint.pareto_strategy!,
+        blueprint.ui_wireframes!,
+        blueprint.tech_stack!
+      );
+    } else if (sectionsNeedingEnrichment.includes(section)) {
+      // Use async version with enrichment (color palettes for design_system, reviews for pareto)
+      prompt = await getBlueprintPromptWithEnrichment(
+        section as 'pareto' | 'identity' | 'design_system' | 'wireframes' | 'tech_stack' | 'xcode_setup' | 'prd' | 'aso',
+        project,
+        {
+          paretoStrategy: blueprint.pareto_strategy || undefined,
+          appIdentity: blueprint.app_identity || undefined,
+          designSystem: blueprint.design_system || undefined,
+          uiWireframes: blueprint.ui_wireframes || undefined,
+          techStack: blueprint.tech_stack || undefined,
+          prd: blueprint.prd_content || undefined,
+        },
+        attachments
+      );
+    } else {
+      prompt = getBlueprintPrompt(
+        section as 'pareto' | 'identity' | 'design_system' | 'wireframes' | 'tech_stack' | 'xcode_setup' | 'prd' | 'aso',
+        project,
+        {
+          paretoStrategy: blueprint.pareto_strategy || undefined,
+          appIdentity: blueprint.app_identity || undefined,
+          designSystem: blueprint.design_system || undefined,
+          uiWireframes: blueprint.ui_wireframes || undefined,
+          techStack: blueprint.tech_stack || undefined,
+          prd: blueprint.prd_content || undefined,
+        },
+        attachments
+      );
+    }
 
     // Update status to generating
     await updateBlueprintSectionStatus(blueprintId, section, 'generating');

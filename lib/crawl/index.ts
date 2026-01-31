@@ -20,6 +20,7 @@ export {
   getRedditEnrichmentForTrends,
   getWebsiteEnrichmentForCompetitors,
   getEnrichmentForBlueprint,
+  getColorPalettesForDesignSystem,
   extractKeyComplaints,
   extractFeatureRequests,
   extractRedditThemes,
@@ -29,6 +30,9 @@ export {
   formatAsCollapsible,
   createEnrichmentHeader,
 } from './enrichment';
+
+// Re-export palette types
+export type { ColorPalette, PaletteResponse } from './enrichment';
 
 // Re-export cache utilities
 export {

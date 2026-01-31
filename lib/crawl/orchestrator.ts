@@ -53,6 +53,13 @@ export class CrawlOrchestrator {
   }
 
   /**
+   * Get the base URL for the crawl service
+   */
+  getBaseUrl(): string {
+    return CRAWL_SERVICE_URL;
+  }
+
+  /**
    * Check if crawl service is available
    */
   async isAvailable(): Promise<boolean> {
