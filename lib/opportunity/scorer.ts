@@ -30,6 +30,7 @@ import {
   estimateDevelopmentEffort,
 } from './dimension-calculators';
 import { fetchTrendData, fetchPainPointSignals } from './trend-fetcher';
+import { analyzeCompetitorReviews, shouldAnalyzeReviews } from './review-analyzer';
 import { getAutosuggestData } from '../keywords/autosuggest';
 import { upsertApps, AppResult } from '../supabase';
 
@@ -419,6 +420,30 @@ export async function scoreOpportunity(
   // Calculate market estimates from top apps
   const marketEstimates = calculateMarketEstimates(top10Apps);
 
+  // Analyze competitor reviews for sentiment (only if apps have enough reviews)
+  let reviewSentiment = null;
+  if (shouldAnalyzeReviews(top10Apps)) {
+    try {
+      const sentimentResult = await analyzeCompetitorReviews(top10Apps, country, 3);
+      reviewSentiment = {
+        total_critical_reviews: sentimentResult.total_critical_reviews,
+        apps_analyzed: sentimentResult.apps_analyzed,
+        complaint_themes: sentimentResult.complaint_themes,
+        top_complaints: sentimentResult.top_complaints,
+        opportunity_signals: sentimentResult.opportunity_signals,
+        sample_reviews: sentimentResult.sample_reviews.map(r => ({
+          title: r.title,
+          content: r.content,
+          rating: r.rating,
+          app_name: r.app_name,
+        })),
+      };
+    } catch (error) {
+      console.error('Error analyzing competitor reviews:', error);
+      // Continue without review sentiment - it's optional enrichment
+    }
+  }
+
   // Build raw data object
   const rawData: OpportunityRawData = {
     itunes: {
@@ -445,6 +470,7 @@ export async function scoreOpportunity(
     } : null,
     category_data: categoryData,
     market_estimates: marketEstimates,
+    review_sentiment: reviewSentiment,
   };
 
   // Calculate all dimension scores

@@ -153,6 +153,26 @@ export interface OpportunityRawData {
     monthly_revenue_high: number;
     market_size_tier: 'tiny' | 'small' | 'medium' | 'large' | 'massive';
   };
+
+  // Review sentiment analysis (from competitor 1-2★ reviews)
+  review_sentiment: {
+    total_critical_reviews: number;
+    apps_analyzed: number;
+    complaint_themes: Array<{
+      theme: string;
+      count: number;
+      severity: 'high' | 'medium' | 'low';
+      examples: string[];
+    }>;
+    top_complaints: string[];
+    opportunity_signals: string[];
+    sample_reviews: Array<{
+      title: string;
+      content: string;
+      rating: number;
+      app_name: string;
+    }>;
+  } | null;
 }
 
 export interface TopAppData {
