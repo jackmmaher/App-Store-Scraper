@@ -2,6 +2,32 @@ import { AppProject, BlueprintAttachment, Review, BlueprintColorPalette } from '
 import { getEnrichmentForBlueprint, getColorPalettesForDesignSystem } from '@/lib/crawl';
 import { getKeywordsBySourceApp } from '@/lib/keywords/db';
 
+/**
+ * Extract the chosen app name from the App Identity markdown content.
+ * Used by downstream sections to reference the correct app name.
+ */
+export function extractAppNameFromIdentity(identityContent: string): string | null {
+  // Pattern 1: Look for "**App Name:** Name" format (our standard output)
+  const pattern1 = identityContent.match(/\*\*App Name:\*\*\s*([^\n*]+)/i);
+  if (pattern1?.[1]?.trim()) {
+    return pattern1[1].trim();
+  }
+
+  // Pattern 2: Look for "Chosen App Name" heading followed by name
+  const pattern2 = identityContent.match(/###?\s*(?:\d+\.)?\s*Chosen App Name[\s\S]*?\*\*App Name:\*\*\s*([^\n*]+)/i);
+  if (pattern2?.[1]?.trim()) {
+    return pattern2[1].trim();
+  }
+
+  // Pattern 3: Look for table format "| App Name | Name |"
+  const pattern3 = identityContent.match(/\|\s*App Name\s*\|\s*([^|]+)/i);
+  if (pattern3?.[1]?.trim()) {
+    return pattern3[1].trim();
+  }
+
+  return null;
+}
+
 // Format stored palette for prompt injection
 function formatStoredPalette(palette: BlueprintColorPalette | null | undefined): string {
   if (!palette?.colors?.length) return '';
@@ -520,9 +546,9 @@ Provide a detailed rationale for this name choice:
 ${availabilitySection}`
     : `### 1. App Name
 
-Decide on ONE app name. Do not provide options - make a decisive choice:
+**CRITICAL:** You MUST declare exactly ONE app name. Do NOT present multiple options, alternatives, or "Option A/B/C" lists. This name will be used throughout the entire blueprint (Design System, Wireframes, Tech Stack, Xcode Setup, PRD, ASO).
 
-**App Name:** [Your chosen name]
+**App Name:** [Your single definitive name choice]
 
 Provide a detailed rationale for this name choice:
 - Why it works for this app's value proposition
@@ -652,6 +678,9 @@ export function getDesignSystemPrompt(
     paletteSection = `\n${curatedPalettes}\n\n**IMPORTANT:** You MUST select colors from the curated palettes above. Do NOT invent generic colors. These palettes are professionally curated and matched to this app's category.\n`;
   }
 
+  // Extract the chosen app name from identity (this is OUR app, not the competitor)
+  const chosenAppName = extractAppNameFromIdentity(appIdentity) || 'Your App';
+
   return `You are a senior UI/UX designer specializing in native iOS design systems. Based on the Pareto Strategy and App Identity below, create a comprehensive Design System specification.
 
 ${DESIGN_PHILOSOPHY}
@@ -665,8 +694,9 @@ All design recommendations must follow Apple's Human Interface Guidelines and us
 
 ## App Context
 
-**App Name:** ${project.app_name}
+**Your App Name:** ${chosenAppName}
 **Category:** ${project.app_primary_genre || 'Unknown'}
+**Competitor Researched:** ${project.app_name}
 ${notesSection}
 ## Pareto Strategy (Section 1)
 
@@ -869,7 +899,8 @@ export function getUIWireframesPrompt(
   project: AppProject,
   paretoStrategy: string,
   designSystem: string,
-  attachments: BlueprintAttachment[]
+  attachments: BlueprintAttachment[],
+  appIdentity?: string
 ): string {
   const attachmentInfo = attachments.length > 0
     ? `\n## Reference Screenshots\nThe user has provided ${attachments.length} inspiration screenshot(s):\n${attachments.map(a => `- ${a.screen_label || a.file_name}`).join('\n')}\n\nConsider these as visual references for the recommended UI style and patterns.`
@@ -879,6 +910,10 @@ export function getUIWireframesPrompt(
   const notesSection = project.notes && project.notes.trim()
     ? `\n## Researcher's Notes\n${project.notes}\n`
     : '';
+
+  // Extract the chosen app name from identity (this is OUR app, not the competitor)
+  const chosenAppName = appIdentity ? extractAppNameFromIdentity(appIdentity) : null;
+  const appNameDisplay = chosenAppName || 'Your App';
 
   return `You are a senior UI/UX designer specializing in native iOS apps built with SwiftUI. Based on the Pareto Strategy, Design System, and project context below, create a detailed UI Wireframe specification document.
 
@@ -899,9 +934,9 @@ All UI recommendations must use native SwiftUI components and Apple's Human Inte
 
 ## App Context
 
-**App Name:** ${project.app_name}
+**Your App Name:** ${appNameDisplay}
 **Category:** ${project.app_primary_genre || 'Unknown'}
-**Original Rating:** ${project.app_rating?.toFixed(1) || 'N/A'} ⭐
+**Competitor Researched:** ${project.app_name} (${project.app_rating?.toFixed(1) || 'N/A'} ⭐)
 ${notesSection}
 ## Pareto Strategy (Section 1)
 
@@ -982,12 +1017,17 @@ Format your response in clean Markdown. Number all screens sequentially (#1, #2,
 export function getTechStackPrompt(
   project: AppProject,
   paretoStrategy: string,
-  uiWireframes: string
+  uiWireframes: string,
+  appIdentity?: string
 ): string {
   // Include notes if they contain technical preferences
   const notesSection = project.notes && project.notes.trim()
     ? `\n## Researcher's Notes\n\nConsider any technical preferences or constraints mentioned:\n${project.notes}\n`
     : '';
+
+  // Extract the chosen app name from identity (this is OUR app, not the competitor)
+  const chosenAppName = appIdentity ? extractAppNameFromIdentity(appIdentity) : null;
+  const appNameDisplay = chosenAppName || 'Your App';
 
   return `You are a senior iOS developer and architect specializing in native Apple development. Based on the Pareto Strategy and UI Wireframes below, create a comprehensive Native-Pure Tech Stack document.
 
@@ -1001,8 +1041,9 @@ This app will use ONLY native Apple frameworks. Do NOT recommend any third-party
 
 ## App Context
 
-**App Name:** ${project.app_name}
+**Your App Name:** ${appNameDisplay}
 **Category:** ${project.app_primary_genre || 'Unknown'}
+**Competitor Researched:** ${project.app_name}
 ${notesSection}
 ## Pareto Strategy (Section 1)
 
@@ -1160,12 +1201,17 @@ export function getPRDPrompt(
   project: AppProject,
   paretoStrategy: string,
   uiWireframes: string,
-  techStack: string
+  techStack: string,
+  appIdentity?: string
 ): string {
   // Include full notes in PRD for comprehensive context
   const notesSection = project.notes && project.notes.trim()
     ? `\n## Researcher's Notes & Insights\n\n${project.notes}\n`
     : '';
+
+  // Extract the chosen app name from identity (this is OUR app, not the competitor)
+  const chosenAppName = appIdentity ? extractAppNameFromIdentity(appIdentity) : null;
+  const appNameDisplay = chosenAppName || 'Your App';
 
   return `You are a senior product manager creating a Product Requirements Document (PRD) for a new native iOS app. Synthesize all the previous sections into a comprehensive PRD.
 
@@ -1179,9 +1225,9 @@ This app uses ONLY native Apple frameworks - no third-party dependencies. All te
 
 ## App Context
 
-**App Name:** ${project.app_name} Clone
+**Your App Name:** ${appNameDisplay}
 **Category:** ${project.app_primary_genre || 'Unknown'}
-**Original App Rating:** ${project.app_rating?.toFixed(1) || 'N/A'} ⭐ (${project.app_review_count?.toLocaleString() || 0} reviews)
+**Competitor Researched:** ${project.app_name} (${project.app_rating?.toFixed(1) || 'N/A'} ⭐, ${project.app_review_count?.toLocaleString() || 0} reviews)
 **Reviews Analyzed:** ${project.review_count}
 ${notesSection}
 ## Original AI Analysis
@@ -1292,12 +1338,16 @@ export function getXcodeSetupPrompt(
     ? `\n## Researcher's Notes\n${project.notes}\n`
     : '';
 
+  // Extract the chosen app name from identity (this is OUR app, not the competitor)
+  const chosenAppName = extractAppNameFromIdentity(appIdentity) || 'MyApp';
+
   return `You are a senior iOS developer creating an Xcode Setup guide for a new native iOS app. Based on the Tech Stack and App Identity below, create a comprehensive setup document.
 
 ## App Context
 
-**App Name:** ${project.app_name}
+**Your App Name:** ${chosenAppName}
 **Category:** ${project.app_primary_genre || 'Unknown'}
+**Competitor Researched:** ${project.app_name}
 ${notesSection}
 ## Tech Stack (Section 5)
 
@@ -1558,6 +1608,9 @@ Consider incorporating these user-validated terms into:
 `;
   }
 
+  // Extract the chosen app name from identity (this is OUR app, not the competitor)
+  const chosenAppName = extractAppNameFromIdentity(appIdentity) || 'Your App';
+
   return `You are an App Store Optimization (ASO) specialist. Based on the PRD, App Identity, and Design System below, create a comprehensive ASO document for the App Store listing.
 
 ${ASO_VISUAL_ANTI_SLOP}
@@ -1566,9 +1619,9 @@ ${ASO_VISUAL_ANTI_SLOP}
 
 ## App Context
 
-**Competitor App Name:** ${project.app_name}
+**Your App Name:** ${chosenAppName}
 **Category:** ${project.app_primary_genre || 'Unknown'}
-**Competitor Rating:** ${project.app_rating?.toFixed(1) || 'N/A'} ⭐ (${project.app_review_count?.toLocaleString() || 0} reviews)
+**Competitor Researched:** ${project.app_name} (${project.app_rating?.toFixed(1) || 'N/A'} ⭐, ${project.app_review_count?.toLocaleString() || 0} reviews)
 ${notesSection}${extractedKeywordsSection}
 ## PRD (Section 7)
 
@@ -1586,16 +1639,16 @@ ${designSystem}
 
 ## Your Task
 
-Create a comprehensive ASO document:
+Create a comprehensive ASO document using the app name "${chosenAppName}" (already chosen in App Identity):
 
 ### 1. App Title (30 characters max)
 
-| Option | Characters | Rationale |
-|--------|------------|-----------|
-| Option 1 | XX/30 | [Why this works] |
-| Option 2 | XX/30 | [Alternative approach] |
+**App Title:** ${chosenAppName}
+**Characters:** XX/30
 
-**Recommended:** [Title] because [reason]
+If the chosen name is too long for the 30-character limit, provide ONE optimized variation that fits while preserving brand recognition.
+
+**Rationale:** [Why this title works for ASO]
 
 ### 2. Subtitle (30 characters max)
 
@@ -2094,12 +2147,12 @@ export function getBlueprintPrompt(
       if (!previousSections.paretoStrategy || !previousSections.designSystem) {
         throw new Error('Pareto Strategy and Design System are required before generating UI Wireframes');
       }
-      return getUIWireframesPrompt(project, previousSections.paretoStrategy, previousSections.designSystem, attachments);
+      return getUIWireframesPrompt(project, previousSections.paretoStrategy, previousSections.designSystem, attachments, previousSections.appIdentity);
     case 'tech_stack':
       if (!previousSections.paretoStrategy || !previousSections.uiWireframes) {
         throw new Error('Pareto Strategy and UI Wireframes are required before generating Tech Stack');
       }
-      return getTechStackPrompt(project, previousSections.paretoStrategy, previousSections.uiWireframes);
+      return getTechStackPrompt(project, previousSections.paretoStrategy, previousSections.uiWireframes, previousSections.appIdentity);
     case 'xcode_setup':
       if (!previousSections.techStack || !previousSections.appIdentity) {
         throw new Error('Tech Stack and App Identity are required before generating Xcode Setup');
@@ -2113,7 +2166,8 @@ export function getBlueprintPrompt(
         project,
         previousSections.paretoStrategy,
         previousSections.uiWireframes,
-        previousSections.techStack
+        previousSections.techStack,
+        previousSections.appIdentity
       );
     case 'aso':
       if (!previousSections.prd || !previousSections.appIdentity || !previousSections.designSystem) {

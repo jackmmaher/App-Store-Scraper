@@ -10,7 +10,7 @@ import {
   type BlueprintSection,
   type BlueprintColorPalette,
 } from '@/lib/supabase';
-import { getBlueprintPrompt, getBlueprintPromptWithEnrichment, getBuildManifestPrompt, getAppIdentityCandidatesPrompt, getAppIdentityPrompt } from '@/lib/blueprint-prompts';
+import { getBlueprintPrompt, getBlueprintPromptWithEnrichment, getBuildManifestPrompt, getAppIdentityCandidatesPrompt, getAppIdentityPrompt, extractAppNameFromIdentity } from '@/lib/blueprint-prompts';
 import { getColorPalettesForDesignSystem, type ColorPalette } from '@/lib/crawl';
 
 // Sections that need a color palette
@@ -286,8 +286,12 @@ export async function POST(request: NextRequest) {
     let prompt: string;
 
     if (section === 'manifest') {
+      // Extract the chosen app name from identity for the manifest
+      const manifestAppName = blueprint.app_identity
+        ? extractAppNameFromIdentity(blueprint.app_identity) || project.app_name
+        : project.app_name;
       prompt = getBuildManifestPrompt(
-        project.app_name,
+        manifestAppName,
         blueprint.pareto_strategy!,
         blueprint.ui_wireframes!,
         blueprint.tech_stack!
