@@ -163,36 +163,65 @@ async def crawl_app_store_reviews(request: AppStoreReviewRequest):
     """
     Crawl App Store reviews for an app.
 
-    Set use_browser=True for unlimited review scraping (slower but no limits).
-    Default uses RSS API which is faster but limited to ~1000 reviews.
+    Automatically combines RSS API + browser multi-country scraping for maximum coverage.
     """
-    mode = "browser" if request.use_browser else "RSS API"
-    logger.info(f"Crawling reviews for app {request.app_id} using {mode}")
+    logger.info(f"Crawling reviews for app {request.app_id} - target: {request.max_reviews}")
+
+    all_reviews = {}
 
     try:
-        if request.use_browser:
-            # Use browser automation for multi-country scraping
+        # Step 1: RSS API - fast, gets ~1000 reviews from primary country
+        logger.info("Phase 1: RSS API scraping...")
+        async with AppStoreCrawler() as crawler:
+            rss_reviews = await crawler.crawl_reviews(
+                app_id=request.app_id,
+                country=request.country,
+                max_reviews=min(request.max_reviews, 2000),
+                min_rating=request.min_rating,
+                max_rating=request.max_rating,
+            )
+
+        # Add RSS reviews to collection
+        for review in rss_reviews:
+            content_hash = hash(review.get('content', '')[:100])
+            review_id = f"{review.get('author', '')}_{content_hash}"
+            review['source'] = 'rss_api'
+            all_reviews[review_id] = review
+
+        logger.info(f"RSS API: collected {len(all_reviews)} reviews")
+
+        # Step 2: Browser multi-country - if we need more reviews
+        if len(all_reviews) < request.max_reviews:
+            remaining = request.max_reviews - len(all_reviews)
+            logger.info(f"Phase 2: Browser multi-country scraping for {remaining} more reviews...")
+
             async with AppStoreBrowserCrawler(headless=True) as crawler:
-                reviews = await crawler.crawl_reviews(
+                browser_reviews = await crawler.crawl_reviews(
                     app_id=request.app_id,
                     country=request.country,
-                    max_reviews=request.max_reviews,
+                    max_reviews=remaining,
                     min_rating=request.min_rating,
                     max_rating=request.max_rating,
-                    multi_country=request.multi_country,
-                )
-        else:
-            # Use fast RSS API (limited to ~1000 reviews)
-            async with AppStoreCrawler() as crawler:
-                reviews = await crawler.crawl_reviews(
-                    app_id=request.app_id,
-                    country=request.country,
-                    max_reviews=request.max_reviews,
-                    min_rating=request.min_rating,
-                    max_rating=request.max_rating,
+                    multi_country=True,
                 )
 
+            # Add browser reviews, deduplicating by content
+            new_from_browser = 0
+            for review in browser_reviews:
+                content_hash = hash(review.get('content', '')[:100])
+                review_id = f"{review.get('author', '')}_{content_hash}"
+                if review_id not in all_reviews:
+                    all_reviews[review_id] = review
+                    new_from_browser += 1
+
+            logger.info(f"Browser: added {new_from_browser} unique reviews (total: {len(all_reviews)})")
+
+        reviews = list(all_reviews.values())[:request.max_reviews]
+
         # Calculate stats
+        rss_count = len([r for r in reviews if r.get('source') == 'rss_api'])
+        browser_count = len([r for r in reviews if r.get('source') == 'browser'])
+
         if reviews:
             ratings = [r["rating"] for r in reviews if r.get("rating")]
             if ratings:
@@ -203,12 +232,15 @@ async def crawl_app_store_reviews(request: AppStoreReviewRequest):
                         str(i): len([r for r in ratings if r == i])
                         for i in range(1, 6)
                     },
-                    "scrape_mode": mode,
+                    "sources": {
+                        "rss_api": rss_count,
+                        "browser_multi_country": browser_count,
+                    },
                 }
             else:
-                stats = {"total": len(reviews), "average_rating": 0, "rating_distribution": {}, "scrape_mode": mode}
+                stats = {"total": len(reviews), "average_rating": 0, "rating_distribution": {}, "sources": {"rss_api": rss_count, "browser_multi_country": browser_count}}
         else:
-            stats = {"total": 0, "average_rating": 0, "rating_distribution": {}, "scrape_mode": mode}
+            stats = {"total": 0, "average_rating": 0, "rating_distribution": {}, "sources": {"rss_api": 0, "browser_multi_country": 0}}
 
         return {
             "app_id": request.app_id,
