@@ -142,6 +142,19 @@ export async function POST(request: NextRequest) {
 
     console.log(`Discovered ${discoveredKeywords.size} NEW keywords (excluded ${existingKeywords.size} existing), will score ${keywordsToScore.length}:`, keywordsToScore);
 
+    // If no new keywords found, return early with informative message
+    if (keywordsToScore.length === 0) {
+      return NextResponse.json({
+        success: true,
+        data: {
+          category,
+          total_scored: 0,
+          opportunities: [],
+          message: `No new keywords found for ${category}. All ${existingKeywords.size} discovered keywords already exist. Try a different category or add custom seeds.`,
+        },
+      });
+    }
+
     // Score all discovered keywords (using BASIC scoring - fast, iTunes only)
     console.log(`Starting BASIC scoring for ${keywordsToScore.length} keywords...`);
     const scoredResults = await scoreOpportunitiesBasic(
@@ -182,6 +195,7 @@ export async function POST(request: NextRequest) {
       data: {
         category,
         total_scored: scoredResults.length,
+        existing_skipped: existingKeywords.size,
         opportunities: topOpportunities,
       },
     });
