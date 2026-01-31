@@ -8,6 +8,7 @@ interface RecommendationCardProps {
   gapAnalysis?: GapAnalysis;
   rank: number;
   onCreateProject?: () => void;
+  isCreating?: boolean;
 }
 
 function getScoreColor(score: number): string {
@@ -35,6 +36,7 @@ export default function RecommendationCard({
   gapAnalysis,
   rank,
   onCreateProject,
+  isCreating = false,
 }: RecommendationCardProps) {
   const router = useRouter();
   const rankStyle = getRankBadge(rank);
@@ -43,8 +45,6 @@ export default function RecommendationCard({
     if (onCreateProject) {
       onCreateProject();
     } else {
-      // Navigate to projects with the recommendation context
-      // This could be enhanced to pre-fill project details
       router.push('/projects');
     }
   };
@@ -280,12 +280,22 @@ export default function RecommendationCard({
         {/* CTA */}
         <button
           onClick={handleCreateProject}
-          className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+          disabled={isCreating}
+          className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-          </svg>
-          Create Project
+          {isCreating ? (
+            <>
+              <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full" />
+              Creating Project...
+            </>
+          ) : (
+            <>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+              Create Project
+            </>
+          )}
         </button>
       </div>
     </div>

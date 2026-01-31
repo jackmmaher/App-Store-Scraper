@@ -1865,3 +1865,216 @@ export async function deleteBlueprintAttachment(id: string): Promise<boolean> {
   return true;
 }
 
+// ============================================
+// App Idea Sessions Types & Operations
+// ============================================
+
+export type AppIdeaEntryType = 'category' | 'keyword' | 'app';
+export type AppIdeaSessionStatus = 'discovering' | 'clustering' | 'scoring' | 'analyzing' | 'complete';
+
+export interface AppIdeaSession {
+  id: string;
+  entry_type: AppIdeaEntryType;
+  entry_value: string;
+  country: string;
+  status: AppIdeaSessionStatus;
+  discovered_keywords: unknown[] | null;
+  clusters: unknown[] | null;
+  cluster_scores: unknown[] | null;
+  gap_analyses: unknown[] | null;
+  recommendations: unknown[] | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+// Create a new app idea session
+export async function createAppIdeaSession(
+  entryType: AppIdeaEntryType,
+  entryValue: string,
+  country: string = 'us'
+): Promise<AppIdeaSession | null> {
+  const { data, error } = await supabase
+    .from('app_idea_sessions')
+    .insert({
+      entry_type: entryType,
+      entry_value: entryValue,
+      country,
+      status: 'discovering',
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error creating app idea session:', error);
+    return null;
+  }
+
+  return data;
+}
+
+// Update app idea session
+export async function updateAppIdeaSession(
+  id: string,
+  updates: Partial<{
+    status: AppIdeaSessionStatus;
+    discovered_keywords: unknown[];
+    clusters: unknown[];
+    cluster_scores: unknown[];
+    gap_analyses: unknown[];
+    recommendations: unknown[];
+    completed_at: string;
+  }>
+): Promise<AppIdeaSession | null> {
+  const { data, error } = await supabase
+    .from('app_idea_sessions')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error updating app idea session:', error);
+    return null;
+  }
+
+  return data;
+}
+
+// Get a single app idea session
+export async function getAppIdeaSession(id: string): Promise<AppIdeaSession | null> {
+  const { data, error } = await supabase
+    .from('app_idea_sessions')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (error) {
+    if (error.code !== 'PGRST116') {
+      console.error('Error fetching app idea session:', error);
+    }
+    return null;
+  }
+
+  return data;
+}
+
+// Get all app idea sessions (most recent first)
+export async function getAppIdeaSessions(
+  limit: number = 50
+): Promise<AppIdeaSession[]> {
+  const { data, error } = await supabase
+    .from('app_idea_sessions')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.error('Error fetching app idea sessions:', error);
+    return [];
+  }
+
+  return data || [];
+}
+
+// Delete an app idea session
+export async function deleteAppIdeaSession(id: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('app_idea_sessions')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    console.error('Error deleting app idea session:', error);
+    return false;
+  }
+
+  return true;
+}
+
+// ============================================
+// Original App Project Creation (from App Ideas)
+// ============================================
+
+export interface CreateOriginalProjectInput {
+  name: string;
+  category: string;
+  appIdeaSessionId: string;
+  recommendation: unknown;
+  gapAnalysis: unknown;
+  clusterScore: unknown;
+  country: string;
+}
+
+// Create a project from an app idea recommendation
+export async function createProjectFromIdea(
+  input: CreateOriginalProjectInput
+): Promise<AppProject | null> {
+  const { name, category, appIdeaSessionId, recommendation, gapAnalysis, clusterScore, country } = input;
+
+  const { data, error } = await supabase
+    .from('app_projects')
+    .insert({
+      // For original ideas, app_store_id is null
+      app_store_id: null,
+      app_name: name,
+      app_icon_url: null,
+      app_developer: null,
+      app_rating: null,
+      app_review_count: null,
+      app_url: null,
+      app_bundle_id: null,
+      app_primary_genre: category,
+      app_price: 0,
+      app_currency: 'USD',
+      reviews: [],
+      review_count: 0,
+      review_stats: null,
+      scrape_settings: null,
+      ai_analysis: null,
+      analysis_date: null,
+      notes: null,
+      country: country,
+      // New fields for original ideas
+      project_type: 'original_idea',
+      app_idea_session_id: appIdeaSessionId,
+      app_idea_recommendation: {
+        recommendation,
+        gapAnalysis,
+        clusterScore,
+      },
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error creating project from idea:', error);
+    return null;
+  }
+
+  // Update the session to mark it as having a project
+  await updateAppIdeaSession(appIdeaSessionId, {
+    status: 'complete',
+    completed_at: new Date().toISOString(),
+  });
+
+  return data;
+}
+
+// Get projects by type
+export async function getProjectsByType(
+  projectType: 'competitor_research' | 'original_idea'
+): Promise<AppProject[]> {
+  const { data, error } = await supabase
+    .from('app_projects')
+    .select('*')
+    .eq('project_type', projectType)
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching projects by type:', error);
+    return [];
+  }
+
+  return data || [];
+}
+

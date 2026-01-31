@@ -19,11 +19,14 @@ function formatNumber(n: number): string {
   return n.toString();
 }
 
+type ProjectType = 'all' | 'competitor_research' | 'original_idea';
+
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Record<string, AppProject[]>>({});
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
+  const [projectType, setProjectType] = useState<ProjectType>('all');
 
   useEffect(() => {
     fetchProjects();
@@ -58,13 +61,29 @@ export default function ProjectsPage() {
   };
 
   const allProjects = Object.values(projects).flat();
+
+  // Separate projects by type
+  const competitorProjects = allProjects.filter(
+    (p) => (p as AppProject & { project_type?: string }).project_type !== 'original_idea'
+  );
+  const originalProjects = allProjects.filter(
+    (p) => (p as AppProject & { project_type?: string }).project_type === 'original_idea'
+  );
+
+  // Get projects for current tab
+  const currentTabProjects = projectType === 'all'
+    ? allProjects
+    : projectType === 'competitor_research'
+      ? competitorProjects
+      : originalProjects;
+
   const filteredProjects = searchQuery
-    ? allProjects.filter(
+    ? currentTabProjects.filter(
         (p) =>
           p.app_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
           p.app_developer?.toLowerCase().includes(searchQuery.toLowerCase())
       )
-    : allProjects;
+    : currentTabProjects;
 
   const totalProjects = allProjects.length;
   const projectsWithAnalysis = allProjects.filter((p) => p.ai_analysis).length;
@@ -104,6 +123,34 @@ export default function ProjectsPage() {
               {formatNumber(totalReviews)}
             </p>
           </div>
+        </div>
+
+        {/* Project Type Tabs */}
+        <div className="flex items-center gap-1 mb-6 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+          {[
+            { id: 'all' as ProjectType, label: 'All Projects', count: allProjects.length },
+            { id: 'competitor_research' as ProjectType, label: 'Competitor Research', count: competitorProjects.length },
+            { id: 'original_idea' as ProjectType, label: 'Original Ideas', count: originalProjects.length },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setProjectType(tab.id)}
+              className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                projectType === tab.id
+                  ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+              }`}
+            >
+              {tab.label}
+              <span className={`ml-2 text-xs ${
+                projectType === tab.id
+                  ? 'text-blue-600 dark:text-blue-400'
+                  : 'text-gray-400'
+              }`}>
+                {tab.count}
+              </span>
+            </button>
+          ))}
         </div>
 
         {/* Search and View Toggle */}
@@ -151,23 +198,43 @@ export default function ProjectsPage() {
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
           </div>
-        ) : totalProjects === 0 ? (
+        ) : filteredProjects.length === 0 && !searchQuery ? (
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-12 text-center">
             <svg className="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
             </svg>
             <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-              No projects yet
+              {projectType === 'original_idea'
+                ? 'No original app ideas yet'
+                : projectType === 'competitor_research'
+                  ? 'No competitor research projects yet'
+                  : 'No projects yet'}
             </h3>
             <p className="text-gray-500 dark:text-gray-400 mb-4">
-              Scrape reviews and run AI analysis on an app to create your first project.
+              {projectType === 'original_idea'
+                ? 'Use the App Idea Finder to discover new app opportunities.'
+                : projectType === 'competitor_research'
+                  ? 'Scrape reviews and run AI analysis on an app to create your first project.'
+                  : 'Start researching competitors or discover new app ideas.'}
             </p>
-            <Link
-              href="/search"
-              className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-            >
-              Start a New Search
-            </Link>
+            <div className="flex items-center justify-center gap-3">
+              {(projectType === 'all' || projectType === 'competitor_research') && (
+                <Link
+                  href="/search"
+                  className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                >
+                  Start a New Search
+                </Link>
+              )}
+              {(projectType === 'all' || projectType === 'original_idea') && (
+                <Link
+                  href="/app-ideas"
+                  className="inline-flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+                >
+                  Find App Ideas
+                </Link>
+              )}
+            </div>
           </div>
         ) : searchQuery && filteredProjects.length === 0 ? (
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center">

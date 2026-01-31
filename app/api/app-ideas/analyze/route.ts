@@ -11,6 +11,7 @@ import {
   ScoreClustersRequest,
   AnalyzeRequest,
 } from '@/lib/app-ideas/types';
+import { updateAppIdeaSession } from '@/lib/supabase';
 
 // Rate limiting delay
 const RATE_LIMIT_MS = 300;
@@ -137,7 +138,7 @@ function generateClusterReasoning(
   return parts.join(' ');
 }
 
-// POST /api/app-ideas/analyze/score - Score clusters
+// POST /api/app-ideas/analyze - Score clusters or run full analysis
 export async function POST(request: NextRequest) {
   const authed = await isAuthenticated();
   if (!authed) {
@@ -178,10 +179,10 @@ export async function POST(request: NextRequest) {
  * Handle cluster scoring request
  */
 async function handleScoreClusters(
-  body: ScoreClustersRequest & { action: string; category?: string; country?: string },
+  body: ScoreClustersRequest & { action: string; sessionId?: string; category?: string; country?: string },
   apiKey: string
 ) {
-  const { clusters, category = 'productivity', country = 'us' } = body;
+  const { clusters, sessionId, category = 'productivity', country = 'us' } = body;
 
   if (!clusters || !Array.isArray(clusters) || clusters.length === 0) {
     return NextResponse.json(
@@ -217,6 +218,14 @@ async function handleScoreClusters(
   // Sort by opportunity score
   clusterScores.sort((a, b) => b.opportunityScore - a.opportunityScore);
 
+  // Persist to session if sessionId provided
+  if (sessionId) {
+    await updateAppIdeaSession(sessionId, {
+      status: 'analyzing',
+      cluster_scores: clusterScores,
+    });
+  }
+
   return NextResponse.json({
     success: true,
     data: {
@@ -229,10 +238,10 @@ async function handleScoreClusters(
  * Handle gap analysis and recommendation request
  */
 async function handleAnalyze(
-  body: AnalyzeRequest & { action: string; country?: string },
+  body: AnalyzeRequest & { action: string; sessionId?: string; country?: string },
   apiKey: string
 ) {
-  const { clusterScores, topN = 3, country = 'us' } = body;
+  const { clusterScores, sessionId, topN = 3, country = 'us' } = body;
 
   if (!clusterScores || !Array.isArray(clusterScores) || clusterScores.length === 0) {
     return NextResponse.json(
@@ -273,6 +282,16 @@ async function handleAnalyze(
       { error: 'Failed to generate recommendations. Please try again.' },
       { status: 500 }
     );
+  }
+
+  // Persist to session if sessionId provided
+  if (sessionId) {
+    await updateAppIdeaSession(sessionId, {
+      status: 'complete',
+      gap_analyses: gapAnalyses,
+      recommendations: recommendations,
+      completed_at: new Date().toISOString(),
+    });
   }
 
   return NextResponse.json({

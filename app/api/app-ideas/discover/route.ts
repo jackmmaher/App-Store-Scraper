@@ -4,6 +4,12 @@ import { expandSeedKeyword, fetchAutosuggestHints } from '@/lib/keywords/autosug
 import { clusterKeywords } from '@/lib/app-ideas/cluster';
 import { CATEGORY_NAMES } from '@/lib/constants';
 import { DiscoveredKeyword, Cluster, DiscoverRequest } from '@/lib/app-ideas/types';
+import {
+  createAppIdeaSession,
+  updateAppIdeaSession,
+  getAppIdeaSessions,
+  getAppIdeaSession,
+} from '@/lib/supabase';
 
 // iTunes Search API
 const ITUNES_SEARCH_URL = 'https://itunes.apple.com/search';
@@ -134,6 +140,34 @@ async function getKeywordsForKeyword(
   }));
 }
 
+// GET /api/app-ideas/discover - Get all sessions or a specific session
+export async function GET(request: NextRequest) {
+  const authed = await isAuthenticated();
+  if (!authed) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const sessionId = request.nextUrl.searchParams.get('id');
+
+  try {
+    if (sessionId) {
+      // Get specific session
+      const session = await getAppIdeaSession(sessionId);
+      if (!session) {
+        return NextResponse.json({ error: 'Session not found' }, { status: 404 });
+      }
+      return NextResponse.json({ success: true, data: session });
+    } else {
+      // Get all sessions
+      const sessions = await getAppIdeaSessions(50);
+      return NextResponse.json({ success: true, data: sessions });
+    }
+  } catch (error) {
+    console.error('[GET /api/app-ideas/discover] Error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
 // POST /api/app-ideas/discover - Discover keywords and cluster them
 export async function POST(request: NextRequest) {
   const authed = await isAuthenticated();
@@ -154,6 +188,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Entry type and value required' },
         { status: 400 }
+      );
+    }
+
+    // Create a new session in the database
+    const session = await createAppIdeaSession(entryType, entryValue, country);
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Failed to create session' },
+        { status: 500 }
       );
     }
 
@@ -178,11 +221,22 @@ export async function POST(request: NextRequest) {
     }
 
     if (keywords.length === 0) {
+      // Update session with failure
+      await updateAppIdeaSession(session.id, {
+        status: 'complete',
+        discovered_keywords: [],
+      });
       return NextResponse.json(
         { error: 'No keywords discovered. Try a different input.' },
         { status: 400 }
       );
     }
+
+    // Update session with discovered keywords
+    await updateAppIdeaSession(session.id, {
+      status: 'clustering',
+      discovered_keywords: keywords,
+    });
 
     // Step 2: Cluster keywords using Claude
     let clusters: Cluster[];
@@ -197,13 +251,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate a session ID (in production, save to database)
-    const sessionId = `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    // Update session with clusters
+    await updateAppIdeaSession(session.id, {
+      status: 'scoring',
+      clusters: clusters,
+    });
 
     return NextResponse.json({
       success: true,
       data: {
-        sessionId,
+        sessionId: session.id,
         keywords,
         clusters,
       },
