@@ -1076,6 +1076,15 @@ export default function OpportunityDashboard() {
     totalToScore?: number;
   }>({ stage: 'idle', message: '' });
   const [runningDailyRun, setRunningDailyRun] = useState(false);
+  const [dailyRunProgress, setDailyRunProgress] = useState<{
+    stage: 'idle' | 'initializing' | 'discovering' | 'scoring' | 'selecting' | 'complete' | 'error';
+    message: string;
+    categoriesProcessed?: number;
+    totalCategories?: number;
+    keywordsDiscovered?: number;
+    keywordsScored?: number;
+    winner?: { keyword: string; score: number };
+  }>({ stage: 'idle', message: '' });
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -1234,23 +1243,97 @@ export default function OpportunityDashboard() {
 
   // Run daily autonomous discovery
   const handleDailyRun = async () => {
+    const countryToUse = filters.country;
     setRunningDailyRun(true);
     setError(null);
     setSuccessMessage(null);
+    setDailyRunProgress({
+      stage: 'initializing',
+      message: 'Starting daily discovery run...',
+    });
+
+    // Start polling for progress
+    let pollInterval: NodeJS.Timeout | null = null;
+    let lastKeywordsScored = 0;
+
+    const pollProgress = async () => {
+      try {
+        const res = await fetch(`/api/opportunity/daily-run?_t=${Date.now()}`);
+        const data = await res.json();
+
+        if (data.success && data.data) {
+          const run = data.data;
+
+          // Update progress based on current state
+          if (run.status === 'running') {
+            const keywordsDiscovered = run.total_keywords_discovered || 0;
+            const keywordsScored = run.total_keywords_scored || 0;
+
+            if (keywordsScored > lastKeywordsScored) {
+              lastKeywordsScored = keywordsScored;
+            }
+
+            if (keywordsDiscovered > 0 && keywordsScored === 0) {
+              setDailyRunProgress({
+                stage: 'discovering',
+                message: `Discovered ${keywordsDiscovered} keywords across categories...`,
+                keywordsDiscovered,
+              });
+            } else if (keywordsScored > 0) {
+              setDailyRunProgress({
+                stage: 'scoring',
+                message: `Scoring opportunities (${keywordsScored} scored so far)...`,
+                keywordsDiscovered,
+                keywordsScored,
+              });
+            }
+          }
+        }
+      } catch (e) {
+        // Polling errors are non-fatal
+        console.log('Progress poll error:', e);
+      }
+    };
+
+    // Start polling every 2 seconds
+    pollInterval = setInterval(pollProgress, 2000);
+
     try {
+      // Small delay to show initializing state
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      setDailyRunProgress({
+        stage: 'discovering',
+        message: 'Expanding seed keywords across categories...',
+      });
+
       const res = await fetch('/api/opportunity/daily-run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          country: filters.country,
+          country: countryToUse,
         }),
       });
+
+      // Stop polling
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+      }
 
       const data = await res.json();
 
       if (data.success) {
         if (data.data.status === 'already_completed') {
-          // Already completed today - show appropriate message
+          // Already completed today
+          setDailyRunProgress({
+            stage: 'complete',
+            message: 'Daily run already completed today',
+            winner: data.data.winner ? {
+              keyword: data.data.winner.keyword,
+              score: data.data.winner.opportunity_score,
+            } : undefined,
+          });
           if (data.data.winner) {
             setSuccessMessage(`Already completed today! Winner: "${data.data.winner.keyword}" (${data.data.winner.opportunity_score})`);
           } else {
@@ -1258,9 +1341,23 @@ export default function OpportunityDashboard() {
           }
         } else if (data.data.winner) {
           // New run completed with winner
+          setDailyRunProgress({
+            stage: 'complete',
+            message: `Winner: "${data.data.winner.keyword}"`,
+            keywordsScored: data.data.total_scored,
+            winner: {
+              keyword: data.data.winner.keyword,
+              score: data.data.winner.opportunity_score,
+            },
+          });
           setSuccessMessage(`Daily run complete! Winner: "${data.data.winner.keyword}" (${data.data.winner.opportunity_score})`);
         } else {
           // Scored opportunities but no clear winner
+          setDailyRunProgress({
+            stage: 'complete',
+            message: `Scored ${data.data.total_scored} opportunities`,
+            keywordsScored: data.data.total_scored,
+          });
           setSuccessMessage(`Scored ${data.data.total_scored} opportunities`);
         }
         // Clear category filter to show all results and refresh data
@@ -1268,14 +1365,42 @@ export default function OpportunityDashboard() {
         // Refresh data after a brief delay to allow state updates
         await fetchStats();
         await fetchOpportunities();
+
+        // Keep the complete state visible for a moment, then reset
+        setTimeout(() => {
+          setDailyRunProgress({ stage: 'idle', message: '' });
+        }, 5000);
       } else {
+        setDailyRunProgress({
+          stage: 'error',
+          message: data.error || 'Daily run failed',
+        });
         setError(data.error || 'Daily run failed');
         console.error('Daily run failed:', data.error, data);
+
+        // Reset progress after showing error
+        setTimeout(() => {
+          setDailyRunProgress({ stage: 'idle', message: '' });
+        }, 5000);
       }
     } catch (err) {
+      // Stop polling
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
+
       const message = err instanceof Error ? err.message : 'Network error';
+      setDailyRunProgress({
+        stage: 'error',
+        message: `Error: ${message}`,
+      });
       setError(`Error: ${message}`);
       console.error('Error running daily discovery:', err);
+
+      // Reset progress after showing error
+      setTimeout(() => {
+        setDailyRunProgress({ stage: 'idle', message: '' });
+      }, 5000);
     } finally {
       setRunningDailyRun(false);
     }
@@ -1442,27 +1567,115 @@ export default function OpportunityDashboard() {
   return (
     <div className="p-6 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-start mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Opportunity Ranker</h1>
           <p className="text-gray-500">Discover and rank app opportunities autonomously</p>
         </div>
-        <div className="flex gap-3">
-          <button
-            onClick={handleExportAllCSV}
-            disabled={opportunities.length === 0}
-            className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
-            title="Export all visible opportunities to CSV"
-          >
-            Export All
-          </button>
-          <button
-            onClick={handleDailyRun}
-            disabled={runningDailyRun || discovering}
-            className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
-          >
-            {runningDailyRun ? 'Running... (this takes a few minutes)' : 'Run Daily Discovery'}
-          </button>
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex gap-3">
+            <button
+              onClick={handleExportAllCSV}
+              disabled={opportunities.length === 0}
+              className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+              title="Export all visible opportunities to CSV"
+            >
+              Export All
+            </button>
+            <button
+              onClick={handleDailyRun}
+              disabled={runningDailyRun || discovering}
+              className={`px-4 py-2 rounded-lg transition-colors ${
+                dailyRunProgress.stage === 'complete'
+                  ? 'bg-green-600 text-white'
+                  : dailyRunProgress.stage === 'error'
+                  ? 'bg-red-600 text-white'
+                  : 'bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50'
+              }`}
+            >
+              {runningDailyRun ? (
+                <span className="flex items-center gap-2">
+                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Running...
+                </span>
+              ) : dailyRunProgress.stage === 'complete' ? (
+                'Run Again'
+              ) : (
+                'Run Daily Discovery'
+              )}
+            </button>
+          </div>
+
+          {/* Daily Run Progress Indicator */}
+          {dailyRunProgress.stage !== 'idle' && (
+            <div className={`w-80 rounded-lg p-3 ${
+              dailyRunProgress.stage === 'complete' ? 'bg-green-50 border border-green-200' :
+              dailyRunProgress.stage === 'error' ? 'bg-red-50 border border-red-200' :
+              'bg-purple-50 border border-purple-200'
+            }`}>
+              <div className="flex items-center gap-2 mb-1">
+                {dailyRunProgress.stage === 'complete' ? (
+                  <div className="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
+                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                ) : dailyRunProgress.stage === 'error' ? (
+                  <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0">
+                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </div>
+                ) : (
+                  <div className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+                )}
+                <span className={`text-sm font-medium ${
+                  dailyRunProgress.stage === 'complete' ? 'text-green-700' :
+                  dailyRunProgress.stage === 'error' ? 'text-red-700' :
+                  'text-purple-700'
+                }`}>
+                  {dailyRunProgress.stage === 'initializing' && 'Step 1/4: Initializing'}
+                  {dailyRunProgress.stage === 'discovering' && 'Step 2/4: Discovering'}
+                  {dailyRunProgress.stage === 'scoring' && 'Step 3/4: Scoring'}
+                  {dailyRunProgress.stage === 'selecting' && 'Step 4/4: Selecting Winner'}
+                  {dailyRunProgress.stage === 'complete' && 'Complete!'}
+                  {dailyRunProgress.stage === 'error' && 'Failed'}
+                </span>
+              </div>
+              <p className={`text-xs ${
+                dailyRunProgress.stage === 'complete' ? 'text-green-600' :
+                dailyRunProgress.stage === 'error' ? 'text-red-600' :
+                'text-gray-600'
+              }`}>
+                {dailyRunProgress.message}
+              </p>
+              {dailyRunProgress.keywordsScored && dailyRunProgress.stage !== 'error' && (
+                <p className="text-xs text-green-600 mt-0.5 font-medium">
+                  {dailyRunProgress.keywordsScored} opportunities scored
+                </p>
+              )}
+              {dailyRunProgress.winner && (
+                <p className="text-xs text-purple-700 mt-0.5 font-medium">
+                  Winner: "{dailyRunProgress.winner.keyword}" ({dailyRunProgress.winner.score.toFixed(1)})
+                </p>
+              )}
+
+              {/* Progress bar */}
+              {dailyRunProgress.stage !== 'complete' && dailyRunProgress.stage !== 'error' && (
+                <div className="mt-2 h-1.5 bg-purple-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-purple-500 rounded-full transition-all duration-500"
+                    style={{
+                      width: dailyRunProgress.stage === 'initializing' ? '15%' :
+                             dailyRunProgress.stage === 'discovering' ? '35%' :
+                             dailyRunProgress.stage === 'scoring' ? '70%' :
+                             dailyRunProgress.stage === 'selecting' ? '90%' : '100%'
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
