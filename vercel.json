@@ -18,19 +18,5 @@
     "app/api/pipeline/jobs/process/route.ts": {
       "maxDuration": 300
     }
-  },
-  "crons": [
-    {
-      "path": "/api/cron/process-keyword-jobs",
-      "schedule": "0 3 * * *"
-    },
-    {
-      "path": "/api/cron/rescore-keywords",
-      "schedule": "0 4 * * *"
-    },
-    {
-      "path": "/api/pipeline/jobs/process",
-      "schedule": "* * * * *"
-    }
-  ]
+  }
 }
