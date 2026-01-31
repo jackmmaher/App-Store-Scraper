@@ -47,7 +47,19 @@ export async function POST(
       }, { status: 503 });
     }
 
-    const reviews: Review[] = scrapeData.reviews || [];
+    // Map ExtendedReview to Review, adding missing fields
+    const reviews: Review[] = (scrapeData.reviews || []).map((r) => ({
+      id: r.id,
+      title: r.title,
+      content: r.content,
+      rating: r.rating,
+      author: r.author,
+      version: r.version || 'Unknown',
+      vote_count: 0,
+      vote_sum: 0,
+      country: r.country,
+      sort_source: r.sort_source,
+    }));
 
     if (reviews.length === 0) {
       return NextResponse.json({ error: 'No reviews found' }, { status: 404 });
