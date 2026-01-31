@@ -113,16 +113,18 @@ export async function POST(request: NextRequest) {
           const data = await response.json();
           const reviews = data.reviews || [];
 
-          // Format all reviews
+          // Format all reviews to match Review interface
           const formattedReviews = reviews.map((r: Record<string, unknown>) => ({
-            id: r.id || `review-${Date.now()}-${Math.random()}`,
-            author: r.author || 'Anonymous',
-            rating: r.rating || 5,
-            title: r.title || '',
-            content: r.content || r.text || '',
-            date: r.date || new Date().toISOString(),
-            version: r.version || null,
-            isEdited: false,
+            id: String(r.id || `review-${Date.now()}-${Math.random()}`),
+            author: String(r.author || 'Anonymous'),
+            rating: Number(r.rating) || 5,
+            title: String(r.title || ''),
+            content: String(r.content || r.text || ''),
+            version: String(r.version || 'Unknown'),
+            vote_count: Number(r.vote_count) || 0,
+            vote_sum: Number(r.vote_sum) || 0,
+            country: country,
+            sort_source: filters[0]?.sort || 'mostRecent',
           }));
 
           // Stream progress updates in batches
@@ -164,8 +166,9 @@ export async function POST(request: NextRequest) {
             reviews: formattedReviews,
             stats: {
               total: formattedReviews.length,
-              averageRating: Math.round(avgRating * 10) / 10,
-              ratingDistribution,
+              average_rating: Math.round(avgRating * 10) / 10,
+              rating_distribution: ratingDistribution,
+              countries_scraped: [country],
             },
           });
         } catch (error) {
