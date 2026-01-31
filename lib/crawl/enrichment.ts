@@ -424,6 +424,7 @@ export async function getColorPalettesForDesignSystem(
         max_palettes: maxPalettes,
         force_refresh: false,
       }),
+      signal: AbortSignal.timeout(10000), // 10 second timeout - fail fast to fallback
     });
 
     if (!response.ok) {

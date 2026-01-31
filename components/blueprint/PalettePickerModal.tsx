@@ -88,7 +88,7 @@ export default function PalettePickerModal({
       // Simulate stage progression for UX
       setTimeout(() => setLoadingStage('fetching'), 500);
 
-      // Try to fetch from crawl service
+      // Try to fetch from crawl service (15s timeout - includes crawl service's 10s timeout + overhead)
       const response = await fetch('/api/blueprint/palettes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -97,6 +97,7 @@ export default function PalettePickerModal({
           max_palettes: 10,
           force_refresh: false,
         }),
+        signal: AbortSignal.timeout(15000),
       });
 
       setLoadingStage('processing');
