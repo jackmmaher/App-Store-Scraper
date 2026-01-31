@@ -17,11 +17,23 @@ let serviceProcess: ReturnType<typeof spawn> | null = null;
 export async function POST(request: Request) {
   // Only allow on localhost (security measure for deployed environments)
   const host = request.headers.get('host') || '';
-  const isLocalhost = host.startsWith('localhost') || host.startsWith('127.0.0.1') || host.startsWith('192.168.');
+  const isLocalhost =
+    host.startsWith('localhost') ||
+    host.startsWith('127.0.0.1') ||
+    host.startsWith('192.168.') ||
+    host.startsWith('10.') ||
+    host.startsWith('172.16.') ||
+    host.startsWith('172.17.') ||
+    host.startsWith('172.18.') ||
+    host.startsWith('172.19.') ||
+    host.startsWith('172.2') ||
+    host.startsWith('172.3') ||
+    host.startsWith('[::1]');  // IPv6 localhost
 
   if (!isLocalhost) {
+    console.log('Crawler start blocked - host:', host);
     return NextResponse.json(
-      { error: 'Crawler can only be started from localhost' },
+      { error: `Crawler can only be started from localhost (detected: ${host})` },
       { status: 403 }
     );
   }
