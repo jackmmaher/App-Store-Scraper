@@ -1,6 +1,135 @@
 import { AppProject, BlueprintAttachment, Review } from './supabase';
 import { getEnrichmentForBlueprint } from '@/lib/crawl';
 
+// =============================================================================
+// DESIGN PHILOSOPHY PREAMBLE
+// Embedded principles to prevent AI-slop design and enforce Apple-quality output
+// Inspired by Linear, Notion, Stripe - where every pixel is intentional
+// =============================================================================
+
+const DESIGN_PHILOSOPHY = `
+## Design Philosophy (CRITICAL - Read Before Designing)
+
+You are designing for an audience that can instantly recognize AI-generated slop. Your output must feel human-crafted, opinionated, and intentional - like it came from a senior designer at Linear, Notion, or Apple, not from a prompt.
+
+### What We Reject (AI Slop Characteristics)
+- **Generic gradients**: Purple-to-blue, rainbow gradients, or any gradient that screams "I asked AI to make this look modern"
+- **Overused patterns**: Glass morphism on everything, excessive shadows, gratuitous blur effects
+- **Safe, committee-designed aesthetics**: If it looks like it could be any app, it's wrong
+- **Decoration over function**: Every element must earn its place
+- **Trendy without reason**: Don't add 3D, glassmorphism, or neumorphism unless it serves the product
+- **Color soup**: More than 3 colors competing for attention
+- **Generic stock-photo vibes**: Sterile, soulless, forgettable
+
+### What We Demand (Human-Crafted Design)
+
+**Restraint & Intentionality**
+- Start with a constraint system: Pick 1-2 accent colors maximum
+- Use a 4pt or 8pt spacing grid religiously - never eyeball spacing
+- Typography hierarchy: 3 sizes maximum for most screens
+- White space is a feature, not wasted space
+- If you can remove it without losing meaning, remove it
+
+**Personality Through Precision**
+- One signature color that's ownable and memorable
+- Consistent micro-details: icon weights, corner radii, shadow values
+- Consider what makes THIS app recognizable in a grid of app icons
+- Design decisions should be defensible - "I chose X because Y"
+
+**Apple-Quality Bar**
+- Study SF Symbols - match stroke weights, optical alignment
+- Native patterns > custom patterns unless custom is demonstrably better
+- Respect the platform: iOS should feel like iOS, not a web app
+- Performance perception: Design for 60fps, not slideshow
+
+**Color Psychology**
+- Solid colors > gradients (gradients are AI's crutch)
+- Dark mode isn't inverted light mode - it needs its own consideration
+- Semantic colors for status only (green=success, red=error)
+- Brand color should feel inevitable, not arbitrary
+
+**Typography Architecture**
+- SF Pro is your foundation - don't fight it
+- Weight > size for hierarchy when possible
+- Tracking and leading matter - default isn't always right
+- Numbers should be tabular for alignment
+
+**The Jony Ive Test**
+Ask: "Is this the simplest solution that achieves the goal while feeling inevitable and refined?"
+If you're adding elements to make it "look designed," you've failed.
+If it feels generic, it is generic - push harder.
+`;
+
+const ANTI_SLOP_ICON_GUIDANCE = `
+### Icon Design Anti-Patterns (Avoid These)
+- Purple-to-blue gradients (the #1 AI tell)
+- Generic abstract shapes with no meaning
+- Overly complex illustrations that disappear at small sizes
+- Gradients that don't serve a purpose
+- Safe, forgettable, interchangeable designs
+
+### Icon Design Excellence
+- One clear concept, one clear shape
+- Works at 20x20pt - if not, simplify
+- Distinctive silhouette - recognizable without color
+- Color serves meaning, not decoration
+- Study the best: Linear, Things, Fantastical, Craft - icons with taste
+`;
+
+const DESIGN_SYSTEM_ANTI_SLOP = `
+### Design System Anti-Patterns (Avoid These)
+- Generic color palettes that could belong to any app
+- Token names that don't reflect usage ("color-1", "blue-500")
+- Inconsistent radius values scattered arbitrarily
+- Shadow values that create muddy, unclear hierarchy
+- "Safe" design systems that play it too neutral
+
+### Design System Excellence
+- Opinionated defaults - make choices, don't hedge
+- Every token earns its existence - no "just in case" tokens
+- Cohesive visual language - elements should feel related
+- Purposeful constraints - limitations breed creativity
+- Document the "why" not just the "what"
+`;
+
+const WIREFRAME_ANTI_SLOP = `
+### Wireframe Anti-Patterns (Avoid These)
+- Cramming features to impress rather than serve users
+- Generic layouts that could be any app
+- Ignoring the emotional journey of the user
+- Feature parity with competitors instead of focused excellence
+- Screens that exist because "apps have these" not because users need them
+
+### Wireframe Excellence
+- Every screen solves one problem well
+- Progressive disclosure - show what's needed when it's needed
+- Gestalt principles: proximity, similarity, continuity
+- Reduce cognitive load - if users have to think, simplify
+- Consider the 3am use case - exhausted user, bad lighting, one hand
+`;
+
+const ASO_VISUAL_ANTI_SLOP = `
+### App Store Visual Anti-Patterns (Avoid These)
+- Rainbow gradient backgrounds that scream "designed by AI"
+- Generic "hand holding phone" mockups
+- Cluttered screenshots with too many callouts
+- Stock-photo aesthetic (sterile, corporate, lifeless)
+- Excessive text overlays that obscure the app
+- Inconsistent style across screenshots (looks like different apps)
+- Dark mode and light mode screenshots mixed randomly
+
+### App Store Visual Excellence
+- Cohesive visual narrative: Screenshots tell a story together
+- One design system: Same colors, fonts, style across all screenshots
+- Let the app speak: UI should be the hero, not the decoration
+- Strategic negative space: Clean backgrounds that don't compete
+- Typography restraint: One headline per screenshot, not essays
+- Device frames: Either use them consistently or don't use them at all
+- Preview video: Show the app in motion, not a slideshow with transitions
+- Color psychology: Background colors that evoke the right emotion
+- The 3-second rule: Can someone understand what your app does in 3 seconds?
+`;
+
 // Helper to get diverse sample reviews (mix of ratings)
 function getSampleReviews(reviews: Review[], count: number = 10): Review[] {
   if (reviews.length <= count) return reviews;
@@ -286,6 +415,12 @@ export function getAppIdentityPrompt(
 
   return `You are a brand strategist specializing in iOS app naming and visual identity. Based on the Pareto Strategy below, create a comprehensive App Identity specification document.
 
+${DESIGN_PHILOSOPHY}
+
+${ANTI_SLOP_ICON_GUIDANCE}
+
+---
+
 ## App Context
 
 **Competitor App Name:** ${project.app_name}
@@ -400,6 +535,12 @@ export function getDesignSystemPrompt(
     : '';
 
   return `You are a senior UI/UX designer specializing in native iOS design systems. Based on the Pareto Strategy and App Identity below, create a comprehensive Design System specification.
+
+${DESIGN_PHILOSOPHY}
+
+${DESIGN_SYSTEM_ANTI_SLOP}
+
+---
 
 **IMPORTANT: Native iOS Design**
 All design recommendations must follow Apple's Human Interface Guidelines and use native SwiftUI components.
@@ -622,6 +763,12 @@ export function getUIWireframesPrompt(
     : '';
 
   return `You are a senior UI/UX designer specializing in native iOS apps built with SwiftUI. Based on the Pareto Strategy, Design System, and project context below, create a detailed UI Wireframe specification document.
+
+${DESIGN_PHILOSOPHY}
+
+${WIREFRAME_ANTI_SLOP}
+
+---
 
 **IMPORTANT: Native SwiftUI Design**
 All UI recommendations must use native SwiftUI components and Apple's Human Interface Guidelines:
@@ -1260,6 +1407,10 @@ export function getASOPrompt(
     : '';
 
   return `You are an App Store Optimization (ASO) specialist. Based on the PRD, App Identity, and Design System below, create a comprehensive ASO document for the App Store listing.
+
+${ASO_VISUAL_ANTI_SLOP}
+
+---
 
 ## App Context
 
