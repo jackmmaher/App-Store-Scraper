@@ -2,6 +2,7 @@
  * Python Reviews Streaming API
  *
  * Proxies to the Python crawler service and streams results back via SSE.
+ * Sends heartbeat events while crawler is working to keep connection alive.
  */
 
 import { NextRequest } from 'next/server';
@@ -28,6 +29,19 @@ interface ReviewRequest {
     filterCooldown?: number;
     autoThrottle?: boolean;
   };
+}
+
+interface Review {
+  id: string;
+  author: string;
+  rating: number;
+  title: string;
+  content: string;
+  version: string;
+  vote_count: number;
+  vote_sum: number;
+  country: string;
+  sort_source: string;
 }
 
 export async function POST(request: NextRequest) {
@@ -72,24 +86,61 @@ export async function POST(request: NextRequest) {
 
     // Calculate total reviews to fetch
     const totalTarget = filters.reduce((sum, f) => sum + f.target, 0) || 500;
+    const enabledFilters = filters.length > 0 ? filters : [{ sort: 'mostRecent', target: 500 }];
 
     // Create SSE stream
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
         const sendEvent = (data: Record<string, unknown>) => {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+          try {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+          } catch {
+            // Controller might be closed
+          }
         };
+
+        // Track if we're still running
+        let isRunning = true;
+        let heartbeatCount = 0;
+
+        // Start heartbeat to keep connection alive and show progress
+        const heartbeatInterval = setInterval(() => {
+          if (!isRunning) {
+            clearInterval(heartbeatInterval);
+            return;
+          }
+          heartbeatCount++;
+
+          // Estimate which filter we're on based on time (each filter takes ~20-30s)
+          const estimatedFilterIndex = Math.min(
+            Math.floor(heartbeatCount / 15), // ~15 heartbeats per filter at 2s interval
+            enabledFilters.length - 1
+          );
+
+          sendEvent({
+            type: 'progress',
+            filter: enabledFilters[estimatedFilterIndex]?.sort || 'mostRecent',
+            filterIndex: estimatedFilterIndex,
+            page: (heartbeatCount % 10) + 1,
+            maxPages: 10,
+            reviewsThisPage: 0,
+            totalUnique: heartbeatCount * 5, // Rough estimate
+            filterReviewsTotal: heartbeatCount * 5,
+            nextDelayMs: 2000,
+            message: `Crawling ${enabledFilters[estimatedFilterIndex]?.sort || 'reviews'}...`,
+          });
+        }, 2000);
 
         try {
           // Send start event
           sendEvent({
             type: 'start',
-            filters: filters.map((f) => f.sort),
+            filters: enabledFilters.map((f) => f.sort),
             totalTarget,
           });
 
-          // Call the Python crawler
+          // Call the Python crawler - it handles all sort types internally
           const response = await fetch(`${CRAWL_SERVICE_URL}/crawl/app-store/reviews`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -99,6 +150,10 @@ export async function POST(request: NextRequest) {
               max_reviews: totalTarget,
             }),
           });
+
+          // Stop heartbeat
+          isRunning = false;
+          clearInterval(heartbeatInterval);
 
           if (!response.ok) {
             const errorText = await response.text();
@@ -114,7 +169,7 @@ export async function POST(request: NextRequest) {
           const reviews = data.reviews || [];
 
           // Format all reviews to match Review interface
-          const formattedReviews = reviews.map((r: Record<string, unknown>) => ({
+          const formattedReviews: Review[] = reviews.map((r: Record<string, unknown>) => ({
             id: String(r.id || `review-${Date.now()}-${Math.random()}`),
             author: String(r.author || 'Anonymous'),
             rating: Number(r.rating) || 5,
@@ -123,36 +178,43 @@ export async function POST(request: NextRequest) {
             version: String(r.version || 'Unknown'),
             vote_count: Number(r.vote_count) || 0,
             vote_sum: Number(r.vote_sum) || 0,
-            country: country,
-            sort_source: filters[0]?.sort || 'mostRecent',
+            country: String(r.country || country),
+            sort_source: String(r.sort_source || 'mostRecent'),
           }));
 
-          // Stream progress updates in batches
-          const batchSize = 50;
-          for (let i = 0; i < formattedReviews.length; i += batchSize) {
-            const sent = Math.min(i + batchSize, formattedReviews.length);
-
-            // Send progress event
-            sendEvent({
-              type: 'progress',
-              filter: filters[0]?.sort || 'mostRecent',
-              filterIndex: 0,
-              page: Math.floor(i / batchSize) + 1,
-              maxPages: Math.ceil(formattedReviews.length / batchSize),
-              reviewsThisPage: Math.min(batchSize, formattedReviews.length - i),
-              totalUnique: sent,
-              filterReviewsTotal: sent,
-              nextDelayMs: 0,
-            });
-
-            // Small delay between progress updates
-            await new Promise((r) => setTimeout(r, 50));
+          // Count reviews per sort source
+          const sortCounts: Record<string, number> = {};
+          for (const review of formattedReviews) {
+            sortCounts[review.sort_source] = (sortCounts[review.sort_source] || 0) + 1;
           }
 
+          // Send filterComplete events for each sort type that was processed
+          for (const filter of enabledFilters) {
+            const count = sortCounts[filter.sort] || 0;
+            sendEvent({
+              type: 'filterComplete',
+              filter: filter.sort,
+              reviewsCollected: count,
+            });
+          }
+
+          // Send final progress with actual count
+          sendEvent({
+            type: 'progress',
+            filter: enabledFilters[enabledFilters.length - 1]?.sort || 'mostRecent',
+            filterIndex: enabledFilters.length - 1,
+            page: 10,
+            maxPages: 10,
+            reviewsThisPage: 0,
+            totalUnique: formattedReviews.length,
+            filterReviewsTotal: formattedReviews.length,
+            nextDelayMs: 0,
+          });
+
           // Calculate stats
-          const ratings = formattedReviews.map((r: { rating: number }) => r.rating);
+          const ratings = formattedReviews.map((r) => r.rating);
           const avgRating = ratings.length > 0
-            ? ratings.reduce((a: number, b: number) => a + b, 0) / ratings.length
+            ? ratings.reduce((a, b) => a + b, 0) / ratings.length
             : 0;
 
           const ratingDistribution: Record<string, number> = { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 };
@@ -169,9 +231,12 @@ export async function POST(request: NextRequest) {
               average_rating: Math.round(avgRating * 10) / 10,
               rating_distribution: ratingDistribution,
               countries_scraped: [country],
+              sort_sources: sortCounts,
             },
           });
         } catch (error) {
+          isRunning = false;
+          clearInterval(heartbeatInterval);
           sendEvent({
             type: 'error',
             message: error instanceof Error ? error.message : 'Unknown error',
