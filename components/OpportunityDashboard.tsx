@@ -291,34 +291,63 @@ function DailyWinnerCard({
 // Category Heatmap Component
 // ============================================================================
 
-function CategoryHeatmap({ categoryStats }: { categoryStats: { category: string; count: number; avg_score: number }[] }) {
+function CategoryHeatmap({
+  categoryStats,
+  selectedCategory,
+  onCategoryClick,
+}: {
+  categoryStats: { category: string; count: number; avg_score: number }[];
+  selectedCategory?: string;
+  onCategoryClick?: (category: string) => void;
+}) {
   if (!categoryStats || categoryStats.length === 0) {
     return null;
   }
 
+  const handleClick = (category: string) => {
+    if (onCategoryClick) {
+      // Toggle off if clicking the same category
+      onCategoryClick(selectedCategory === category ? '' : category);
+    }
+  };
+
   return (
     <div className="bg-white rounded-lg p-4 shadow mb-6">
-      <h3 className="font-semibold mb-3">Opportunity Density by Category</h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-semibold">Opportunity Density by Category</h3>
+        {selectedCategory && (
+          <button
+            onClick={() => onCategoryClick?.('')}
+            className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
+          >
+            <span>Clear filter</span>
+            <span className="text-lg leading-none">&times;</span>
+          </button>
+        )}
+      </div>
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2">
         {categoryStats.map((cat) => {
           const { color } = getScoreColor(cat.avg_score);
+          const isSelected = selectedCategory === cat.category;
           const bgClass =
-            color === 'emerald' ? 'bg-emerald-100' :
-            color === 'green' ? 'bg-green-100' :
-            color === 'yellow' ? 'bg-yellow-100' :
-            color === 'orange' ? 'bg-orange-100' : 'bg-red-100';
+            color === 'emerald' ? 'bg-emerald-100 hover:bg-emerald-200' :
+            color === 'green' ? 'bg-green-100 hover:bg-green-200' :
+            color === 'yellow' ? 'bg-yellow-100 hover:bg-yellow-200' :
+            color === 'orange' ? 'bg-orange-100 hover:bg-orange-200' : 'bg-red-100 hover:bg-red-200';
+          const ringClass = isSelected ? 'ring-2 ring-offset-1 ring-gray-800' : '';
 
           return (
-            <div
+            <button
               key={cat.category}
-              className={`${bgClass} rounded p-2 text-center`}
+              onClick={() => handleClick(cat.category)}
+              className={`${bgClass} ${ringClass} rounded p-2 text-center cursor-pointer transition-all duration-150`}
             >
               <div className="text-xs font-medium truncate">
                 {CATEGORY_NAMES[cat.category] || cat.category}
               </div>
               <div className="text-lg font-bold">{cat.avg_score.toFixed(0)}</div>
               <div className="text-xs text-gray-600">{cat.count} opps</div>
-            </div>
+            </button>
           );
         })}
       </div>
@@ -623,19 +652,16 @@ function TopAppsTable({
 function OpportunityDetailModal({
   opportunity,
   onClose,
-  onGenerateBlueprint,
   onAddToProjects,
 }: {
   opportunity: Opportunity;
   onClose: () => void;
-  onGenerateBlueprint: (competitorApp?: TopAppData) => void;
-  onAddToProjects: (apps: TopAppData[], opportunity: Opportunity) => Promise<{ success: boolean; count: number }>;
+  onAddToProjects: (apps: TopAppData[], opportunity: Opportunity, navigateToBlueprint: boolean) => Promise<{ success: boolean; count: number; projectId?: string }>;
 }) {
   const [selectedAppIds, setSelectedAppIds] = useState<Set<string>>(new Set());
   const [showApps, setShowApps] = useState(true);
-  const [creatingProject, setCreatingProject] = useState(false);
   const [addingToProjects, setAddingToProjects] = useState(false);
-  const [addResult, setAddResult] = useState<{ success: boolean; count: number } | null>(null);
+  const [addResult, setAddResult] = useState<{ success: boolean; count: number; projectId?: string } | null>(null);
 
   // Extract top apps from raw_data
   const topApps: TopAppData[] = opportunity.raw_data?.itunes?.top_10_apps || [];
@@ -662,28 +688,17 @@ function OpportunityDetailModal({
     setAddResult(null);
   };
 
-  const handleGenerateBlueprint = async () => {
-    setCreatingProject(true);
-    try {
-      // Use the first selected app, or undefined
-      const selectedApps = topApps.filter(app => selectedAppIds.has(app.id));
-      await onGenerateBlueprint(selectedApps[0] || undefined);
-    } finally {
-      setCreatingProject(false);
-    }
-  };
-
-  const handleAddToProjects = async () => {
+  const handleAddToProjects = async (navigateToBlueprint: boolean = false) => {
     const selectedApps = topApps.filter(app => selectedAppIds.has(app.id));
     if (selectedApps.length === 0) return;
 
     setAddingToProjects(true);
     setAddResult(null);
     try {
-      const result = await onAddToProjects(selectedApps, opportunity);
+      const result = await onAddToProjects(selectedApps, opportunity, navigateToBlueprint);
       setAddResult(result);
-      if (result.success) {
-        // Clear selection after successful add
+      if (result.success && !navigateToBlueprint) {
+        // Clear selection after successful add (unless navigating away)
         setSelectedAppIds(new Set());
       }
     } finally {
@@ -817,31 +832,54 @@ function OpportunityDetailModal({
                   onSelectAll={handleSelectAll}
                 />
 
-                {/* Add to Projects button - inline with table */}
+                {/* Quick actions - inline with table */}
                 {selectedCount > 0 && (
                   <div className="mt-3 pt-3 border-t flex items-center justify-between">
                     <div className="text-sm text-gray-600">
                       {selectedCount} app{selectedCount !== 1 ? 's' : ''} selected
                     </div>
-                    <button
-                      onClick={handleAddToProjects}
-                      disabled={addingToProjects}
-                      className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center gap-2"
-                    >
-                      {addingToProjects ? (
-                        <>
-                          <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          Adding...
-                        </>
-                      ) : (
-                        <>
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                          </svg>
-                          Add to Projects
-                        </>
+                    <div className="flex gap-2">
+                      {selectedCount === 1 && (
+                        <button
+                          onClick={() => handleAddToProjects(true)}
+                          disabled={addingToProjects}
+                          className="px-3 py-1.5 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+                        >
+                          {addingToProjects ? (
+                            <>
+                              <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              Opening...
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                              </svg>
+                              Add & Open Blueprint
+                            </>
+                          )}
+                        </button>
                       )}
-                    </button>
+                      <button
+                        onClick={() => handleAddToProjects(false)}
+                        disabled={addingToProjects}
+                        className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+                      >
+                        {addingToProjects ? (
+                          <>
+                            <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            Adding...
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                            </svg>
+                            Add to Projects
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -894,21 +932,55 @@ function OpportunityDetailModal({
 
           {/* Actions */}
           <div className="flex gap-3 pt-4 border-t">
-            <button
-              onClick={handleGenerateBlueprint}
-              disabled={creatingProject}
-              className="flex-1 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
-              title="Create a blueprint project based on this opportunity"
-            >
-              {creatingProject ? (
-                <span className="flex items-center justify-center gap-2">
-                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Creating...
-                </span>
-              ) : (
-                'Create Opportunity Blueprint'
-              )}
-            </button>
+            {selectedCount === 1 ? (
+              <button
+                onClick={() => handleAddToProjects(true)}
+                disabled={addingToProjects}
+                className="flex-1 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
+                title="Add this app to your projects and open the blueprint page"
+              >
+                {addingToProjects ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Creating Project...
+                  </span>
+                ) : (
+                  <>
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                      </svg>
+                      Add to Projects & Open Blueprint
+                    </span>
+                  </>
+                )}
+              </button>
+            ) : selectedCount > 1 ? (
+              <button
+                onClick={() => handleAddToProjects(false)}
+                disabled={addingToProjects}
+                className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                title="Add selected apps to your projects"
+              >
+                {addingToProjects ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Adding {selectedCount} Apps...
+                  </span>
+                ) : (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                    Add {selectedCount} Apps to Projects
+                  </span>
+                )}
+              </button>
+            ) : (
+              <div className="flex-1 text-center text-gray-500 py-2">
+                Select apps above to add to your projects
+              </div>
+            )}
             <button
               onClick={onClose}
               className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
@@ -1212,39 +1284,14 @@ export default function OpportunityDashboard() {
   // Router for navigation
   const router = useRouter();
 
-  // Generate blueprint for opportunity
-  const handleGenerateBlueprint = async (competitorApp?: TopAppData) => {
-    if (!selectedOpportunity) return;
-
-    try {
-      // Call API to create project from opportunity
-      const res = await fetch(`/api/opportunity/${selectedOpportunity.id}/create-project`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          competitor_app_id: competitorApp?.id,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (data.success && data.data.project_id) {
-        // Navigate to the project blueprint page
-        setSelectedOpportunity(null);
-        router.push(`/projects/${data.data.project_id}/blueprint`);
-      } else {
-        setError(data.error || 'Failed to create project from opportunity');
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Network error';
-      setError(`Error: ${message}`);
-      console.error('Error creating project from opportunity:', err);
-    }
-  };
-
   // Add selected apps to projects
-  const handleAddToProjects = async (apps: TopAppData[], opportunity: Opportunity): Promise<{ success: boolean; count: number }> => {
+  const handleAddToProjects = async (
+    apps: TopAppData[],
+    opportunity: Opportunity,
+    navigateToBlueprint: boolean = false
+  ): Promise<{ success: boolean; count: number; projectId?: string }> => {
     let successCount = 0;
+    let firstProjectId: string | undefined;
 
     for (const app of apps) {
       try {
@@ -1283,15 +1330,24 @@ export default function OpportunityDashboard() {
         });
 
         const data = await res.json();
-        if (data.success || data.id) {
+        if (data.success || data.project) {
           successCount++;
+          if (!firstProjectId && data.project?.id) {
+            firstProjectId = data.project.id;
+          }
         }
       } catch (err) {
         console.error(`Error adding app ${app.name} to projects:`, err);
       }
     }
 
-    return { success: successCount > 0, count: successCount };
+    // Navigate to blueprint if requested and we have a project
+    if (navigateToBlueprint && firstProjectId) {
+      setSelectedOpportunity(null); // Close modal
+      router.push(`/projects/${firstProjectId}/blueprint`);
+    }
+
+    return { success: successCount > 0, count: successCount, projectId: firstProjectId };
   };
 
   // Export opportunity to CSV (keeping for "Export All" feature)
@@ -1617,7 +1673,6 @@ export default function OpportunityDashboard() {
         <OpportunityDetailModal
           opportunity={selectedOpportunity}
           onClose={() => setSelectedOpportunity(null)}
-          onGenerateBlueprint={handleGenerateBlueprint}
           onAddToProjects={handleAddToProjects}
         />
       )}
