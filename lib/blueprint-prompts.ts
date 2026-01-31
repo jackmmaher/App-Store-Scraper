@@ -1,5 +1,6 @@
 import { AppProject, BlueprintAttachment, Review, BlueprintColorPalette } from './supabase';
 import { getEnrichmentForBlueprint, getColorPalettesForDesignSystem } from '@/lib/crawl';
+import { getKeywordsBySourceApp } from '@/lib/keywords/db';
 
 // Format stored palette for prompt injection
 function formatStoredPalette(palette: BlueprintColorPalette | null | undefined): string {
@@ -1433,16 +1434,50 @@ MyApp/
 Format your response in clean Markdown with proper headings, tables, and code blocks.`;
 }
 
+// Keyword data for ASO prompt
+interface ASOKeyword {
+  keyword: string;
+  volume_score: number | null;
+  difficulty_score: number | null;
+  opportunity_score: number | null;
+}
+
 // Section 8: ASO (App Store Optimization) Prompt
 export function getASOPrompt(
   project: AppProject,
   prd: string,
   appIdentity: string,
-  designSystem: string
+  designSystem: string,
+  extractedKeywords?: ASOKeyword[]
 ): string {
   const notesSection = project.notes && project.notes.trim()
     ? `\n## Researcher's Notes\n${project.notes}\n`
     : '';
+
+  // Build extracted keywords section if available
+  let extractedKeywordsSection = '';
+  if (extractedKeywords && extractedKeywords.length > 0) {
+    const keywordRows = extractedKeywords
+      .slice(0, 30) // Top 30 keywords
+      .map(kw => `| ${kw.keyword} | ${kw.volume_score?.toFixed(0) || '-'} | ${kw.difficulty_score?.toFixed(0) || '-'} | ${kw.opportunity_score?.toFixed(0) || '-'} |`)
+      .join('\n');
+
+    extractedKeywordsSection = `
+## Keywords Extracted from User Reviews
+
+**IMPORTANT:** These keywords were extracted from actual user reviews of the competitor app. They represent real language users use when discussing this type of app. Prioritize high-opportunity keywords (high volume, low difficulty) in your ASO strategy.
+
+| Keyword | Volume | Difficulty | Opportunity |
+|---------|--------|------------|-------------|
+${keywordRows}
+
+Consider incorporating these user-validated terms into:
+- The keyword field (100 char limit)
+- App title and subtitle where natural
+- Description copy
+
+`;
+  }
 
   return `You are an App Store Optimization (ASO) specialist. Based on the PRD, App Identity, and Design System below, create a comprehensive ASO document for the App Store listing.
 
@@ -1455,7 +1490,7 @@ ${ASO_VISUAL_ANTI_SLOP}
 **Competitor App Name:** ${project.app_name}
 **Category:** ${project.app_primary_genre || 'Unknown'}
 **Competitor Rating:** ${project.app_rating?.toFixed(1) || 'N/A'} ⭐ (${project.app_review_count?.toLocaleString() || 0} reviews)
-${notesSection}
+${notesSection}${extractedKeywordsSection}
 ## PRD (Section 7)
 
 ${prd}
@@ -1903,6 +1938,44 @@ export async function getBlueprintPromptWithEnrichment(
       previousSections.appIdentity,
       colorPalette,
       curatedPalettes
+    );
+  }
+
+  // ASO needs extracted keywords from reviews
+  if (section === 'aso') {
+    if (!previousSections.prd || !previousSections.appIdentity || !previousSections.designSystem) {
+      throw new Error('PRD, App Identity, and Design System are required before generating ASO');
+    }
+
+    // Fetch keywords extracted from reviews for this app
+    let extractedKeywords: ASOKeyword[] = [];
+    if (project.app_store_id) {
+      try {
+        const keywords = await getKeywordsBySourceApp(
+          project.app_store_id,
+          project.country || 'us',
+          30 // Top 30 keywords by opportunity
+        );
+        extractedKeywords = keywords.map(kw => ({
+          keyword: kw.keyword,
+          volume_score: kw.volume_score,
+          difficulty_score: kw.difficulty_score,
+          opportunity_score: kw.opportunity_score,
+        }));
+        if (extractedKeywords.length > 0) {
+          console.log(`[ASO] Found ${extractedKeywords.length} extracted keywords for app ${project.app_store_id}`);
+        }
+      } catch (error) {
+        console.error('Error fetching extracted keywords for ASO:', error);
+      }
+    }
+
+    return getASOPrompt(
+      project,
+      previousSections.prd,
+      previousSections.appIdentity,
+      previousSections.designSystem,
+      extractedKeywords.length > 0 ? extractedKeywords : undefined
     );
   }
 

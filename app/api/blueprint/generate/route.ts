@@ -182,8 +182,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Build prompt - manifest uses a different prompt function
-    // For pareto and design_system, use async version with enrichment (palettes, reviews, etc.)
-    const sectionsNeedingEnrichment = ['pareto', 'design_system'];
+    // For pareto, design_system, and aso, use async version with enrichment (palettes, reviews, keywords)
+    const sectionsNeedingEnrichment = ['pareto', 'design_system', 'aso'];
     let prompt: string;
 
     if (section === 'manifest') {
