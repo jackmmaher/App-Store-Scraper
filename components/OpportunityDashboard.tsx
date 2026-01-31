@@ -803,92 +803,6 @@ function StatsCards({ stats }: { stats: OpportunityStats | null }) {
 }
 
 // ============================================================================
-// Daily Winner Card Component
-// ============================================================================
-
-function DailyWinnerCard({
-  winner,
-  onViewDetails,
-  onCreateProject,
-}: {
-  winner: Opportunity | null;
-  onViewDetails: (opp: Opportunity) => void;
-  onCreateProject: (opp: Opportunity) => void;
-}) {
-  if (!winner) {
-    return (
-      <div className="bg-gradient-to-r from-purple-500 to-indigo-600 rounded-lg p-6 text-white shadow-lg mb-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-sm opacity-80">Today&apos;s Winner</div>
-            <div className="text-xl font-bold mt-1">No winner selected yet</div>
-            <div className="text-sm opacity-80 mt-2">Run daily discovery to find opportunities</div>
-          </div>
-          <div className="text-5xl opacity-50">?</div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="bg-gradient-to-r from-purple-500 to-indigo-600 rounded-lg p-6 text-white shadow-lg mb-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-sm opacity-80 flex items-center gap-2">
-            Today&apos;s Winner
-            {winner.status === 'blueprinted' && (
-              <span className="bg-white/30 px-2 py-0.5 rounded text-xs">Blueprinted</span>
-            )}
-          </div>
-          <div className="text-2xl font-bold mt-1">{winner.keyword}</div>
-          <div className="flex items-center gap-3 mt-2">
-            <span className="bg-white/20 px-2 py-1 rounded text-sm">
-              {CATEGORY_NAMES[winner.category] || winner.category}
-            </span>
-            <span className="text-sm opacity-80">
-              Status: {winner.status}
-            </span>
-          </div>
-        </div>
-        <div className="text-right">
-          <div className="text-5xl font-bold">{winner.opportunity_score?.toFixed(1)}</div>
-          <div className="text-sm opacity-80">Score</div>
-        </div>
-      </div>
-      {winner.suggested_differentiator && (
-        <div className="mt-4 pt-4 border-t border-white/20 text-sm">
-          <span className="opacity-80">Strategy:</span> {winner.suggested_differentiator}
-        </div>
-      )}
-      <div className="mt-4 pt-4 border-t border-white/20 flex gap-2">
-        <button
-          onClick={() => onViewDetails(winner)}
-          className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded text-sm transition-colors"
-        >
-          View Details
-        </button>
-        {winner.status !== 'blueprinted' && (
-          <button
-            onClick={() => onCreateProject(winner)}
-            className="px-3 py-1.5 bg-white hover:bg-gray-100 text-purple-700 rounded text-sm transition-colors font-medium"
-          >
-            Create Blueprint
-          </button>
-        )}
-        {winner.status === 'blueprinted' && winner.blueprint_id && (
-          <a
-            href={`/projects?blueprint=${winner.blueprint_id}`}
-            className="px-3 py-1.5 bg-white hover:bg-gray-100 text-purple-700 rounded text-sm transition-colors font-medium"
-          >
-            View Blueprint
-          </a>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
 // Category Heatmap Component
 // ============================================================================
 
@@ -1793,7 +1707,6 @@ interface DashboardFilters {
 export default function OpportunityDashboard() {
   // State
   const [stats, setStats] = useState<OpportunityStats | null>(null);
-  const [todaysWinner, setTodaysWinner] = useState<Opportunity | null>(null);
   const [recentRuns, setRecentRuns] = useState<DailyRun[]>([]);
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1836,7 +1749,6 @@ export default function OpportunityDashboard() {
 
       if (data.success) {
         setStats(data.data.stats);
-        setTodaysWinner(data.data.todays_winner);
         setRecentRuns(data.data.recent_runs || []);
       }
     } catch (error) {
@@ -2224,29 +2136,6 @@ export default function OpportunityDashboard() {
 
       {/* Stats Cards */}
       <StatsCards stats={stats} />
-
-      {/* Today's Winner */}
-      <DailyWinnerCard
-        winner={todaysWinner}
-        onViewDetails={(opp) => setSelectedOpportunity(opp)}
-        onCreateProject={async (opp) => {
-          try {
-            const res = await fetch(`/api/opportunity/${opp.id}/create-project`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({}),
-            });
-            const data = await res.json();
-            if (data.success && data.data.project_id) {
-              router.push(`/projects/${data.data.project_id}/blueprint`);
-            } else {
-              setError(data.error || 'Failed to create project');
-            }
-          } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to create project');
-          }
-        }}
-      />
 
       {/* Category Heatmap */}
       {stats && (
