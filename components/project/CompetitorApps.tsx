@@ -40,9 +40,17 @@ export default function CompetitorApps({
   const [scrapingApp, setScrapingApp] = useState<string | null>(null);
   const [analyzingApp, setAnalyzingApp] = useState<string | null>(null);
   const [addingAll, setAddingAll] = useState(false);
+  const [scrapingAll, setScrapingAll] = useState(false);
+  const [analyzingAll, setAnalyzingAll] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; action: string } | null>(null);
 
   const linkedIds = new Set(linkedCompetitors.map(c => c.app_store_id));
   const unlinkedApps = analyzedApps.filter(app => !linkedIds.has(app.app_store_id));
+
+  // Compute batch operation availability
+  const unscrapedCompetitors = linkedCompetitors.filter(c => !c.scraped_reviews || c.scraped_reviews.length === 0);
+  const unanalyzedCompetitors = linkedCompetitors.filter(c => c.scraped_reviews && c.scraped_reviews.length > 0 && !c.ai_analysis);
+  const allAnalyzed = linkedCompetitors.length > 0 && linkedCompetitors.every(c => c.ai_analysis);
 
   const handleAddCompetitor = async (app: AnalyzedApp) => {
     setAddingApp(app.app_store_id);
@@ -142,6 +150,74 @@ export default function CompetitorApps({
     }
   };
 
+  // Batch scrape all unscraped competitors
+  const handleScrapeAll = async () => {
+    if (unscrapedCompetitors.length === 0) return;
+
+    setScrapingAll(true);
+    setBatchProgress({ current: 0, total: unscrapedCompetitors.length, action: 'Scraping' });
+
+    let successCount = 0;
+    for (let i = 0; i < unscrapedCompetitors.length; i++) {
+      const comp = unscrapedCompetitors[i];
+      setBatchProgress({ current: i + 1, total: unscrapedCompetitors.length, action: 'Scraping' });
+
+      try {
+        const res = await fetch(`/api/projects/${projectId}/competitors/${comp.app_store_id}/scrape`, {
+          method: 'POST',
+        });
+
+        if (res.ok) {
+          successCount++;
+        }
+      } catch (err) {
+        console.error(`Error scraping ${comp.name}:`, err);
+      }
+    }
+
+    setScrapingAll(false);
+    setBatchProgress(null);
+    onRefresh();
+
+    if (successCount < unscrapedCompetitors.length) {
+      alert(`Scraped ${successCount}/${unscrapedCompetitors.length} competitors. Some failed.`);
+    }
+  };
+
+  // Batch analyze all unanalyzed competitors
+  const handleAnalyzeAll = async () => {
+    if (unanalyzedCompetitors.length === 0) return;
+
+    setAnalyzingAll(true);
+    setBatchProgress({ current: 0, total: unanalyzedCompetitors.length, action: 'Analyzing' });
+
+    let successCount = 0;
+    for (let i = 0; i < unanalyzedCompetitors.length; i++) {
+      const comp = unanalyzedCompetitors[i];
+      setBatchProgress({ current: i + 1, total: unanalyzedCompetitors.length, action: 'Analyzing' });
+
+      try {
+        const res = await fetch(`/api/projects/${projectId}/competitors/${comp.app_store_id}/analyze`, {
+          method: 'POST',
+        });
+
+        if (res.ok) {
+          successCount++;
+        }
+      } catch (err) {
+        console.error(`Error analyzing ${comp.name}:`, err);
+      }
+    }
+
+    setAnalyzingAll(false);
+    setBatchProgress(null);
+    onRefresh();
+
+    if (successCount < unanalyzedCompetitors.length) {
+      alert(`Analyzed ${successCount}/${unanalyzedCompetitors.length} competitors. Some failed.`);
+    }
+  };
+
   const formatNumber = (n?: number) => {
     if (!n) return '0';
     if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
@@ -197,9 +273,104 @@ export default function CompetitorApps({
 
       {!isCollapsed && (
         <div className="p-4 sm:p-6">
+          {/* Workflow Progress Indicator */}
+          {linkedCompetitors.length > 0 && (
+            <div className="mb-4 p-3 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-4 text-sm">
+                  <span className={`flex items-center gap-1.5 ${linkedCompetitors.length > 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}`}>
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                    Linked ({linkedCompetitors.length})
+                  </span>
+                  <span className="text-gray-300 dark:text-gray-600">→</span>
+                  <span className={`flex items-center gap-1.5 ${unscrapedCompetitors.length === 0 ? 'text-green-600 dark:text-green-400' : 'text-orange-600 dark:text-orange-400'}`}>
+                    {unscrapedCompetitors.length === 0 ? (
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="10" strokeWidth="2" />
+                      </svg>
+                    )}
+                    Scraped ({linkedCompetitors.length - unscrapedCompetitors.length}/{linkedCompetitors.length})
+                  </span>
+                  <span className="text-gray-300 dark:text-gray-600">→</span>
+                  <span className={`flex items-center gap-1.5 ${allAnalyzed ? 'text-green-600 dark:text-green-400' : 'text-purple-600 dark:text-purple-400'}`}>
+                    {allAnalyzed ? (
+                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="10" strokeWidth="2" />
+                      </svg>
+                    )}
+                    Analyzed ({linkedCompetitors.filter(c => c.ai_analysis).length}/{linkedCompetitors.length})
+                  </span>
+                </div>
+
+                {/* Batch action buttons */}
+                <div className="flex items-center gap-2">
+                  {unscrapedCompetitors.length > 0 && (
+                    <button
+                      onClick={handleScrapeAll}
+                      disabled={scrapingAll || scrapingApp !== null}
+                      className="px-3 py-1.5 text-xs bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1"
+                    >
+                      {scrapingAll ? (
+                        <>
+                          <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                          {batchProgress ? `${batchProgress.current}/${batchProgress.total}` : 'Scraping...'}
+                        </>
+                      ) : (
+                        <>Scrape All ({unscrapedCompetitors.length})</>
+                      )}
+                    </button>
+                  )}
+                  {unanalyzedCompetitors.length > 0 && (
+                    <button
+                      onClick={handleAnalyzeAll}
+                      disabled={analyzingAll || analyzingApp !== null || scrapingAll}
+                      className="px-3 py-1.5 text-xs bg-purple-500 hover:bg-purple-600 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1"
+                    >
+                      {analyzingAll ? (
+                        <>
+                          <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                          </svg>
+                          {batchProgress ? `${batchProgress.current}/${batchProgress.total}` : 'Analyzing...'}
+                        </>
+                      ) : (
+                        <>Analyze All ({unanalyzedCompetitors.length})</>
+                      )}
+                    </button>
+                  )}
+                </div>
+              </div>
+              {allAnalyzed && (
+                <p className="text-xs text-green-600 dark:text-green-400 mt-2">
+                  All competitor analyses complete. Ready for Blueprint generation.
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Description */}
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-            These apps were analyzed in the gap analysis. Add them to scrape their reviews for deeper competitive insights.
+            {linkedCompetitors.length === 0
+              ? 'These apps were identified during gap analysis. Add them to scrape reviews for deeper competitive insights.'
+              : unscrapedCompetitors.length > 0
+                ? `${unscrapedCompetitors.length} competitor(s) need reviews scraped. Use "Scrape All" for batch processing.`
+                : unanalyzedCompetitors.length > 0
+                  ? `${unanalyzedCompetitors.length} competitor(s) need AI analysis. Use "Analyze All" for batch processing.`
+                  : 'All competitors analyzed. Head to the Blueprint tab to generate your app specification.'}
           </p>
 
           {/* Unlinked Apps List */}

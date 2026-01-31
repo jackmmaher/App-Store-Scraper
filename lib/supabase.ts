@@ -2075,6 +2075,24 @@ export async function createProjectFromIdea(
 ): Promise<AppProject | null> {
   const { name, category, appIdeaSessionId, recommendation, gapAnalysis, clusterScore, country } = input;
 
+  // Auto-link competitors from gap analysis
+  // Transform analyzedApps to LinkedCompetitor format
+  const analyzedApps = (gapAnalysis as { analyzedApps?: Array<{
+    id: string;
+    name: string;
+    iconUrl?: string;
+    rating?: number;
+    reviews?: number;
+  }> })?.analyzedApps || [];
+
+  const linkedCompetitors: LinkedCompetitor[] = analyzedApps.map(app => ({
+    app_store_id: app.id,
+    name: app.name,
+    icon_url: app.iconUrl,
+    rating: app.rating,
+    reviews: app.reviews,
+  }));
+
   const { data, error } = await supabase
     .from('app_projects')
     .insert({
@@ -2106,6 +2124,8 @@ export async function createProjectFromIdea(
         gapAnalysis,
         clusterScore,
       },
+      // Auto-link competitors from gap analysis
+      linked_competitors: linkedCompetitors,
     })
     .select()
     .single();

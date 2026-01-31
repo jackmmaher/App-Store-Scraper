@@ -147,11 +147,33 @@ ${project.notes}`);
   }
 
   // Sample raw reviews for direct user voice
-  const sampleReviews = getSampleReviews(project.reviews, 10);
+  // For original idea projects, include competitor reviews
+  let sampleReviews = getSampleReviews(project.reviews, 10);
+
+  // If no direct reviews (original idea project), collect reviews from linked competitors
+  if (sampleReviews.length === 0 && extProject.linked_competitors && extProject.linked_competitors.length > 0) {
+    const competitorReviews: Review[] = [];
+    for (const comp of extProject.linked_competitors) {
+      if (comp.scraped_reviews && Array.isArray(comp.scraped_reviews)) {
+        // Add competitor name context to review content
+        const reviews = (comp.scraped_reviews as Review[]).map(r => ({
+          ...r,
+          content: `[From ${comp.name}] ${r.content}`,
+        }));
+        competitorReviews.push(...reviews);
+      }
+    }
+    sampleReviews = getSampleReviews(competitorReviews, 15);
+  }
+
   if (sampleReviews.length > 0) {
+    const reviewSource = project.reviews.length > 0
+      ? 'These are actual user reviews showing diverse perspectives (1-5 stars):'
+      : 'These are user reviews from competitor apps showing what users love and hate:';
+
     sections.push(`## Sample User Reviews
 
-These are actual user reviews showing diverse perspectives (1-5 stars):
+${reviewSource}
 
 ${formatReviewsForPrompt(sampleReviews)}`);
   }
