@@ -82,7 +82,8 @@ export async function POST(
     const result = await addLinkedCompetitor(projectId, competitor);
 
     if (!result) {
-      return NextResponse.json({ error: 'Failed to add competitor' }, { status: 500 });
+      console.error('[POST /api/projects/[id]/competitors] Failed to add competitor for project:', projectId);
+      return NextResponse.json({ error: 'Failed to add competitor. Check if database migration was run.' }, { status: 500 });
     }
 
     return NextResponse.json({ competitors: result, success: true });

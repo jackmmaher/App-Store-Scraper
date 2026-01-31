@@ -685,6 +685,28 @@ export async function getOpportunityStats(country: string = 'us'): Promise<Oppor
 }
 
 /**
+ * Get all existing keywords for a category and country
+ * Used to exclude already-discovered keywords from new discovery runs
+ */
+export async function getExistingKeywordsForCategory(
+  category: string,
+  country: string = 'us'
+): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from('opportunities')
+    .select('keyword')
+    .eq('category', category)
+    .eq('country', country);
+
+  if (error) {
+    console.error('Error getting existing keywords:', error);
+    return new Set();
+  }
+
+  return new Set((data || []).map(o => o.keyword.toLowerCase()));
+}
+
+/**
  * Get today's winner (most recently selected opportunity today)
  */
 export async function getTodaysWinner(country: string = 'us'): Promise<Opportunity | null> {

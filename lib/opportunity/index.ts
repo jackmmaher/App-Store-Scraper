@@ -52,4 +52,5 @@ export {
   getRecentDailyRuns,
   getOpportunityStats,
   getTodaysWinner,
+  getExistingKeywordsForCategory,
 } from './db';

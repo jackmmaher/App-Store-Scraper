@@ -2190,7 +2190,7 @@ export async function addLinkedCompetitor(
     .single();
 
   if (error) {
-    console.error('Error adding linked competitor:', error);
+    console.error('Error adding linked competitor:', error.message, error.details, error.hint);
     return null;
   }
 

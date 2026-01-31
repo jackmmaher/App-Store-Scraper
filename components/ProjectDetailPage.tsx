@@ -504,69 +504,116 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
             {/* Analysis Tab */}
             {activeTab === 'analysis' && (
               <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-medium text-gray-900 dark:text-white">
-                    AI Analysis
-                  </h2>
-                  <button
-                    onClick={reRunAnalysis}
-                    disabled={reAnalyzing || project.reviews.length === 0}
-                    className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors disabled:opacity-50 flex items-center gap-2"
-                  >
-                    {reAnalyzing ? (
-                      <>
-                        <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                        </svg>
-                        Re-analyzing...
-                      </>
-                    ) : (
-                      <>
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                        Re-run Analysis
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                {project.ai_analysis ? (
-                  <div className="prose dark:prose-invert max-w-none">
-                    <div className="relative">
-                      <button
-                        onClick={copyAnalysis}
-                        className="absolute top-2 right-2 p-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shadow-sm"
-                        title="Copy analysis"
-                      >
-                        {analysisCopied ? (
-                          <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                        ) : (
-                          <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                          </svg>
-                        )}
-                      </button>
-                      <div className="analysis-report bg-gray-50 dark:bg-gray-900 rounded-lg p-6 pr-14">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {project.ai_analysis}
-                        </ReactMarkdown>
+                {/* For original idea projects, show competitor analyses */}
+                {project.project_type === 'original_idea' ? (
+                  <div>
+                    <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+                      Competitor Review Analysis
+                    </h2>
+                    {(project.linked_competitors || []).filter(c => c.ai_analysis).length > 0 ? (
+                      <div className="space-y-6">
+                        {(project.linked_competitors || [])
+                          .filter(c => c.ai_analysis)
+                          .map((comp) => (
+                            <div key={comp.app_store_id} className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
+                              <div className="flex items-center gap-3 mb-3 pb-3 border-b border-gray-200 dark:border-gray-700">
+                                {comp.icon_url && (
+                                  <img src={comp.icon_url} alt="" className="w-8 h-8 rounded-lg" />
+                                )}
+                                <div>
+                                  <h3 className="font-medium text-gray-900 dark:text-white">{comp.name}</h3>
+                                  <p className="text-xs text-gray-500">
+                                    {comp.rating?.toFixed(1)}★ · {comp.scraped_reviews?.length || 0} reviews analyzed
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="prose dark:prose-invert max-w-none text-sm">
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                  {comp.ai_analysis || ''}
+                                </ReactMarkdown>
+                              </div>
+                            </div>
+                          ))}
                       </div>
-                    </div>
-                    {project.analysis_date && (
-                      <p className="text-xs text-gray-400 mt-4">
-                        Analysis generated on {formatDateTime(project.analysis_date)}
-                      </p>
+                    ) : (
+                      <div className="text-center py-8">
+                        <p className="text-gray-500 dark:text-gray-400 mb-2">
+                          No competitor analyses yet.
+                        </p>
+                        <p className="text-sm text-gray-400">
+                          Add competitors above, scrape their reviews, then analyze them.
+                        </p>
+                      </div>
                     )}
                   </div>
                 ) : (
-                  <div className="text-center py-8">
-                    <p className="text-gray-500 dark:text-gray-400 mb-4">
-                      No AI analysis available. Click "Re-run Analysis" to generate one.
-                    </p>
+                  /* For competitor research projects, show main app analysis */
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-lg font-medium text-gray-900 dark:text-white">
+                        AI Analysis
+                      </h2>
+                      <button
+                        onClick={reRunAnalysis}
+                        disabled={reAnalyzing || project.reviews.length === 0}
+                        className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors disabled:opacity-50 flex items-center gap-2"
+                      >
+                        {reAnalyzing ? (
+                          <>
+                            <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                            </svg>
+                            Re-analyzing...
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            Re-run Analysis
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {project.ai_analysis ? (
+                      <div className="prose dark:prose-invert max-w-none">
+                        <div className="relative">
+                          <button
+                            onClick={copyAnalysis}
+                            className="absolute top-2 right-2 p-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shadow-sm"
+                            title="Copy analysis"
+                          >
+                            {analysisCopied ? (
+                              <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                            ) : (
+                              <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                              </svg>
+                            )}
+                          </button>
+                          <div className="analysis-report bg-gray-50 dark:bg-gray-900 rounded-lg p-6 pr-14">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              {project.ai_analysis}
+                            </ReactMarkdown>
+                          </div>
+                        </div>
+                        {project.analysis_date && (
+                          <p className="text-xs text-gray-400 mt-4">
+                            Analysis generated on {formatDateTime(project.analysis_date)}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8">
+                        <p className="text-gray-500 dark:text-gray-400 mb-4">
+                          No AI analysis available. Click "Re-run Analysis" to generate one.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -575,66 +622,134 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
             {/* Reviews Tab */}
             {activeTab === 'reviews' && (
               <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-medium text-gray-900 dark:text-white">
-                    Cached Reviews
-                  </h2>
-                  <button
-                    onClick={exportReviewsCSV}
-                    className="px-3 py-1.5 text-sm bg-green-600 hover:bg-green-700 text-white rounded transition-colors"
-                  >
-                    Export CSV
-                  </button>
-                </div>
+                {/* For original idea projects, show competitor reviews */}
+                {project.project_type === 'original_idea' ? (
+                  <div>
+                    <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+                      Competitor Reviews
+                    </h2>
+                    {(() => {
+                      const allCompetitorReviews = (project.linked_competitors || [])
+                        .flatMap(comp =>
+                          (comp.scraped_reviews || []).map(r => ({ ...r, competitorName: comp.name, competitorIcon: comp.icon_url }))
+                        );
 
-                {/* Rating Distribution */}
-                {reviewStats && (
-                  <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                    <div className="flex items-center gap-4 flex-wrap">
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                        Rating Distribution:
-                      </span>
-                      {[5, 4, 3, 2, 1].map((rating) => (
-                        <span key={rating} className="flex items-center gap-1 text-sm">
-                          <span className="text-yellow-500">{rating}★</span>
-                          <span className="text-gray-500">
-                            {reviewStats.rating_distribution[rating] || 0}
-                          </span>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {project.reviews.length === 0 ? (
-                  <p className="text-center text-gray-500 py-8">No reviews saved</p>
-                ) : (
-                  <div className="space-y-4 max-h-[600px] overflow-y-auto">
-                    {project.reviews.map((review: Review) => (
-                      <div
-                        key={review.id}
-                        className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg"
-                      >
-                        <div className="flex items-start justify-between mb-2">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <StarRating rating={review.rating} />
-                              <span className="font-medium text-gray-900 dark:text-white">
-                                {review.title}
-                              </span>
-                            </div>
-                            <p className="text-xs text-gray-500 mt-1">
-                              by {review.author} • v{review.version}
-                              {review.country && ` • ${review.country.toUpperCase()}`}
-                              {review.vote_count > 0 && ` • ${review.vote_count} found helpful`}
+                      if (allCompetitorReviews.length === 0) {
+                        return (
+                          <div className="text-center py-8">
+                            <p className="text-gray-500 dark:text-gray-400 mb-2">
+                              No competitor reviews scraped yet.
+                            </p>
+                            <p className="text-sm text-gray-400">
+                              Add competitors above and scrape their reviews to see them here.
                             </p>
                           </div>
+                        );
+                      }
+
+                      return (
+                        <div className="space-y-4 max-h-[600px] overflow-y-auto">
+                          {allCompetitorReviews.map((review: Review & { competitorName: string; competitorIcon?: string }, idx: number) => (
+                            <div
+                              key={`${review.id}-${idx}`}
+                              className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg"
+                            >
+                              <div className="flex items-start justify-between mb-2">
+                                <div>
+                                  <div className="flex items-center gap-2 mb-1">
+                                    {review.competitorIcon && (
+                                      <img src={review.competitorIcon} alt="" className="w-4 h-4 rounded" />
+                                    )}
+                                    <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+                                      {review.competitorName}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <StarRating rating={review.rating} />
+                                    <span className="font-medium text-gray-900 dark:text-white">
+                                      {review.title}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-gray-500 mt-1">
+                                    by {review.author} • v{review.version}
+                                    {review.country && ` • ${review.country.toUpperCase()}`}
+                                  </p>
+                                </div>
+                              </div>
+                              <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                                {review.content}
+                              </p>
+                            </div>
+                          ))}
                         </div>
-                        <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-                          {review.content}
-                        </p>
+                      );
+                    })()}
+                  </div>
+                ) : (
+                  /* For competitor research projects, show main app reviews */
+                  <div>
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-lg font-medium text-gray-900 dark:text-white">
+                        Cached Reviews
+                      </h2>
+                      <button
+                        onClick={exportReviewsCSV}
+                        className="px-3 py-1.5 text-sm bg-green-600 hover:bg-green-700 text-white rounded transition-colors"
+                      >
+                        Export CSV
+                      </button>
+                    </div>
+
+                    {/* Rating Distribution */}
+                    {reviewStats && (
+                      <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                        <div className="flex items-center gap-4 flex-wrap">
+                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Rating Distribution:
+                          </span>
+                          {[5, 4, 3, 2, 1].map((rating) => (
+                            <span key={rating} className="flex items-center gap-1 text-sm">
+                              <span className="text-yellow-500">{rating}★</span>
+                              <span className="text-gray-500">
+                                {reviewStats.rating_distribution[rating] || 0}
+                              </span>
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                    ))}
+                    )}
+
+                    {project.reviews.length === 0 ? (
+                      <p className="text-center text-gray-500 py-8">No reviews saved</p>
+                    ) : (
+                      <div className="space-y-4 max-h-[600px] overflow-y-auto">
+                        {project.reviews.map((review: Review) => (
+                          <div
+                            key={review.id}
+                            className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg"
+                          >
+                            <div className="flex items-start justify-between mb-2">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <StarRating rating={review.rating} />
+                                  <span className="font-medium text-gray-900 dark:text-white">
+                                    {review.title}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  by {review.author} • v{review.version}
+                                  {review.country && ` • ${review.country.toUpperCase()}`}
+                                  {review.vote_count > 0 && ` • ${review.vote_count} found helpful`}
+                                </p>
+                              </div>
+                            </div>
+                            <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                              {review.content}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

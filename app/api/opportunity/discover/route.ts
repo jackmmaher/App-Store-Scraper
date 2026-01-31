@@ -7,6 +7,7 @@ import {
   upsertOpportunity,
   recordOpportunityHistory,
   searchOpportunities,
+  getExistingKeywordsForCategory,
   RankedOpportunity,
   DEFAULT_CONFIG,
 } from '@/lib/opportunity';
@@ -83,6 +84,10 @@ export async function POST(request: NextRequest) {
     // If no seeds provided, use category name and common variations
     const keywordSeeds = seeds.length > 0 ? seeds : getCategorySeeds(category);
 
+    // Fetch existing keywords to exclude from discovery
+    const existingKeywords = await getExistingKeywordsForCategory(category, country);
+    console.log(`Found ${existingKeywords.size} existing keywords for ${category}/${country} to exclude`);
+
     // Discover keywords using autosuggest + iTunes search fallback
     const discoveredKeywords = new Set<string>();
 
@@ -95,33 +100,47 @@ export async function POST(request: NextRequest) {
         const expanded = await expandSeedKeyword(seed, country, 1);
         console.log(`Seed "${seed}" returned ${expanded.length} keywords from autosuggest`);
         for (const hint of expanded) {
-          discoveredKeywords.add(hint.term.toLowerCase());
+          const kw = hint.term.toLowerCase();
+          // Skip keywords that already exist in the database
+          if (!existingKeywords.has(kw)) {
+            discoveredKeywords.add(kw);
+          }
         }
       } catch (err) {
         console.error(`Error expanding seed "${seed}":`, err);
       }
     }
 
-    // If autosuggest returned nothing, use iTunes search fallback
+    // If autosuggest returned nothing (after excluding existing), use iTunes search fallback
     if (discoveredKeywords.size === 0) {
-      console.log('Autosuggest returned no results, using iTunes search fallback...');
+      console.log('Autosuggest returned no new results, using iTunes search fallback...');
       for (const seed of keywordSeeds.slice(0, 3)) {
         try {
           const keywords = await searchITunesForKeywords(seed, country);
           console.log(`iTunes search for "${seed}" found ${keywords.length} keywords`);
-          keywords.forEach(kw => discoveredKeywords.add(kw));
+          keywords.forEach(kw => {
+            // Skip keywords that already exist in the database
+            if (!existingKeywords.has(kw.toLowerCase())) {
+              discoveredKeywords.add(kw);
+            }
+          });
         } catch (err) {
           console.error(`Error searching iTunes for "${seed}":`, err);
         }
       }
     }
 
-    // Also add the seed keywords themselves as they're valid opportunities
-    keywordSeeds.slice(0, 5).forEach(seed => discoveredKeywords.add(seed.toLowerCase()));
+    // Also add the seed keywords themselves if not already discovered
+    keywordSeeds.slice(0, 5).forEach(seed => {
+      const kw = seed.toLowerCase();
+      if (!existingKeywords.has(kw)) {
+        discoveredKeywords.add(kw);
+      }
+    });
 
     const keywordsToScore = Array.from(discoveredKeywords).slice(0, DEFAULT_CONFIG.KEYWORDS_PER_CATEGORY);
 
-    console.log(`Discovered ${discoveredKeywords.size} keywords, will score ${keywordsToScore.length}:`, keywordsToScore);
+    console.log(`Discovered ${discoveredKeywords.size} NEW keywords (excluded ${existingKeywords.size} existing), will score ${keywordsToScore.length}:`, keywordsToScore);
 
     // Score all discovered keywords (using BASIC scoring - fast, iTunes only)
     console.log(`Starting BASIC scoring for ${keywordsToScore.length} keywords...`);
