@@ -26,12 +26,22 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
   const [project, setProject] = useState<AppProject | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'analysis' | 'reviews' | 'notes' | 'keywords' | 'blueprint'>('analysis');
+  const [activeTab, setActiveTab] = useState<'analysis' | 'reviews' | 'notes' | 'keywords' | 'blueprint'>('reviews');
   const [notes, setNotes] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
   const [reAnalyzing, setReAnalyzing] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [analysisCopied, setAnalysisCopied] = useState(false);
+
+  // Review display filters
+  const [ratingFilter, setRatingFilter] = useState<'all' | 1 | 2 | 3 | 4 | 5>('all');
+  const [sortBy, setSortBy] = useState<'default' | 'rating-high' | 'rating-low' | 'helpful'>('default');
+
+  // Keyword scoring state (for adding to keyword research tool)
+  const [scoredKeywords, setScoredKeywords] = useState<Set<string>>(new Set());
+  const [scoringKeyword, setScoringKeyword] = useState<string | null>(null);
+  const [bulkScoring, setBulkScoring] = useState(false);
+  const [bulkScoringProgress, setBulkScoringProgress] = useState({ current: 0, total: 0 });
 
   // Keywords - use shared hooks (with fallback values until project loads)
   const {
@@ -47,6 +57,22 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
     extracting: extractingKeywords,
     extractKeywords,
   } = useKeywordExtraction({ appName: project?.app_name || '' });
+
+  // Filter and sort displayed reviews
+  const filteredReviews = (project?.reviews || [])
+    .filter((r: Review) => ratingFilter === 'all' || r.rating === ratingFilter)
+    .sort((a: Review, b: Review) => {
+      switch (sortBy) {
+        case 'rating-high':
+          return b.rating - a.rating;
+        case 'rating-low':
+          return a.rating - b.rating;
+        case 'helpful':
+          return (b.vote_count || 0) - (a.vote_count || 0);
+        default:
+          return 0;
+      }
+    });
 
   useEffect(() => {
     fetchProject();
@@ -213,6 +239,70 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
 
   const extractKeywordsFromReviews = () => {
     if (project) extractKeywords(project.reviews);
+  };
+
+  // Score a single extracted keyword and add to keyword research database
+  const scoreExtractedKeyword = async (keyword: string) => {
+    if (!project) return;
+    setScoringKeyword(keyword);
+    try {
+      const res = await fetch('/api/keywords/score', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          keyword,
+          country: project.country || 'us',
+          source_app_id: project.app_store_id,
+          discovered_via: 'review_extraction',
+        }),
+      });
+
+      if (res.ok) {
+        setScoredKeywords(prev => new Set([...prev, keyword]));
+      }
+    } catch (err) {
+      console.error('Error scoring keyword:', err);
+    } finally {
+      setScoringKeyword(null);
+    }
+  };
+
+  // Bulk score all extracted keywords
+  const bulkScoreExtractedKeywords = async () => {
+    if (!project) return;
+    const keywordsToScore = extractedKeywords.filter(kw => !scoredKeywords.has(kw.keyword));
+    if (keywordsToScore.length === 0) return;
+
+    setBulkScoring(true);
+    setBulkScoringProgress({ current: 0, total: keywordsToScore.length });
+
+    for (let i = 0; i < keywordsToScore.length; i++) {
+      const kw = keywordsToScore[i];
+      try {
+        const res = await fetch('/api/keywords/score', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            keyword: kw.keyword,
+            country: project.country || 'us',
+            source_app_id: project.app_store_id,
+            discovered_via: 'review_extraction',
+          }),
+        });
+
+        if (res.ok) {
+          setScoredKeywords(prev => new Set([...prev, kw.keyword]));
+        }
+      } catch (err) {
+        console.error('Error scoring keyword:', kw.keyword, err);
+      }
+
+      setBulkScoringProgress({ current: i + 1, total: keywordsToScore.length });
+      // Rate limiting
+      await new Promise(r => setTimeout(r, 300));
+    }
+
+    setBulkScoring(false);
   };
 
   const copyAnalysis = async () => {
@@ -448,6 +538,16 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
           <div className="flex overflow-x-auto border-b border-gray-200 dark:border-gray-700 scrollbar-hide">
             <button
+              onClick={() => setActiveTab('reviews')}
+              className={`px-3 sm:px-6 py-3 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
+                activeTab === 'reviews'
+                  ? 'text-blue-600 border-b-2 border-blue-600'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Reviews ({project.review_count})
+            </button>
+            <button
               onClick={() => setActiveTab('analysis')}
               className={`px-3 sm:px-6 py-3 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
                 activeTab === 'analysis'
@@ -457,16 +557,6 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
             >
               <span className="hidden sm:inline">AI Analysis</span>
               <span className="sm:hidden">Analysis</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('reviews')}
-              className={`px-3 sm:px-6 py-3 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
-                activeTab === 'reviews'
-                  ? 'text-blue-600 border-b-2 border-blue-600'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Reviews ({project.review_count})
             </button>
             <button
               onClick={() => setActiveTab('notes')}
@@ -700,30 +790,86 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
                       </button>
                     </div>
 
-                    {/* Rating Distribution */}
-                    {reviewStats && (
-                      <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                        <div className="flex items-center gap-4 flex-wrap">
-                          <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                            Rating Distribution:
-                          </span>
-                          {[5, 4, 3, 2, 1].map((rating) => (
-                            <span key={rating} className="flex items-center gap-1 text-sm">
-                              <span className="text-yellow-500">{rating}★</span>
-                              <span className="text-gray-500">
-                                {reviewStats.rating_distribution[rating] || 0}
-                              </span>
-                            </span>
-                          ))}
+                    {/* Review Filters */}
+                    {project.reviews.length > 0 && (
+                      <div className="flex flex-col gap-2 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-700 mb-4">
+                        {/* Rating Filter */}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Rating:</span>
+                          <div className="flex flex-wrap gap-1">
+                            <button
+                              onClick={() => setRatingFilter('all')}
+                              className={`px-2 py-1 text-xs rounded transition-colors ${
+                                ratingFilter === 'all'
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500'
+                              }`}
+                            >
+                              All
+                            </button>
+                            {[5, 4, 3, 2, 1].map((rating) => (
+                              <button
+                                key={rating}
+                                onClick={() => setRatingFilter(rating as 1 | 2 | 3 | 4 | 5)}
+                                className={`px-2 py-1 text-xs rounded transition-colors ${
+                                  ratingFilter === rating
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-500'
+                                }`}
+                              >
+                                {rating}★
+                                {reviewStats && (
+                                  <span className="ml-1 opacity-60">
+                                    ({reviewStats.rating_distribution[rating] || 0})
+                                  </span>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                          {/* Sort By */}
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Sort:</span>
+                            <select
+                              value={sortBy}
+                              onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                              className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                            >
+                              <option value="default">Default</option>
+                              <option value="rating-high">Rating (High to Low)</option>
+                              <option value="rating-low">Rating (Low to High)</option>
+                              <option value="helpful">Most Helpful</option>
+                            </select>
+                          </div>
+
+                          {/* Results Count */}
+                          <div className="text-xs text-gray-500 dark:text-gray-400 sm:ml-auto">
+                            {filteredReviews.length} of {project.reviews.length}
+                          </div>
                         </div>
                       </div>
                     )}
 
                     {project.reviews.length === 0 ? (
                       <p className="text-center text-gray-500 py-8">No reviews saved</p>
+                    ) : filteredReviews.length === 0 ? (
+                      <div className="text-center py-8">
+                        <p className="text-gray-500 dark:text-gray-400 mb-2">No reviews match your filters</p>
+                        <button
+                          onClick={() => {
+                            setRatingFilter('all');
+                            setSortBy('default');
+                          }}
+                          className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                        >
+                          Clear filters
+                        </button>
+                      </div>
                     ) : (
                       <div className="space-y-4 max-h-[600px] overflow-y-auto">
-                        {project.reviews.map((review: Review) => (
+                        {filteredReviews.map((review: Review) => (
                           <div
                             key={review.id}
                             className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg"
@@ -882,45 +1028,135 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
 
                 {/* Extracted Keywords from Reviews */}
                 <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                     <div>
                       <h3 className="text-lg font-medium text-gray-900 dark:text-white">
                         Keywords from Reviews
                       </h3>
                       <p className="text-sm text-gray-500 dark:text-gray-400">
-                        Common terms users mention in reviews ({project.review_count} reviews)
+                        Common terms users mention - add to keyword research
                       </p>
                     </div>
-                    <button
-                      onClick={extractKeywordsFromReviews}
-                      disabled={extractingKeywords || project.reviews.length === 0}
-                      className="px-3 py-1.5 text-sm bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors disabled:opacity-50"
-                    >
-                      {extractingKeywords ? 'Extracting...' : 'Extract Keywords'}
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={extractKeywordsFromReviews}
+                        disabled={extractingKeywords || project.reviews.length === 0}
+                        className="px-3 py-1.5 text-sm bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors disabled:opacity-50"
+                      >
+                        {extractingKeywords ? 'Extracting...' : 'Extract'}
+                      </button>
+                      {extractedKeywords.length > 0 && (
+                        <button
+                          onClick={bulkScoreExtractedKeywords}
+                          disabled={bulkScoring || extractedKeywords.every(kw => scoredKeywords.has(kw.keyword))}
+                          className="px-3 py-1.5 text-sm bg-green-600 hover:bg-green-700 text-white rounded transition-colors disabled:opacity-50 flex items-center gap-1"
+                        >
+                          {bulkScoring ? (
+                            <>
+                              <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                              </svg>
+                              {bulkScoringProgress.current}/{bulkScoringProgress.total}
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                              </svg>
+                              Add All to Research
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {extractedKeywords.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {extractedKeywords.map((kw, idx) => (
-                        <button
-                          key={`${kw.keyword}-${idx}`}
-                          onClick={() => checkKeywordRank(kw.keyword)}
-                          className={`px-3 py-1.5 rounded-full text-sm transition-colors ${
-                            kw.type === 'phrase'
-                              ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 hover:bg-purple-200'
-                              : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-200'
-                          }`}
-                          title={`Click to check ranking - mentioned ${kw.count} times`}
+                    <div className="space-y-3">
+                      {/* Scored keywords count */}
+                      {scoredKeywords.size > 0 && (
+                        <div className="text-sm text-green-600 dark:text-green-400 flex items-center gap-1">
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                          {scoredKeywords.size} of {extractedKeywords.length} added to keyword research
+                        </div>
+                      )}
+
+                      {/* Keywords grid */}
+                      <div className="flex flex-wrap gap-2">
+                        {extractedKeywords.map((kw, idx) => {
+                          const isScored = scoredKeywords.has(kw.keyword);
+                          const isScoring = scoringKeyword === kw.keyword;
+
+                          return (
+                            <div
+                              key={`${kw.keyword}-${idx}`}
+                              className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-sm transition-colors ${
+                                isScored
+                                  ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                                  : kw.type === 'phrase'
+                                    ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
+                                    : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                              }`}
+                            >
+                              {isScored && (
+                                <svg className="w-3 h-3 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                </svg>
+                              )}
+                              <button
+                                onClick={() => checkKeywordRank(kw.keyword)}
+                                className="hover:underline"
+                                title={`Check ranking - mentioned ${kw.count} times`}
+                              >
+                                {kw.keyword}
+                                <span className="ml-1 text-xs opacity-60">({kw.count})</span>
+                              </button>
+                              {!isScored && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    scoreExtractedKeyword(kw.keyword);
+                                  }}
+                                  disabled={isScoring || bulkScoring}
+                                  className="ml-1 p-0.5 hover:bg-white/50 dark:hover:bg-black/20 rounded transition-colors disabled:opacity-50"
+                                  title="Add to keyword research"
+                                >
+                                  {isScoring ? (
+                                    <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                    </svg>
+                                  ) : (
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                                    </svg>
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Link to keyword research */}
+                      <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
+                        <a
+                          href="/keywords"
+                          className="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
                         >
-                          {kw.keyword}
-                          <span className="ml-1 text-xs opacity-60">({kw.count})</span>
-                        </button>
-                      ))}
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                          View all keywords in Keyword Research
+                        </a>
+                      </div>
                     </div>
                   ) : (
                     <p className="text-gray-500 dark:text-gray-400 text-center py-4">
-                      Click "Extract Keywords" to analyze review content
+                      Click "Extract" to analyze review content
                     </p>
                   )}
                 </div>

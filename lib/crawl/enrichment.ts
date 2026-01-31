@@ -125,13 +125,16 @@ export async function getEnrichmentForBlueprint(
   competitorUrl?: string,
   country: string = 'us'
 ): Promise<string> {
+  // Filter out empty appIds to avoid calling crawl service with invalid data
+  const validAppIds = appId && appId.trim() ? [appId] : [];
+
   return getEnrichmentForPrompt({
-    appStoreIds: [appId],
+    appStoreIds: validAppIds.length > 0 ? validAppIds : undefined,
     keywords,
     competitorUrls: competitorUrl ? [competitorUrl] : undefined,
     country,
     options: {
-      includeReviews: true,
+      includeReviews: validAppIds.length > 0, // Only include reviews if we have valid appId
       includeReddit: true,
       includeWebsites: !!competitorUrl,
       maxReviewsPerApp: 500,

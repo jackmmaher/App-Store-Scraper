@@ -48,6 +48,7 @@ interface ScrapeProgress {
   nextRequestIn: number;
   isThrottled: boolean;
   throttleMessage?: string;
+  elapsedSeconds?: number;
 }
 
 // Filter descriptions
@@ -286,12 +287,35 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
         // Already initialized
         break;
 
-      case 'progress':
+      case 'heartbeat':
+        // Heartbeat just keeps connection alive and shows which filter is active
+        // It does NOT update review counts - only filterComplete has real data
         setProgress(prev => {
           if (!prev) return prev;
           const updatedStatuses = prev.filterStatuses.map(s =>
             s.filter === event.filter
-              ? { ...s, status: 'active' as const, count: (event.filterReviewsTotal as number) ?? 0 }
+              ? { ...s, status: 'active' as const }
+              : s.status === 'active' && s.filter !== event.filter
+                ? { ...s, status: 'pending' as const }
+                : s
+          );
+          return {
+            ...prev,
+            currentFilter: (event.filter as string) ?? prev.currentFilter,
+            currentFilterIndex: (event.filterIndex as number) ?? prev.currentFilterIndex,
+            filterStatuses: updatedStatuses,
+            elapsedSeconds: (event.elapsedSeconds as number) ?? prev.elapsedSeconds,
+          };
+        });
+        break;
+
+      case 'progress':
+        // Real progress from Python crawler with actual counts
+        setProgress(prev => {
+          if (!prev) return prev;
+          const updatedStatuses = prev.filterStatuses.map(s =>
+            s.filter === event.filter
+              ? { ...s, status: 'active' as const, count: (event.filterReviewsTotal as number) ?? s.count }
               : s
           );
           return {
@@ -300,7 +324,6 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
             currentFilterIndex: (event.filterIndex as number) ?? prev.currentFilterIndex,
             currentPage: (event.page as number) ?? prev.currentPage,
             maxPages: (event.maxPages as number) ?? prev.maxPages,
-            reviewsCollected: prev.reviewsCollected + ((event.reviewsThisPage as number) ?? 0),
             uniqueReviews: (event.totalUnique as number) ?? prev.uniqueReviews,
             filterStatuses: updatedStatuses,
             nextRequestIn: (event.nextDelayMs as number) ?? 0,
@@ -1215,13 +1238,19 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
                     <div>
                       <span className="text-gray-500 dark:text-gray-400">Reviews:</span>
                       <span className="ml-2 text-gray-900 dark:text-white font-medium">
-                        {(progress.uniqueReviews ?? 0).toLocaleString()} unique
+                        {progress.uniqueReviews > 0
+                          ? `${progress.uniqueReviews.toLocaleString()} unique`
+                          : 'Collecting...'
+                        }
                       </span>
                     </div>
                     <div>
-                      <span className="text-gray-500 dark:text-gray-400">Next request:</span>
+                      <span className="text-gray-500 dark:text-gray-400">Elapsed:</span>
                       <span className="ml-2 text-gray-900 dark:text-white font-medium">
-                        {((progress.nextRequestIn ?? 0) / 1000).toFixed(1)}s
+                        {progress.elapsedSeconds
+                          ? `${Math.floor(progress.elapsedSeconds / 60)}:${String(progress.elapsedSeconds % 60).padStart(2, '0')}`
+                          : '0:00'
+                        }
                       </span>
                     </div>
                   </div>
@@ -1258,7 +1287,16 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
                           {FILTER_INFO[filterStatus.filter]?.label || filterStatus.filter}
                         </span>
                         <span className="text-gray-500">
-                          {filterStatus.count > 0 ? `${filterStatus.count} reviews` : filterStatus.status === 'pending' ? 'pending' : ''}
+                          {filterStatus.count > 0
+                            ? `${filterStatus.count.toLocaleString()} reviews`
+                            : filterStatus.status === 'active'
+                              ? 'scraping...'
+                              : filterStatus.status === 'pending'
+                                ? 'pending'
+                                : filterStatus.status === 'complete'
+                                  ? '0 reviews'
+                                  : ''
+                          }
                         </span>
                       </div>
                     ))}

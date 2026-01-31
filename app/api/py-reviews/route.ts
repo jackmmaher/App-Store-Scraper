@@ -9,7 +9,7 @@ import { NextRequest } from 'next/server';
 import { isAuthenticated } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 300; // 5 minutes
+export const maxDuration = 600; // 10 minutes for large apps
 
 const CRAWL_SERVICE_URL = process.env.CRAWL_SERVICE_URL || 'http://localhost:8000';
 
@@ -105,6 +105,7 @@ export async function POST(request: NextRequest) {
         let heartbeatCount = 0;
 
         // Start heartbeat to keep connection alive and show progress
+        // NOTE: We don't send fake filter counts - only filterComplete events have real data
         const heartbeatInterval = setInterval(() => {
           if (!isRunning) {
             clearInterval(heartbeatInterval);
@@ -119,15 +120,10 @@ export async function POST(request: NextRequest) {
           );
 
           sendEvent({
-            type: 'progress',
+            type: 'heartbeat',
             filter: enabledFilters[estimatedFilterIndex]?.sort || 'mostRecent',
             filterIndex: estimatedFilterIndex,
-            page: (heartbeatCount % 10) + 1,
-            maxPages: 10,
-            reviewsThisPage: 0,
-            totalUnique: heartbeatCount * 5, // Rough estimate
-            filterReviewsTotal: heartbeatCount * 5,
-            nextDelayMs: 2000,
+            elapsedSeconds: heartbeatCount * 2,
             message: `Crawling ${enabledFilters[estimatedFilterIndex]?.sort || 'reviews'}...`,
           });
         }, 2000);

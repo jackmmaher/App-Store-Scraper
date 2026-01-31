@@ -173,6 +173,32 @@ export async function getKeyword(
 }
 
 /**
+ * Get keywords discovered from a specific app (by source_app_id)
+ * Used for ASO to include review-extracted keywords in the prompt
+ */
+export async function getKeywordsBySourceApp(
+  sourceAppId: string,
+  country: string = 'us',
+  limit: number = 50
+): Promise<Keyword[]> {
+  const { data, error } = await supabase
+    .from('keywords')
+    .select('*')
+    .eq('source_app_id', sourceAppId)
+    .eq('country', country)
+    .not('volume_score', 'is', null) // Only scored keywords
+    .order('opportunity_score', { ascending: false, nullsFirst: false })
+    .limit(limit);
+
+  if (error) {
+    console.error('Error getting keywords by source app:', error);
+    return [];
+  }
+
+  return data || [];
+}
+
+/**
  * Search keywords with filters
  */
 export async function searchKeywords(
