@@ -1,28 +1,71 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 export type RedditAnalysisStage =
   | 'idle'
+  | 'validating'
   | 'crawling'
   | 'analyzing'
   | 'storing'
   | 'complete'
   | 'error';
 
+// Real-time progress data from SSE
+export interface RealTimeProgress {
+  stage: RedditAnalysisStage;
+  progress?: number;
+  message?: string;
+  // Validation stage
+  validCount?: number;
+  invalidCount?: number;
+  discoveredCount?: number;
+  invalid?: string[];
+  discovered?: string[];
+  // Crawling stage
+  subredditsTotal?: number;
+  postsFound?: number;
+  commentsFound?: number;
+  newPostsFromPass2?: number;
+  minedTerms?: string[];
+  // Analysis stage
+  postsToAnalyze?: number;
+  needsFound?: number;
+  highSeverity?: number;
+  languagePatterns?: number;
+  // Complete stage
+  analysisId?: string;
+  summary?: {
+    postsAnalyzed: number;
+    commentsAnalyzed: number;
+    unmetNeedsFound: number;
+    highSeverityNeeds: number;
+    subredditsSearched: number;
+    topicsSearched: number;
+  };
+}
+
 interface RedditAnalysisProgressProps {
   stage: RedditAnalysisStage;
   error?: string | null;
+  // New: Real-time data from SSE
+  realTimeData?: RealTimeProgress | null;
 }
 
 interface StageConfig {
   label: string;
   description: string;
   duration: number; // estimated seconds
-  icon: 'search' | 'brain' | 'database' | 'check';
+  icon: 'check-circle' | 'search' | 'brain' | 'database' | 'check';
 }
 
 const STAGES: Record<Exclude<RedditAnalysisStage, 'idle' | 'complete' | 'error'>, StageConfig> = {
+  validating: {
+    label: 'Validating',
+    description: 'Checking subreddits are active and public...',
+    duration: 15,
+    icon: 'check-circle',
+  },
   crawling: {
     label: 'Crawling Reddit',
     description: 'Searching subreddits and fetching posts with comments...',
@@ -43,12 +86,18 @@ const STAGES: Record<Exclude<RedditAnalysisStage, 'idle' | 'complete' | 'error'>
   },
 };
 
-const STAGE_ORDER: (keyof typeof STAGES)[] = ['crawling', 'analyzing', 'storing'];
+const STAGE_ORDER: (keyof typeof STAGES)[] = ['validating', 'crawling', 'analyzing', 'storing'];
 
 function StageIcon({ icon, isActive }: { icon: StageConfig['icon']; isActive: boolean }) {
   const baseClass = `w-5 h-5 ${isActive ? 'text-orange-500' : 'text-gray-400'}`;
 
   switch (icon) {
+    case 'check-circle':
+      return (
+        <svg className={baseClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      );
     case 'search':
       return (
         <svg className={baseClass} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -79,6 +128,7 @@ function StageIcon({ icon, isActive }: { icon: StageConfig['icon']; isActive: bo
 export default function RedditAnalysisProgress({
   stage,
   error,
+  realTimeData,
 }: RedditAnalysisProgressProps) {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [stageElapsed, setStageElapsed] = useState(0);
@@ -88,14 +138,20 @@ export default function RedditAnalysisProgress({
   const isActive = stage !== 'idle' && stage !== 'complete' && stage !== 'error';
   const currentStageConfig = isActive ? STAGES[stage as keyof typeof STAGES] : null;
 
-  // Sub-stages for crawling (to show more detailed progress)
+  // Sub-stages for each stage (fallback if no real-time data)
+  const validatingSubStages = [
+    'Checking subreddit availability...',
+    'Verifying public access...',
+    'Discovering related communities...',
+  ];
+
   const crawlingSubStages = [
     'Connecting to Reddit API...',
     'Searching topic keywords...',
     'Fetching matching posts...',
     'Loading comment threads...',
-    'Filtering by engagement...',
-    'Deduplicating results...',
+    'Mining language patterns...',
+    'Running second pass crawl...',
   ];
 
   const analyzingSubStages = [
@@ -103,7 +159,7 @@ export default function RedditAnalysisProgress({
     'Identifying pain points...',
     'Extracting user quotes...',
     'Analyzing sentiment patterns...',
-    'Categorizing by severity...',
+    'Calculating confidence scores...',
     'Generating insights...',
   ];
 
@@ -128,11 +184,12 @@ export default function RedditAnalysisProgress({
     return () => clearInterval(interval);
   }, [isActive]);
 
-  // Sub-stage cycling
+  // Sub-stage cycling (only if no real-time message)
   useEffect(() => {
-    if (!isActive || !currentStageConfig) return;
+    if (!isActive || !currentStageConfig || realTimeData?.message) return;
 
-    const subStages = stage === 'crawling' ? crawlingSubStages :
+    const subStages = stage === 'validating' ? validatingSubStages :
+                      stage === 'crawling' ? crawlingSubStages :
                       stage === 'analyzing' ? analyzingSubStages : [];
 
     if (subStages.length === 0) return;
@@ -144,36 +201,71 @@ export default function RedditAnalysisProgress({
     }, cycleTime * 1000);
 
     return () => clearInterval(interval);
-  }, [stage, isActive, currentStageConfig]);
+  }, [stage, isActive, currentStageConfig, realTimeData?.message]);
 
-  // Calculate progress
-  const calculateProgress = () => {
+  // Calculate progress - prefer real-time data if available
+  const calculateProgress = useCallback(() => {
     if (stage === 'complete') return 100;
     if (stage === 'error' || stage === 'idle') return 0;
 
+    // Use real-time progress if available
+    if (realTimeData?.progress !== undefined) {
+      const completedStages = currentStageIndex;
+      const totalStages = STAGE_ORDER.length;
+      const baseProgress = (completedStages / totalStages) * 100;
+      const stageContribution = (realTimeData.progress / 100) * (100 / totalStages);
+      return Math.min(baseProgress + stageContribution, 99);
+    }
+
+    // Fallback to time-based estimate
     const completedStages = currentStageIndex;
     const totalStages = STAGE_ORDER.length;
-
-    // Base progress from completed stages
     const baseProgress = (completedStages / totalStages) * 100;
-
-    // Progress within current stage (estimate based on time)
     const currentConfig = STAGES[stage as keyof typeof STAGES];
     const stageProgress = Math.min(stageElapsed / currentConfig.duration, 0.95);
     const stageContribution = (stageProgress / totalStages) * 100;
 
     return Math.min(baseProgress + stageContribution, 95);
-  };
+  }, [stage, currentStageIndex, realTimeData?.progress, stageElapsed]);
 
   const progress = calculateProgress();
 
-  // Get current sub-stage label
-  const getSubStageLabel = () => {
+  // Get current sub-stage label - prefer real-time message
+  const getSubStageLabel = useCallback(() => {
+    // Use real-time message if available
+    if (realTimeData?.message) {
+      return realTimeData.message;
+    }
+
+    // Fallback to cycling sub-stages
+    if (stage === 'validating') return validatingSubStages[subStageIndex];
     if (stage === 'crawling') return crawlingSubStages[subStageIndex];
     if (stage === 'analyzing') return analyzingSubStages[subStageIndex];
     if (stage === 'storing') return 'Writing to database...';
     return '';
-  };
+  }, [stage, subStageIndex, realTimeData?.message]);
+
+  // Get real-time stats display
+  const getRealTimeStats = useCallback(() => {
+    if (!realTimeData) return null;
+
+    const stats: string[] = [];
+
+    if (realTimeData.postsFound !== undefined) {
+      stats.push(`${realTimeData.postsFound} posts`);
+    }
+    if (realTimeData.commentsFound !== undefined) {
+      stats.push(`${realTimeData.commentsFound} comments`);
+    }
+    if (realTimeData.needsFound !== undefined) {
+      stats.push(`${realTimeData.needsFound} needs`);
+    }
+    if (realTimeData.validCount !== undefined) {
+      stats.push(`${realTimeData.validCount} valid subs`);
+    }
+
+    return stats.length > 0 ? stats.join(' | ') : null;
+  }, [realTimeData]);
 
   if (stage === 'idle') return null;
 
@@ -248,9 +340,40 @@ export default function RedditAnalysisProgress({
         </h3>
 
         {/* Sub-stage description */}
-        <p className="text-center text-sm text-gray-600 dark:text-gray-400 mb-6 min-h-[1.25rem]">
+        <p className="text-center text-sm text-gray-600 dark:text-gray-400 mb-2 min-h-[1.25rem]">
           {getSubStageLabel()}
         </p>
+
+        {/* Real-time stats */}
+        {getRealTimeStats() && (
+          <p className="text-center text-xs text-orange-600 dark:text-orange-400 mb-4 font-medium">
+            {getRealTimeStats()}
+          </p>
+        )}
+
+        {/* Mined terms display (during crawling pass 2) */}
+        {realTimeData?.minedTerms && realTimeData.minedTerms.length > 0 && (
+          <div className="mb-4 p-2 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
+            <p className="text-xs text-orange-700 dark:text-orange-300 mb-1">Mined search terms:</p>
+            <div className="flex flex-wrap gap-1">
+              {realTimeData.minedTerms.map((term, i) => (
+                <span key={i} className="px-2 py-0.5 text-xs bg-orange-100 dark:bg-orange-900/40 text-orange-800 dark:text-orange-200 rounded">
+                  {term}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Invalid subreddits warning */}
+        {realTimeData?.invalid && realTimeData.invalid.length > 0 && (
+          <div className="mb-4 p-2 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+            <p className="text-xs text-yellow-700 dark:text-yellow-300">
+              Skipped {realTimeData.invalid.length} invalid subreddit(s): {realTimeData.invalid.slice(0, 3).join(', ')}
+              {realTimeData.invalid.length > 3 && '...'}
+            </p>
+          </div>
+        )}
 
         {/* Progress bar */}
         <div className="relative h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden mb-3">

@@ -14,6 +14,25 @@ export interface RedditSearchConfig {
 }
 
 // ============================================================================
+// Subreddit Validation
+// ============================================================================
+
+export interface SubredditInfo {
+  name: string;
+  subscribers: number;
+  active_users: number;
+  public: boolean;
+  over18: boolean;
+  description?: string;
+}
+
+export interface SubredditValidationResult {
+  valid: SubredditInfo[];
+  invalid: string[];
+  discovered: string[];
+}
+
+// ============================================================================
 // Analysis Results
 // ============================================================================
 
@@ -38,6 +57,38 @@ export interface RedditAnalysisResult {
 }
 
 // ============================================================================
+// Confidence Scoring
+// ============================================================================
+
+export interface ConfidenceFactors {
+  postVolume: number;       // 0-1: More posts = higher confidence
+  crossSubreddit: number;   // 0-1: Mentioned in multiple subs = higher
+  quoteVerified: boolean;   // Quotes actually found in posts
+  sentimentConsistency: number; // 0-1: Agreement across posts
+}
+
+export interface ConfidenceScore {
+  score: number;            // 0-1 scale
+  factors: ConfidenceFactors;
+  label: 'high' | 'medium' | 'low' | 'speculative';
+}
+
+// ============================================================================
+// Quote Attribution
+// ============================================================================
+
+export interface AttributedQuote {
+  text: string;
+  postId: string;
+  postTitle: string;
+  subreddit: string;
+  score: number;
+  permalink: string;        // Direct link to comment/post
+  isFromComment: boolean;
+  author?: string;
+}
+
+// ============================================================================
 // Unmet Needs
 // ============================================================================
 
@@ -51,7 +102,16 @@ export interface UnmetNeed {
     avgUpvotes: number;
     topSubreddits: string[];
     representativeQuotes: string[];
+    // New: Attributed quotes with links
+    attributedQuotes?: AttributedQuote[];
   };
+  // New: Confidence scoring
+  confidence?: ConfidenceScore;
+  // New: Solution/workaround extraction (Phase 3.2)
+  workarounds?: string[];
+  competitorsMentioned?: string[];
+  idealSolutionQuotes?: string[];
+  // Existing
   solutionNotes: string | null;
 }
 

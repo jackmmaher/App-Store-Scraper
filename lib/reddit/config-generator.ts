@@ -4,6 +4,8 @@
 import { RedditSearchConfig } from './types';
 import { supabase, Review, LinkedCompetitor } from '@/lib/supabase';
 import { CATEGORY_SUBREDDITS } from '@/lib/opportunity/constants';
+import { enhanceSearchTopicsWithReviewLanguage } from './language-extractor';
+import { getHighYieldSubreddits, getHighYieldTopics } from './yield-tracker';
 
 // ============================================================================
 // Extended Category Subreddits for Reddit Deep Dive
@@ -74,13 +76,40 @@ export async function generateRedditSearchConfig(
     // Use Claude to extract problem domain and keywords from reviews
     const extraction = await extractInsightsWithClaude(competitor);
 
-    // Combine category subreddits with AI suggestions
-    const subreddits = mergeSubreddits(categorySubreddits, extraction.suggestedSubreddits);
+    // Enhance AI-generated search topics with NLP-extracted phrases from reviews
+    // This adds authentic user language that Claude might miss
+    let enhancedSearchTopics = enhanceSearchTopicsWithReviewLanguage(
+      extraction.searchTopics,
+      competitor.reviews
+    );
+
+    // Also merge in high-yield topics from historical data
+    if (competitor.category) {
+      try {
+        const highYieldTopics = await getHighYieldTopics(competitor.category, 3);
+        const existingLower = new Set(enhancedSearchTopics.map(t => t.toLowerCase()));
+        for (const topic of highYieldTopics) {
+          if (!existingLower.has(topic.toLowerCase())) {
+            enhancedSearchTopics.push(topic);
+          }
+        }
+        enhancedSearchTopics = enhancedSearchTopics.slice(0, 12); // Limit to 12 topics
+      } catch (error) {
+        console.warn('[Config Generator] Could not fetch high-yield topics:', error);
+      }
+    }
+
+    // Combine category subreddits with AI suggestions and high-yield historical data
+    const subreddits = await mergeWithHighYieldSubreddits(
+      categorySubreddits,
+      extraction.suggestedSubreddits,
+      competitor.category
+    );
 
     return {
       competitorId,
       problemDomain: extraction.problemDomain,
-      searchTopics: extraction.searchTopics,
+      searchTopics: enhancedSearchTopics,
       subreddits,
       timeRange: 'month',
     };
@@ -366,6 +395,43 @@ function getCategorySubreddits(category: string | null): string[] {
 function mergeSubreddits(categorySubreddits: string[], aiSuggested: string[]): string[] {
   // Combine and deduplicate
   const combined = new Set([...categorySubreddits, ...aiSuggested]);
+
+  // Remove any empty strings or invalid entries
+  const filtered = Array.from(combined).filter(
+    (s) => s && s.length > 0 && !s.includes(' ')
+  );
+
+  // Return up to 10 subreddits
+  return filtered.slice(0, 10);
+}
+
+/**
+ * Merge subreddits with high-yield historical data
+ */
+async function mergeWithHighYieldSubreddits(
+  categorySubreddits: string[],
+  aiSuggested: string[],
+  category: string | null
+): Promise<string[]> {
+  // Start with AI suggestions (highest priority for relevance)
+  const combined = new Set(aiSuggested);
+
+  // Add category-based subreddits
+  for (const sub of categorySubreddits) {
+    combined.add(sub);
+  }
+
+  // Get high-yield subreddits from historical data
+  if (category) {
+    try {
+      const highYield = await getHighYieldSubreddits(category, 5);
+      for (const sub of highYield) {
+        combined.add(sub);
+      }
+    } catch (error) {
+      console.warn('[Config Generator] Could not fetch high-yield subreddits:', error);
+    }
+  }
 
   // Remove any empty strings or invalid entries
   const filtered = Array.from(combined).filter(

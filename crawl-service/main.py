@@ -8,6 +8,7 @@ FastAPI service providing crawling capabilities for:
 - Competitor websites via httpx/BeautifulSoup
 """
 
+import asyncio
 import logging
 import os
 import time
@@ -107,14 +108,29 @@ class RedditDeepDiveRequest(BaseModel):
     time_filter: str = "month"  # week, month, year
     max_posts_per_combo: int = 50
     max_comments_per_post: int = 30
+    validate_subreddits: bool = True  # Whether to validate subreddits before crawling
+    use_adaptive_thresholds: bool = True  # Use community-size-based engagement thresholds
 
 
 class RedditDeepDiveResponse(BaseModel):
     """Response model for Reddit deep dive crawling."""
     posts: list[dict]
     stats: dict
+    validation: Optional[dict] = None  # Subreddit validation results
     success: bool
     error: Optional[str] = None
+
+
+class SubredditValidateRequest(BaseModel):
+    """Request model for subreddit validation."""
+    subreddits: list[str]
+
+
+class SubredditValidateResponse(BaseModel):
+    """Response model for subreddit validation."""
+    valid: list[dict]  # List of SubredditInfo dicts
+    invalid: list[str]  # List of invalid/nonexistent subreddit names
+    discovered: list[str]  # Related subreddits discovered
 
 
 class HealthResponse(BaseModel):
@@ -363,10 +379,17 @@ async def crawl_reddit_deep_dive(request: RedditDeepDiveRequest):
 
     Searches each topic in each subreddit, fetches comments on high-engagement posts.
     Returns structured data for AI analysis.
+
+    Features:
+    - Subreddit validation (checks if subreddits exist and are public)
+    - Adaptive engagement thresholds based on community size
+    - Nested comment threading (up to 3 levels deep)
+    - Related subreddit discovery
     """
     logger.info(
         f"Deep dive crawling Reddit - topics: {request.search_topics}, "
-        f"subreddits: {request.subreddits}, time_filter: {request.time_filter}"
+        f"subreddits: {request.subreddits}, time_filter: {request.time_filter}, "
+        f"validate: {request.validate_subreddits}, adaptive: {request.use_adaptive_thresholds}"
     )
 
     try:
@@ -377,11 +400,14 @@ async def crawl_reddit_deep_dive(request: RedditDeepDiveRequest):
                 time_filter=request.time_filter,
                 max_posts_per_combo=request.max_posts_per_combo,
                 max_comments_per_post=request.max_comments_per_post,
+                validate_subreddits=request.validate_subreddits,
+                use_adaptive_thresholds=request.use_adaptive_thresholds,
             )
 
         return RedditDeepDiveResponse(
             posts=result["posts"],
             stats=result["stats"],
+            validation=result.get("validation"),
             success=True,
             error=None,
         )
@@ -392,9 +418,34 @@ async def crawl_reddit_deep_dive(request: RedditDeepDiveRequest):
         return RedditDeepDiveResponse(
             posts=[],
             stats={},
+            validation=None,
             success=False,
             error=str(e),
         )
+
+
+@app.post("/crawl/reddit/validate-subreddits", response_model=SubredditValidateResponse)
+async def validate_subreddits(request: SubredditValidateRequest):
+    """
+    Validate subreddits and discover related communities.
+
+    Checks if subreddits exist, are public, and returns community info.
+    Also discovers related subreddits from sidebars and wikis.
+    """
+    logger.info(f"Validating subreddits: {request.subreddits}")
+
+    try:
+        async with RedditCrawler() as crawler:
+            result = await crawler.validate_subreddits(request.subreddits)
+
+        return SubredditValidateResponse(
+            valid=result["valid"],
+            invalid=result["invalid"],
+            discovered=result["discovered"],
+        )
+    except Exception as e:
+        logger.exception(f"Error validating subreddits: {request.subreddits}")
+        raise HTTPException(status_code=500, detail=f"Failed to validate subreddits: {str(e)}")
 
 
 # ============================================================================
@@ -512,6 +563,7 @@ async def root():
             "/crawl/app-store/privacy",
             "/crawl/reddit",
             "/crawl/reddit/deep-dive",
+            "/crawl/reddit/validate-subreddits",
             "/crawl/website",
             "/crawl/palettes",
             "/crawl/palettes/refresh",
