@@ -138,8 +138,8 @@ export async function POST(request: NextRequest) {
 
           // Call the Python crawler - it handles all sort types internally
           // 5 minute timeout for the crawl request (browser scraping can be slow)
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000);
+          const abortController = new AbortController();
+          const timeoutId = setTimeout(() => abortController.abort(), 5 * 60 * 1000);
 
           const response = await fetch(`${CRAWL_SERVICE_URL}/crawl/app-store/reviews`, {
             method: 'POST',
@@ -149,7 +149,7 @@ export async function POST(request: NextRequest) {
               country,
               max_reviews: totalTarget,
             }),
-            signal: controller.signal,
+            signal: abortController.signal,
           });
 
           clearTimeout(timeoutId);
@@ -164,7 +164,7 @@ export async function POST(request: NextRequest) {
               type: 'error',
               message: `Crawler error: ${response.status} - ${errorText}`,
             });
-            controller.close();
+            controller.close(); // Close the stream controller
             return;
           }
 
