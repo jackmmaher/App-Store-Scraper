@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
         validate_subreddits: true,
         use_adaptive_thresholds: true,
       }),
-      signal: AbortSignal.timeout(180000), // 3 minute timeout for pass 1
+      signal: AbortSignal.timeout(300000), // 5 minute timeout for pass 1
     });
 
     if (!pass1Response.ok) {
@@ -147,7 +147,7 @@ export async function POST(request: NextRequest) {
               validate_subreddits: false, // Already validated
               use_adaptive_thresholds: true,
             }),
-            signal: AbortSignal.timeout(120000), // 2 minute timeout for pass 2
+            signal: AbortSignal.timeout(180000), // 3 minute timeout for pass 2
           });
 
           if (pass2Response.ok) {

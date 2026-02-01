@@ -68,14 +68,14 @@ export default function RedditDeepDiveSection({
     setShowConfig(false);
 
     // Simulate stage transitions based on typical timing
-    // Crawling takes ~60-120s, then we move to analyzing
+    // Crawling takes ~3-5min, then we move to analyzing
     stageTimerRef.current = setTimeout(() => {
       setAnalysisStage('analyzing');
       // Analyzing takes ~30-60s, then storing
       stageTimerRef.current = setTimeout(() => {
         setAnalysisStage('storing');
       }, 45000); // 45 seconds for AI analysis
-    }, 90000); // 90 seconds for crawling
+    }, 180000); // 3 minutes for crawling
 
     try {
       const response = await fetch('/api/reddit/analyze', {
