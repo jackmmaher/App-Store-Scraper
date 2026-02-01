@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import SearchConfigPanel from '@/components/reddit/SearchConfigPanel';
 import UnmetNeedsPanel from '@/components/reddit/UnmetNeedsPanel';
 import TrendsSentimentPanel from '@/components/reddit/TrendsSentimentPanel';
+import RedditAnalysisProgress, { type RedditAnalysisStage } from '@/components/reddit/RedditAnalysisProgress';
 import type { RedditSearchConfig, RedditAnalysisResult } from '@/lib/reddit/types';
 
 interface AnalyzedApp {
@@ -52,9 +53,12 @@ export default function CompetitorApps({
   // Reddit Deep Dive state
   const [showRedditConfig, setShowRedditConfig] = useState<string | null>(null); // competitorId or null
   const [redditAnalysis, setRedditAnalysis] = useState<Record<string, RedditAnalysisResult>>({});
-  const [isRedditAnalyzing, setIsRedditAnalyzing] = useState(false);
+  const [redditAnalyzingId, setRedditAnalyzingId] = useState<string | null>(null); // which competitor is being analyzed
+  const [redditAnalysisStage, setRedditAnalysisStage] = useState<RedditAnalysisStage>('idle');
+  const [redditAnalysisError, setRedditAnalysisError] = useState<string | null>(null);
   const [isSavingSolutions, setIsSavingSolutions] = useState(false);
   const [expandedRedditAnalysis, setExpandedRedditAnalysis] = useState<string | null>(null);
+  const stageTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const linkedIds = new Set(linkedCompetitors.map(c => c.app_store_id));
   const unlinkedApps = analyzedApps.filter(app => !linkedIds.has(app.app_store_id));
@@ -237,6 +241,15 @@ export default function CompetitorApps({
     return n.toString();
   };
 
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (stageTimerRef.current) {
+        clearTimeout(stageTimerRef.current);
+      }
+    };
+  }, []);
+
   // Load existing Reddit analyses for competitors with reddit_analysis_id
   useEffect(() => {
     // Track which analyses we're loading to avoid duplicates
@@ -276,13 +289,30 @@ export default function CompetitorApps({
 
   // Handle Reddit Deep Dive analysis
   const handleRedditAnalyze = async (config: RedditSearchConfig) => {
-    setIsRedditAnalyzing(true);
+    setRedditAnalyzingId(config.competitorId);
+    setRedditAnalysisStage('crawling');
+    setRedditAnalysisError(null);
+    setShowRedditConfig(null);
+
+    // Simulate stage transitions based on typical timing
+    stageTimerRef.current = setTimeout(() => {
+      setRedditAnalysisStage('analyzing');
+      stageTimerRef.current = setTimeout(() => {
+        setRedditAnalysisStage('storing');
+      }, 45000);
+    }, 90000);
+
     try {
       const response = await fetch('/api/reddit/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
       });
+
+      // Clear simulated timers
+      if (stageTimerRef.current) {
+        clearTimeout(stageTimerRef.current);
+      }
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -292,22 +322,36 @@ export default function CompetitorApps({
       const result = await response.json();
 
       if (result.analysis) {
+        setRedditAnalysisStage('complete');
         setRedditAnalysis(prev => ({
           ...prev,
           [config.competitorId]: result.analysis,
         }));
         setExpandedRedditAnalysis(config.competitorId);
+
+        // Reset after showing complete
+        setTimeout(() => {
+          setRedditAnalysisStage('idle');
+          setRedditAnalyzingId(null);
+        }, 2000);
       }
 
-      setShowRedditConfig(null);
       onRefresh(); // Refresh to get updated reddit_analysis_id
     } catch (error) {
       console.error('Reddit analysis failed:', error);
-      alert(error instanceof Error ? error.message : 'Failed to run Reddit analysis');
-    } finally {
-      setIsRedditAnalyzing(false);
+      setRedditAnalysisError(error instanceof Error ? error.message : 'Failed to run Reddit analysis');
+      setRedditAnalysisStage('error');
+
+      // Reset after showing error
+      setTimeout(() => {
+        setRedditAnalysisStage('idle');
+        setRedditAnalyzingId(null);
+        setShowRedditConfig(config.competitorId);
+      }, 3000);
     }
   };
+
+  const isRedditAnalyzing = redditAnalysisStage !== 'idle' && redditAnalysisStage !== 'complete' && redditAnalysisStage !== 'error';
 
   // Handle solution notes change for unmet needs
   const handleSolutionChange = (competitorId: string, needId: string, notes: string) => {
@@ -694,7 +738,7 @@ export default function CompetitorApps({
                       )}
 
                       {/* Reddit Deep Dive Config Panel */}
-                      {showRedditConfig === comp.app_store_id && (
+                      {showRedditConfig === comp.app_store_id && redditAnalyzingId !== comp.app_store_id && (
                         <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
                           <SearchConfigPanel
                             competitorId={comp.app_store_id}
@@ -706,8 +750,15 @@ export default function CompetitorApps({
                         </div>
                       )}
 
+                      {/* Reddit Analysis Progress */}
+                      {redditAnalyzingId === comp.app_store_id && (
+                        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                          <RedditAnalysisProgress stage={redditAnalysisStage} error={redditAnalysisError} />
+                        </div>
+                      )}
+
                       {/* Reddit Analysis Results */}
-                      {redditAnalysis[comp.app_store_id] && expandedRedditAnalysis === comp.app_store_id && (
+                      {redditAnalysis[comp.app_store_id] && expandedRedditAnalysis === comp.app_store_id && redditAnalyzingId !== comp.app_store_id && (
                         <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
                           <div className="flex items-center justify-between mb-4">
                             <h4 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">

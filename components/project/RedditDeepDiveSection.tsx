@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import SearchConfigPanel from '@/components/reddit/SearchConfigPanel';
 import UnmetNeedsPanel from '@/components/reddit/UnmetNeedsPanel';
 import TrendsSentimentPanel from '@/components/reddit/TrendsSentimentPanel';
+import RedditAnalysisProgress, { type RedditAnalysisStage } from '@/components/reddit/RedditAnalysisProgress';
 import type { RedditSearchConfig, RedditAnalysisResult } from '@/lib/reddit/types';
 
 interface RedditDeepDiveSectionProps {
@@ -23,9 +24,11 @@ export default function RedditDeepDiveSection({
   const [isExpanded, setIsExpanded] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
   const [analysis, setAnalysis] = useState<RedditAnalysisResult | null>(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisStage, setAnalysisStage] = useState<RedditAnalysisStage>('idle');
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [isSavingSolutions, setIsSavingSolutions] = useState(false);
   const [isLoadingExisting, setIsLoadingExisting] = useState(false);
+  const stageTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Load existing analysis on mount
   useEffect(() => {
@@ -50,14 +53,41 @@ export default function RedditDeepDiveSection({
     loadExistingAnalysis();
   }, [appId]);
 
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (stageTimerRef.current) {
+        clearTimeout(stageTimerRef.current);
+      }
+    };
+  }, []);
+
   const handleAnalyze = async (config: RedditSearchConfig) => {
-    setIsAnalyzing(true);
+    setAnalysisStage('crawling');
+    setAnalysisError(null);
+    setShowConfig(false);
+
+    // Simulate stage transitions based on typical timing
+    // Crawling takes ~60-120s, then we move to analyzing
+    stageTimerRef.current = setTimeout(() => {
+      setAnalysisStage('analyzing');
+      // Analyzing takes ~30-60s, then storing
+      stageTimerRef.current = setTimeout(() => {
+        setAnalysisStage('storing');
+      }, 45000); // 45 seconds for AI analysis
+    }, 90000); // 90 seconds for crawling
+
     try {
       const response = await fetch('/api/reddit/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
       });
+
+      // Clear the simulated timers since we got a real response
+      if (stageTimerRef.current) {
+        clearTimeout(stageTimerRef.current);
+      }
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -67,17 +97,29 @@ export default function RedditDeepDiveSection({
       const result = await response.json();
 
       if (result.analysis) {
+        setAnalysisStage('complete');
         setAnalysis(result.analysis);
-        setShowConfig(false);
         setIsExpanded(true);
+
+        // Reset stage after showing complete
+        setTimeout(() => {
+          setAnalysisStage('idle');
+        }, 2000);
       }
     } catch (error) {
       console.error('Reddit analysis failed:', error);
-      alert(error instanceof Error ? error.message : 'Failed to run Reddit analysis');
-    } finally {
-      setIsAnalyzing(false);
+      setAnalysisError(error instanceof Error ? error.message : 'Failed to run Reddit analysis');
+      setAnalysisStage('error');
+
+      // Reset after showing error
+      setTimeout(() => {
+        setAnalysisStage('idle');
+        setShowConfig(true);
+      }, 3000);
     }
   };
+
+  const isAnalyzing = analysisStage !== 'idle' && analysisStage !== 'complete' && analysisStage !== 'error';
 
   const handleSolutionChange = (needId: string, notes: string) => {
     if (!analysis) return;
@@ -189,7 +231,7 @@ export default function RedditDeepDiveSection({
       </div>
 
       {/* Config Panel */}
-      {showConfig && hasReviews && (
+      {showConfig && hasReviews && !isAnalyzing && (
         <div className="p-4 border-b border-gray-200 dark:border-gray-700">
           <SearchConfigPanel
             competitorId={appId}
@@ -201,8 +243,13 @@ export default function RedditDeepDiveSection({
         </div>
       )}
 
+      {/* Progress Tracker - shows during analysis */}
+      {isAnalyzing && (
+        <RedditAnalysisProgress stage={analysisStage} error={analysisError} />
+      )}
+
       {/* Analysis Results */}
-      {analysis && isExpanded && (
+      {analysis && isExpanded && !isAnalyzing && (
         <div className="p-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <UnmetNeedsPanel
@@ -226,7 +273,7 @@ export default function RedditDeepDiveSection({
       )}
 
       {/* Empty state when no analysis and not showing config */}
-      {!analysis && !showConfig && hasReviews && (
+      {!analysis && !showConfig && hasReviews && !isAnalyzing && (
         <div className="p-6 text-center">
           <div className="w-12 h-12 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
             <svg className="w-6 h-6 text-orange-500" viewBox="0 0 24 24" fill="currentColor">
