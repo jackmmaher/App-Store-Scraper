@@ -1,0 +1,423 @@
+// Reddit AI Analyzer
+// Performs semantic extraction on Reddit data using Claude AI
+
+import {
+  UnmetNeed,
+  TrendAnalysis,
+  SentimentBreakdown,
+  SubredditSummary,
+} from './types';
+
+// ============================================================================
+// Types
+// ============================================================================
+
+export interface RedditPost {
+  id: string;
+  subreddit: string;
+  title: string;
+  selftext: string;
+  score: number;
+  num_comments: number;
+  created_utc: number;
+  permalink: string;
+  url: string;
+  author: string;
+  upvote_ratio: number;
+  comments: RedditComment[];
+  search_topic?: string;
+}
+
+export interface RedditComment {
+  id: string;
+  author: string;
+  body: string;
+  score: number;
+  created_utc: number;
+}
+
+export interface RedditStats {
+  total_posts: number;
+  total_comments: number;
+  subreddits_searched: string[];
+  topics_searched: string[];
+  date_range: {
+    start: string | null;
+    end: string | null;
+  };
+}
+
+export interface RedditAnalysisOutput {
+  unmetNeeds: UnmetNeed[];
+  trends: TrendAnalysis;
+  sentiment: SentimentBreakdown;
+  languagePatterns: string[];
+  topSubreddits: SubredditSummary[];
+}
+
+interface ClaudeAnalysisResult {
+  unmetNeeds: {
+    title: string;
+    description: string;
+    severity: 'high' | 'medium' | 'low';
+    postCount: number;
+    avgUpvotes: number;
+    topSubreddits: string[];
+    representativeQuotes: string[];
+  }[];
+  sentiment: {
+    frustrated: number;
+    seekingHelp: number;
+    successStories: number;
+  };
+  languagePatterns: string[];
+}
+
+// ============================================================================
+// Main Analyzer Function
+// ============================================================================
+
+/**
+ * Analyze Reddit data using Claude AI for semantic extraction.
+ *
+ * @param posts - Reddit posts with comments from the crawler
+ * @param stats - Aggregated statistics from the crawl
+ * @param problemDomain - Context about the problem domain being analyzed
+ * @returns Structured analysis including unmet needs, trends, sentiment, and patterns
+ */
+export async function analyzeRedditData(
+  posts: RedditPost[],
+  stats: RedditStats,
+  problemDomain: string
+): Promise<RedditAnalysisOutput> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error('ANTHROPIC_API_KEY not configured');
+  }
+
+  // Format posts for the prompt (limit to ~50 posts, prioritize by engagement)
+  const formattedPosts = formatPostsForPrompt(posts);
+
+  // Build the analysis prompt
+  const prompt = buildAnalysisPrompt(formattedPosts, problemDomain);
+
+  // Call Claude API
+  const claudeResult = await callClaudeAPI(apiKey, prompt);
+
+  // Calculate trend metrics from timestamps
+  const trends = calculateTrendMetrics(posts);
+
+  // Aggregate subreddit stats
+  const topSubreddits = aggregateSubredditStats(posts);
+
+  // Format unmet needs with IDs
+  const unmetNeeds = claudeResult.unmetNeeds.map((need, index) => ({
+    id: `need-${index + 1}`,
+    title: need.title,
+    description: need.description,
+    severity: need.severity,
+    evidence: {
+      postCount: need.postCount,
+      avgUpvotes: need.avgUpvotes,
+      topSubreddits: need.topSubreddits,
+      representativeQuotes: need.representativeQuotes,
+    },
+    solutionNotes: null,
+  }));
+
+  return {
+    unmetNeeds,
+    trends,
+    sentiment: claudeResult.sentiment,
+    languagePatterns: claudeResult.languagePatterns,
+    topSubreddits,
+  };
+}
+
+// ============================================================================
+// Post Formatting
+// ============================================================================
+
+function formatPostsForPrompt(posts: RedditPost[]): string {
+  // Sort by engagement (score + comments * 2)
+  const sortedPosts = [...posts].sort(
+    (a, b) => (b.score + b.num_comments * 2) - (a.score + a.num_comments * 2)
+  );
+
+  // Limit to top 50 posts
+  const limitedPosts = sortedPosts.slice(0, 50);
+
+  const formatted = limitedPosts.map((post, index) => {
+    const comments = post.comments
+      .slice(0, 5)
+      .map((c) => `  - "${truncate(c.body, 200)}" (score: ${c.score})`)
+      .join('\n');
+
+    return `
+[Post ${index + 1}] r/${post.subreddit}
+Title: ${post.title}
+Score: ${post.score} | Comments: ${post.num_comments}
+Content: ${truncate(post.selftext, 300)}
+${comments ? `Top Comments:\n${comments}` : ''}
+---`;
+  });
+
+  return formatted.join('\n');
+}
+
+function truncate(text: string, maxLength: number): string {
+  if (!text) return '';
+  if (text.length <= maxLength) return text;
+  return text.slice(0, maxLength) + '...';
+}
+
+// ============================================================================
+// Claude API Call
+// ============================================================================
+
+function buildAnalysisPrompt(formattedPosts: string, problemDomain: string): string {
+  return `Analyze these Reddit discussions to identify unmet user needs and sentiment patterns.
+
+## Problem Domain
+${problemDomain}
+
+## Reddit Posts and Comments
+${formattedPosts}
+
+## Analysis Task
+Based on these discussions, provide a structured analysis:
+
+1. **Unmet Needs**: Identify 5-7 distinct unmet needs (problems people mention lacking solutions for).
+   For each need:
+   - Title: Brief name for the need
+   - Description: 1-2 sentences explaining the problem
+   - Severity: "high" (frequent + emotionally intense), "medium" (moderate), or "low" (minor)
+   - PostCount: Estimated number of posts mentioning this need
+   - AvgUpvotes: Average upvotes for posts about this need
+   - TopSubreddits: Which subreddits discuss this most
+   - RepresentativeQuotes: 2-3 direct quotes that exemplify this need
+
+2. **Sentiment Breakdown**: Estimate percentages (must sum to 100):
+   - Frustrated: Users expressing frustration with current solutions
+   - SeekingHelp: Users actively looking for solutions or advice
+   - SuccessStories: Users sharing positive experiences or solutions found
+
+3. **Language Patterns**: 5-8 common phrases or sentence patterns users use when discussing these problems
+   (e.g., "I wish there was...", "Has anyone tried...", "Why doesn't X have...")
+
+Respond in this exact JSON format:
+{
+  "unmetNeeds": [
+    {
+      "title": "...",
+      "description": "...",
+      "severity": "high|medium|low",
+      "postCount": 0,
+      "avgUpvotes": 0,
+      "topSubreddits": ["..."],
+      "representativeQuotes": ["..."]
+    }
+  ],
+  "sentiment": {
+    "frustrated": 0,
+    "seekingHelp": 0,
+    "successStories": 0
+  },
+  "languagePatterns": ["..."]
+}`;
+}
+
+async function callClaudeAPI(
+  apiKey: string,
+  prompt: string
+): Promise<ClaudeAnalysisResult> {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4000,
+      messages: [
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    console.error('Claude API error:', error);
+    throw new Error('Failed to analyze Reddit data with Claude');
+  }
+
+  const data = await response.json();
+  const content = data.content[0]?.text || '';
+
+  return parseClaudeAnalysisResponse(content);
+}
+
+function parseClaudeAnalysisResponse(content: string): ClaudeAnalysisResult {
+  // Extract JSON from response
+  const jsonMatch = content.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    console.error('Could not find JSON in Claude response:', content);
+    throw new Error('Could not parse Claude response as JSON');
+  }
+
+  try {
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    // Validate and normalize the response
+    const unmetNeeds = Array.isArray(parsed.unmetNeeds)
+      ? parsed.unmetNeeds.map((need: Record<string, unknown>) => ({
+          title: String(need.title || 'Unknown Need'),
+          description: String(need.description || ''),
+          severity: validateSeverity(need.severity),
+          postCount: Number(need.postCount) || 0,
+          avgUpvotes: Number(need.avgUpvotes) || 0,
+          topSubreddits: Array.isArray(need.topSubreddits)
+            ? need.topSubreddits.map(String)
+            : [],
+          representativeQuotes: Array.isArray(need.representativeQuotes)
+            ? need.representativeQuotes.map(String)
+            : [],
+        }))
+      : [];
+
+    const sentiment = parsed.sentiment || {};
+    const normalizedSentiment = normalizeSentiment({
+      frustrated: Number(sentiment.frustrated) || 0,
+      seekingHelp: Number(sentiment.seekingHelp) || 0,
+      successStories: Number(sentiment.successStories) || 0,
+    });
+
+    const languagePatterns = Array.isArray(parsed.languagePatterns)
+      ? parsed.languagePatterns.map(String)
+      : [];
+
+    return {
+      unmetNeeds,
+      sentiment: normalizedSentiment,
+      languagePatterns,
+    };
+  } catch (e) {
+    console.error('Failed to parse Claude response:', e, content);
+    throw new Error('Failed to parse Claude analysis response');
+  }
+}
+
+function validateSeverity(value: unknown): 'high' | 'medium' | 'low' {
+  if (value === 'high' || value === 'medium' || value === 'low') {
+    return value;
+  }
+  return 'medium';
+}
+
+function normalizeSentiment(sentiment: SentimentBreakdown): SentimentBreakdown {
+  const total = sentiment.frustrated + sentiment.seekingHelp + sentiment.successStories;
+  if (total === 0) {
+    return { frustrated: 33, seekingHelp: 34, successStories: 33 };
+  }
+  if (total === 100) {
+    return sentiment;
+  }
+  // Normalize to 100%
+  const factor = 100 / total;
+  return {
+    frustrated: Math.round(sentiment.frustrated * factor),
+    seekingHelp: Math.round(sentiment.seekingHelp * factor),
+    successStories: Math.round(sentiment.successStories * factor),
+  };
+}
+
+// ============================================================================
+// Trend Calculation
+// ============================================================================
+
+function calculateTrendMetrics(posts: RedditPost[]): TrendAnalysis {
+  if (posts.length === 0) {
+    return {
+      discussionVolume: 0,
+      trendDirection: 'stable',
+      percentChange: 0,
+    };
+  }
+
+  // Get current time and time boundaries
+  const now = Date.now() / 1000;
+  const oneMonthAgo = now - 30 * 24 * 60 * 60;
+  const twoMonthsAgo = now - 60 * 24 * 60 * 60;
+
+  // Count posts in each period
+  const recentPosts = posts.filter(
+    (p) => p.created_utc >= oneMonthAgo
+  ).length;
+
+  const olderPosts = posts.filter(
+    (p) => p.created_utc >= twoMonthsAgo && p.created_utc < oneMonthAgo
+  ).length;
+
+  // Calculate trend
+  let trendDirection: 'rising' | 'stable' | 'declining' = 'stable';
+  let percentChange = 0;
+
+  if (olderPosts > 0) {
+    percentChange = Math.round(((recentPosts - olderPosts) / olderPosts) * 100);
+
+    if (percentChange > 20) {
+      trendDirection = 'rising';
+    } else if (percentChange < -20) {
+      trendDirection = 'declining';
+    }
+  } else if (recentPosts > 0) {
+    trendDirection = 'rising';
+    percentChange = 100;
+  }
+
+  return {
+    discussionVolume: posts.length,
+    trendDirection,
+    percentChange,
+  };
+}
+
+// ============================================================================
+// Subreddit Aggregation
+// ============================================================================
+
+function aggregateSubredditStats(posts: RedditPost[]): SubredditSummary[] {
+  const subredditMap = new Map<string, { postCount: number; totalEngagement: number }>();
+
+  for (const post of posts) {
+    const existing = subredditMap.get(post.subreddit);
+    const engagement = post.score + post.num_comments;
+
+    if (existing) {
+      existing.postCount++;
+      existing.totalEngagement += engagement;
+    } else {
+      subredditMap.set(post.subreddit, {
+        postCount: 1,
+        totalEngagement: engagement,
+      });
+    }
+  }
+
+  // Convert to array and sort by post count
+  const summaries: SubredditSummary[] = Array.from(subredditMap.entries())
+    .map(([name, data]) => ({
+      name,
+      postCount: data.postCount,
+      avgEngagement: Math.round(data.totalEngagement / data.postCount),
+    }))
+    .sort((a, b) => b.postCount - a.postCount);
+
+  // Return top 10 subreddits
+  return summaries.slice(0, 10);
+}
