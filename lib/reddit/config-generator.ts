@@ -33,8 +33,17 @@ interface CompetitorWithReviews {
   reviews: Review[];
 }
 
+interface JTBDJobs {
+  functional: string;
+  emotional: string;
+  social: string;
+  aspirational: string;
+}
+
 interface ClaudeExtractionResult {
   problemDomain: string;
+  jobs?: JTBDJobs;
+  rootCause?: string;
   searchTopics: string[];
   suggestedSubreddits: string[];
 }
@@ -218,7 +227,9 @@ function buildExtractionPrompt(
     .map((r, i) => `[${i + 1}] ★${r.rating} "${r.title}"\n${r.content}`)
     .join('\n\n');
 
-  return `Analyze these app reviews for "${competitor.name}" to help find relevant Reddit discussions about user problems.
+  return `You are a Jobs-to-be-Done (JTBD) researcher. Your task is to translate app reviews into the underlying HUMAN PROBLEMS that drive people to seek solutions—then identify Reddit communities where those struggles are actively discussed.
+
+CRITICAL: Do NOT map this app to product categories. Map it to PROBLEM SPACES. An affirmation app user isn't looking for "affirmations"—they're struggling with negative self-talk, social anxiety, or imposter syndrome. Surface the WHY, not the WHAT.
 
 ## App Context
 - Name: ${competitor.name}
@@ -228,23 +239,79 @@ ${competitor.description ? `- Description: ${competitor.description.slice(0, 300
 ## Reviews (${reviews.length} sampled)
 ${reviewsText}
 
-## Task
-Based on these reviews, extract:
+## Step 1: JTBD Decomposition
+Analyze the reviews to identify the four types of jobs users are trying to accomplish:
 
-1. **Problem Domain**: A 1-2 sentence summary of the core problem users are trying to solve with this app.
+| Job Type | Question | What to Extract |
+|----------|----------|-----------------|
+| **Functional** | What task are they trying to accomplish? | The practical outcome they need |
+| **Emotional** | How do they want to feel (or stop feeling)? | The emotional state driving their search |
+| **Social** | How does this impact how others perceive them? | The social/professional identity at stake |
+| **Aspirational** | What transformed version of themselves do they want to become? | The deeper identity change they seek |
 
-2. **Search Topics**: 5-8 specific keywords or phrases people might use when discussing this problem on Reddit. Focus on:
-   - Pain points mentioned in reviews
-   - Specific use cases
-   - Alternative solutions users might search for
+## Step 2: Apply the 5 Whys
+For the primary job identified, ask "why?" 5 times to reach the ROOT emotional struggle. Example:
+- "Why do you want this app?" → "To feel more positive"
+- "Why?" → "Because I'm always criticizing myself"
+- "Why?" → "Because I feel not good enough"
+- "Why?" → "Because I compare myself to others"
+- "Why?" → "Because I fear rejection and need external validation"
 
-3. **Suggested Subreddits**: 3-5 subreddits (beyond obvious category ones) where users might discuss these problems.
+The ROOT CAUSE (fear of rejection, need for validation) points to the real communities.
 
+## Step 3: Generate Problem-Language Search Topics
+Generate search phrases using VERBS and STRUGGLE LANGUAGE, not product nouns:
+
+| Instead of (Product Noun) | Use (Struggle Verb/Phrase) |
+|---------------------------|---------------------------|
+| "meditation app" | "can't turn off my brain", "mind won't stop racing" |
+| "habit tracker" | "can't stick to routines", "always fall off after a week" |
+| "affirmation app" | "stop negative self-talk", "believe in myself" |
+
+Include these pain-point phrase patterns:
+- Frustration: "frustrated with," "hate that," "why is it so hard to"
+- Unmet needs: "wish there was," "is there a way to," "how do you"
+- Active struggle: "struggling with," "can't figure out," "what am I doing wrong"
+- Willingness to pay: "would pay for," "worth investing in"
+
+## Step 4: Map to Problem Communities (NOT Product Communities)
+Identify subreddits where people EXPERIENCE and DISCUSS these struggles—not where they review products.
+
+For each job type, target different community types:
+- Functional jobs → productivity/methodology subreddits (r/getdisciplined, r/productivity)
+- Emotional jobs → mental health/support communities (r/anxiety, r/selfesteem, r/depression)
+- Social jobs → interpersonal/professional contexts (r/socialanxiety, r/socialskills, r/careerguidance)
+- Aspirational jobs → transformation communities (r/decidingtobebetter, r/selfimprovement, r/getmotivated)
+
+AVOID: Generic category subreddits where people discuss products (r/apps, r/iosapps, r/productivity for a productivity app)
+TARGET: Communities where people describe the PROBLEM before they know a solution exists
+
+## Output Format
 Respond in this exact JSON format:
 {
-  "problemDomain": "...",
-  "searchTopics": ["topic1", "topic2", ...],
-  "suggestedSubreddits": ["subreddit1", "subreddit2", ...]
+  "problemDomain": "2-3 sentence description of the ROOT emotional/functional struggle driving users to this app. Focus on the WHY, not the WHAT.",
+  "jobs": {
+    "functional": "The practical task they need to accomplish",
+    "emotional": "The feeling they want to achieve or escape",
+    "social": "How this affects their perceived identity",
+    "aspirational": "The transformed self they're working toward"
+  },
+  "rootCause": "The deepest 'why' - the fundamental human need driving this (from 5 Whys analysis)",
+  "searchTopics": [
+    "struggle-language phrase 1 (verb-based, how someone would describe their problem)",
+    "struggle-language phrase 2",
+    "struggle-language phrase 3",
+    "struggle-language phrase 4",
+    "struggle-language phrase 5",
+    "struggle-language phrase 6"
+  ],
+  "suggestedSubreddits": [
+    "subreddit1 (where people EXPERIENCE this struggle)",
+    "subreddit2 (support/discussion community for this problem)",
+    "subreddit3 (adjacent community via user overlap)",
+    "subreddit4 (transformation/improvement community)",
+    "subreddit5 (professional/social context community)"
+  ]
 }`;
 }
 
@@ -257,8 +324,19 @@ function parseClaudeResponse(content: string): ClaudeExtractionResult {
 
   try {
     const parsed = JSON.parse(jsonMatch[0]);
+
+    // Parse JTBD jobs if present
+    const jobs: JTBDJobs | undefined = parsed.jobs ? {
+      functional: parsed.jobs.functional || '',
+      emotional: parsed.jobs.emotional || '',
+      social: parsed.jobs.social || '',
+      aspirational: parsed.jobs.aspirational || '',
+    } : undefined;
+
     return {
       problemDomain: parsed.problemDomain || 'General app functionality',
+      jobs,
+      rootCause: parsed.rootCause || undefined,
       searchTopics: Array.isArray(parsed.searchTopics) ? parsed.searchTopics : [],
       suggestedSubreddits: Array.isArray(parsed.suggestedSubreddits)
         ? parsed.suggestedSubreddits.map((s: string) => s.replace(/^r\//, ''))

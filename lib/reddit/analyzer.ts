@@ -176,46 +176,68 @@ function truncate(text: string, maxLength: number): string {
 // ============================================================================
 
 function buildAnalysisPrompt(formattedPosts: string, problemDomain: string): string {
-  return `Analyze these Reddit discussions to identify unmet user needs and sentiment patterns.
+  return `You are a Jobs-to-be-Done (JTBD) researcher analyzing real Reddit discussions. Your task is to extract the UNDERLYING HUMAN STRUGGLES that represent genuine product opportunities—not surface-level complaints or feature requests.
 
-## Problem Domain
+## Problem Domain Context
 ${problemDomain}
 
 ## Reddit Posts and Comments
 ${formattedPosts}
 
-## Analysis Task
-Based on these discussions, provide a structured analysis:
+## JTBD Analysis Framework
 
-1. **Unmet Needs**: Identify 5-7 distinct unmet needs (problems people mention lacking solutions for).
-   For each need:
-   - Title: Brief name for the need
-   - Description: 1-2 sentences explaining the problem
-   - Severity: "high" (frequent + emotionally intense), "medium" (moderate), or "low" (minor)
-   - PostCount: Estimated number of posts mentioning this need
-   - AvgUpvotes: Average upvotes for posts about this need
-   - TopSubreddits: Which subreddits discuss this most
-   - RepresentativeQuotes: 2-3 direct quotes that exemplify this need
+### Step 1: Apply the 5 Whys to Each Discussion
+For each pain point you identify, ask "why?" until you reach the ROOT emotional or functional struggle:
+- Surface: "I can't find what I need in this app"
+- Why? "The search is terrible"
+- Why? "It doesn't understand what I actually want"
+- Why? "I have to know the exact terms"
+- ROOT: "I need to discover solutions I don't know how to describe yet"
 
-2. **Sentiment Breakdown**: Estimate percentages (must sum to 100):
-   - Frustrated: Users expressing frustration with current solutions
-   - SeekingHelp: Users actively looking for solutions or advice
-   - SuccessStories: Users sharing positive experiences or solutions found
+### Step 2: Categorize by Job Type
+For each unmet need, identify which type of job it represents:
+| Job Type | Focus | Example |
+|----------|-------|---------|
+| **Functional** | Task completion | "I need to track my progress without manual entry" |
+| **Emotional** | Feeling state | "I need to feel in control, not overwhelmed" |
+| **Social** | How others perceive them | "I need to appear competent to my team" |
+| **Aspirational** | Identity transformation | "I want to become someone who has healthy habits" |
 
-3. **Language Patterns**: 5-8 common phrases or sentence patterns users use when discussing these problems
-   (e.g., "I wish there was...", "Has anyone tried...", "Why doesn't X have...")
+### Step 3: Severity Scoring Rubric
+Rate each need using this evidence-based criteria:
+- **High Severity**:
+  - Strong emotional language (frustrated, exhausted, desperate)
+  - Multiple people confirming the same struggle
+  - Users mention abandoning solutions or giving up
+  - High engagement (upvotes, comments agreeing)
+- **Medium Severity**:
+  - Moderate frustration expressed
+  - Some community agreement
+  - Workarounds mentioned but inconvenient
+- **Low Severity**:
+  - Minor inconveniences
+  - Nice-to-have rather than must-have
+  - Limited community validation
+
+### Step 4: Extract Struggle Language
+Capture the EXACT phrases users use—these become marketing copy and search terms:
+- Pain indicators: "I'm so tired of...", "Why is it so hard to...", "I've tried everything..."
+- Unmet need signals: "I wish there was...", "Is there anything that...", "Has anyone found..."
+- Willingness to pay: "I would pay for...", "Worth it if...", "Shut up and take my money"
+
+## Output Requirements
 
 Respond in this exact JSON format:
 {
   "unmetNeeds": [
     {
-      "title": "...",
-      "description": "...",
+      "title": "Brief, action-oriented title describing the struggle",
+      "description": "2-3 sentences describing the ROOT problem (from 5 Whys), not the surface complaint. Include the job type (functional/emotional/social/aspirational).",
       "severity": "high|medium|low",
       "postCount": 0,
       "avgUpvotes": 0,
-      "topSubreddits": ["..."],
-      "representativeQuotes": ["..."]
+      "topSubreddits": ["subreddits where this was discussed"],
+      "representativeQuotes": ["Exact quotes from posts/comments that exemplify this struggle - use the user's actual words"]
     }
   ],
   "sentiment": {
@@ -223,8 +245,19 @@ Respond in this exact JSON format:
     "seekingHelp": 0,
     "successStories": 0
   },
-  "languagePatterns": ["..."]
-}`;
+  "languagePatterns": [
+    "Exact phrase patterns users use (e.g., 'I'm so tired of having to...')",
+    "Include pain language, question patterns, and buying signals",
+    "These should be quotable struggle-language snippets"
+  ]
+}
+
+**Important Guidelines:**
+- Identify 5-7 distinct unmet needs, prioritizing depth over breadth
+- Each need should represent a DIFFERENT underlying job, not variations of the same problem
+- Quotes must be REAL text from the provided posts/comments, not fabricated
+- Sentiment percentages must sum to 100
+- Language patterns should be struggle-language verbs/phrases, not product nouns`;
 }
 
 async function callClaudeAPI(
