@@ -1,6 +1,7 @@
 import { AppProject, BlueprintAttachment, Review, BlueprintColorPalette } from './supabase';
 import { getEnrichmentForBlueprint, getColorPalettesForDesignSystem } from '@/lib/crawl';
 import { getKeywordsBySourceApp } from '@/lib/keywords/db';
+import { RedditAnalysisResult } from './reddit/types';
 
 /**
  * Extract the chosen app name from the App Identity markdown content.
@@ -219,8 +220,14 @@ function formatReviewsForPrompt(reviews: Review[]): string {
 
 // Note: AppProject now includes project_type, app_idea_recommendation, and linked_competitors fields
 
+// Extended context includes Reddit analysis data
+interface ExtendedProjectContext {
+  project: AppProject;
+  redditAnalysis?: RedditAnalysisResult | null;
+}
+
 // Build project context section used across all prompts
-function buildProjectContext(project: AppProject): string {
+function buildProjectContext(project: AppProject, redditAnalysis?: RedditAnalysisResult | null): string {
   const sections: string[] = [];
   const extProject = project as AppProject;
 
@@ -308,6 +315,36 @@ ${competitorContext}`);
     }
   }
 
+  // Reddit Market Analysis (problem-domain insights beyond app reviews)
+  if (redditAnalysis) {
+    const needsSection = redditAnalysis.unmetNeeds.map(need => `
+### ${need.title} [Severity: ${need.severity.toUpperCase()}]
+**Problem:** ${need.description}
+**Evidence:** ${need.evidence.postCount} Reddit posts, ${need.evidence.avgUpvotes} avg upvotes
+**User's Proposed Solution:** ${need.solutionNotes || 'Not yet defined'}
+`).join('\n');
+
+    sections.push(`## Reddit Market Insights (Problem-Domain Analysis)
+
+This analysis was generated from Reddit discussions about the broader problem space (not just app users):
+
+=== STRATEGIC CONTEXT ===
+
+This blueprint must address THREE levels of competitive advantage:
+
+1. APP-LEVEL IMPROVEMENTS
+See competitor review analysis above for specific app weaknesses.
+
+2. PROBLEM-DOMAIN DIFFERENTIATION
+${needsSection}
+
+3. MARKET POSITIONING
+Based on ${redditAnalysis.trends.discussionVolume} monthly discussions trending ${redditAnalysis.trends.trendDirection}:
+- Primary audience sentiment: ${redditAnalysis.sentiment.frustrated}% frustrated, ${redditAnalysis.sentiment.seekingHelp}% seeking help
+- Top communities: ${redditAnalysis.topSubreddits.slice(0, 5).map(s => `r/${s.name}`).join(', ')}
+- Common language patterns: ${redditAnalysis.languagePatterns.slice(0, 5).join(', ')}`);
+  }
+
   // AI Analysis (the main insight source)
   if (project.ai_analysis) {
     sections.push(`## AI Analysis of Reviews
@@ -378,8 +415,8 @@ Average: ${project.review_stats.average_rating?.toFixed(2) || 'N/A'}`);
 }
 
 // Section 1: Pareto Strategy Prompt
-export function getParetoStrategyPrompt(project: AppProject, enrichment?: string): string {
-  const context = buildProjectContext(project);
+export function getParetoStrategyPrompt(project: AppProject, enrichment?: string, redditAnalysis?: RedditAnalysisResult | null): string {
+  const context = buildProjectContext(project, redditAnalysis);
 
   // Include enrichment section if available (extended reviews + Reddit data from Crawl4AI)
   const enrichmentSection = enrichment
@@ -451,7 +488,20 @@ Based on the negative reviews and researcher notes, what opportunities exist to 
 - Pain points to solve better
 - Missing features users request
 - UX improvements needed
+${redditAnalysis ? `
+### 7. Problem-Domain Differentiation (from Reddit)
+Based on the Reddit market insights above, create a table showing how to address the deeper unmet needs:
 
+| Unmet Need | How Competitors Fail | Proposed Solution | Strategic Value |
+|------------|---------------------|-------------------|-----------------|
+| ... | ... | ... | High/Medium/Low |
+
+The 80/20 analysis must prioritize features that:
+- Fix the obvious app issues (table stakes)
+- Solve the deeper problem-domain gaps (differentiation)
+- Align with the proposed solution approaches (strategic intent)
+- Deliver maximum user value with minimum complexity
+` : ''}
 Format your response in clean Markdown with proper headings, tables, and bullet points. Cite specific reviews where relevant.`;
 }
 
@@ -1995,7 +2045,8 @@ Generate the complete BUILD_MANIFEST.md following this format. Extract EVERY scr
  * This async version fetches extended reviews and Reddit data before generating the prompt
  */
 export async function getParetoStrategyPromptWithEnrichment(
-  project: AppProject
+  project: AppProject,
+  redditAnalysis?: RedditAnalysisResult | null
 ): Promise<string> {
   const extProject = project as AppProject;
 
@@ -2018,7 +2069,7 @@ export async function getParetoStrategyPromptWithEnrichment(
     }
   }
 
-  return getParetoStrategyPrompt(project, enrichment);
+  return getParetoStrategyPrompt(project, enrichment, redditAnalysis);
 }
 
 /**
@@ -2037,11 +2088,12 @@ export async function getBlueprintPromptWithEnrichment(
     prd?: string;
   },
   attachments: BlueprintAttachment[] = [],
-  colorPalette?: BlueprintColorPalette | null
+  colorPalette?: BlueprintColorPalette | null,
+  redditAnalysis?: RedditAnalysisResult | null
 ): Promise<string> {
   // Pareto needs review/reddit enrichment
   if (section === 'pareto') {
-    return getParetoStrategyPromptWithEnrichment(project);
+    return getParetoStrategyPromptWithEnrichment(project, redditAnalysis);
   }
 
   // Design System needs curated color palettes (if no stored palette)

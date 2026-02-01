@@ -7,11 +7,44 @@ import {
   updateBlueprintSection,
   updateBlueprintPalette,
   getBlueprintSectionAttachments,
+  getLinkedCompetitors,
+  getRedditAnalysisById,
+  getUnmetNeedSolutions,
   type BlueprintSection,
   type BlueprintColorPalette,
+  type LinkedCompetitor,
 } from '@/lib/supabase';
 import { getBlueprintPrompt, getBlueprintPromptWithEnrichment, getBuildManifestPrompt, getAppIdentityCandidatesPrompt, getAppIdentityPrompt, extractAppNameFromIdentity } from '@/lib/blueprint-prompts';
 import { getColorPalettesForDesignSystem, type ColorPalette } from '@/lib/crawl';
+import { RedditAnalysisResult } from '@/lib/reddit/types';
+
+// Helper to fetch Reddit analysis for a project's competitors
+async function getRedditAnalysisForProject(projectId: string): Promise<RedditAnalysisResult | null> {
+  try {
+    const competitors = await getLinkedCompetitors(projectId);
+
+    // Find first competitor with Reddit analysis
+    for (const competitor of competitors) {
+      if (competitor.reddit_analysis_id) {
+        const analysis = await getRedditAnalysisById(competitor.reddit_analysis_id);
+        if (analysis) {
+          // Merge solution annotations
+          const solutions = await getUnmetNeedSolutions(analysis.id);
+          const solutionMap = new Map(solutions.map(s => [s.needId, s.notes]));
+          analysis.unmetNeeds = analysis.unmetNeeds.map(need => ({
+            ...need,
+            solutionNotes: solutionMap.get(need.id) || need.solutionNotes,
+          }));
+          return analysis;
+        }
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error('[Blueprint] Error fetching Reddit analysis:', error);
+    return null;
+  }
+}
 
 // Sections that need a color palette
 const COLOR_SECTIONS: BlueprintSection[] = ['identity', 'design_system', 'wireframes', 'aso'];
@@ -280,6 +313,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Fetch Reddit analysis for the project (for pareto section)
+    let redditAnalysis: RedditAnalysisResult | null = null;
+    if (section === 'pareto') {
+      redditAnalysis = await getRedditAnalysisForProject(blueprint.project_id);
+      if (redditAnalysis) {
+        console.log(`[Blueprint] Found Reddit analysis with ${redditAnalysis.unmetNeeds.length} unmet needs`);
+      }
+    }
+
     // Build prompt - manifest uses a different prompt function
     // For pareto, design_system, and aso, use async version with enrichment (palettes, reviews, keywords)
     const sectionsNeedingEnrichment = ['pareto', 'design_system', 'aso'];
@@ -306,7 +348,7 @@ export async function POST(request: NextRequest) {
         availabilityResults
       );
     } else if (sectionsNeedingEnrichment.includes(section)) {
-      // Use async version with enrichment (color palettes for design_system, reviews for pareto)
+      // Use async version with enrichment (color palettes for design_system, reviews for pareto, keywords for aso)
       prompt = await getBlueprintPromptWithEnrichment(
         section as 'pareto' | 'identity' | 'design_system' | 'wireframes' | 'tech_stack' | 'xcode_setup' | 'prd' | 'aso',
         project,
@@ -319,7 +361,8 @@ export async function POST(request: NextRequest) {
           prd: blueprint.prd_content || undefined,
         },
         attachments,
-        colorPalette
+        colorPalette,
+        redditAnalysis // Pass Reddit analysis for pareto section
       );
     } else {
       prompt = getBlueprintPrompt(
