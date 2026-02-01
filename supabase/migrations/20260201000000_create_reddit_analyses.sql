@@ -33,16 +33,9 @@ CREATE TABLE IF NOT EXISTS unmet_need_solutions (
 -- Index for analysis lookups
 CREATE INDEX IF NOT EXISTS idx_unmet_need_solutions_analysis ON unmet_need_solutions(reddit_analysis_id);
 
--- Add reddit_analysis_id to linked_competitors if not exists
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'linked_competitors' AND column_name = 'reddit_analysis_id'
-  ) THEN
-    ALTER TABLE linked_competitors ADD COLUMN reddit_analysis_id UUID REFERENCES reddit_analyses(id);
-  END IF;
-END $$;
+-- Note: linked_competitors are stored as JSONB in app_projects.linked_competitors
+-- The reddit_analysis_id field is added to the JSONB objects by the application code
+-- No separate linked_competitors table exists
 
 -- RLS policies (match existing patterns)
 ALTER TABLE reddit_analyses ENABLE ROW LEVEL SECURITY;

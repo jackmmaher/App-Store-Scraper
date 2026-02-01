@@ -724,6 +724,7 @@ export interface LinkedCompetitor {
   ai_analysis?: string;
   scraped_at?: string;
   analyzed_at?: string;
+  reddit_analysis_id?: string;
 }
 
 // App idea recommendation structure
@@ -2556,19 +2557,49 @@ export async function getUnmetNeedSolutions(
   }));
 }
 
-// Link a Reddit analysis to a competitor in linked_competitors
+// Link a Reddit analysis to a competitor in linked_competitors JSONB
 export async function linkRedditAnalysisToCompetitor(
   competitorId: string,
   analysisId: string
 ): Promise<boolean> {
-  const { error } = await supabaseAdmin
-    .from('linked_competitors')
-    .update({ reddit_analysis_id: analysisId })
-    .eq('app_store_id', competitorId);
+  // Find projects that have this competitor in their linked_competitors array
+  const { data: projects, error: findError } = await supabaseAdmin
+    .from('app_projects')
+    .select('id, linked_competitors')
+    .filter('linked_competitors', 'cs', JSON.stringify([{ app_store_id: competitorId }]));
 
-  if (error) {
-    console.error('Error linking Reddit analysis to competitor:', error);
+  if (findError) {
+    console.error('Error finding projects with competitor:', findError);
     return false;
+  }
+
+  if (!projects || projects.length === 0) {
+    console.warn('No projects found with competitor:', competitorId);
+    return false;
+  }
+
+  // Update each project's linked_competitors to add reddit_analysis_id
+  for (const project of projects) {
+    const competitors = (project.linked_competitors as LinkedCompetitor[]) || [];
+    const updated = competitors.map(c => {
+      if (c.app_store_id === competitorId) {
+        return { ...c, reddit_analysis_id: analysisId };
+      }
+      return c;
+    });
+
+    const { error: updateError } = await supabaseAdmin
+      .from('app_projects')
+      .update({
+        linked_competitors: updated,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', project.id);
+
+    if (updateError) {
+      console.error('Error updating linked_competitors:', updateError);
+      return false;
+    }
   }
 
   return true;

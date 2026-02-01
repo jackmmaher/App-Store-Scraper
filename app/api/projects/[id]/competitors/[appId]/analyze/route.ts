@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isAuthenticated } from '@/lib/auth';
-import { getLinkedCompetitors, updateLinkedCompetitor, Review } from '@/lib/supabase';
+import { getLinkedCompetitors, updateLinkedCompetitor, Review, getRedditAnalysisById, getUnmetNeedSolutions } from '@/lib/supabase';
+import { RedditAnalysisResult, UnmetNeed } from '@/lib/reddit/types';
 
 // POST /api/projects/[id]/competitors/[appId]/analyze - Analyze reviews for a linked competitor
 export async function POST(
@@ -34,6 +35,21 @@ export async function POST(
 
     const reviews = competitor.scraped_reviews as Review[];
 
+    // Fetch Reddit analysis if available
+    let redditAnalysis: RedditAnalysisResult | null = null;
+    if (competitor.reddit_analysis_id) {
+      redditAnalysis = await getRedditAnalysisById(competitor.reddit_analysis_id);
+      if (redditAnalysis) {
+        // Merge solution annotations into unmet needs
+        const solutions = await getUnmetNeedSolutions(redditAnalysis.id);
+        const solutionMap = new Map(solutions.map(s => [s.needId, s.notes]));
+        redditAnalysis.unmetNeeds = redditAnalysis.unmetNeeds.map(need => ({
+          ...need,
+          solutionNotes: solutionMap.get(need.id) || need.solutionNotes,
+        }));
+      }
+    }
+
     // Separate reviews by rating
     const negativeReviews = reviews.filter(r => r.rating <= 2);
     const neutralReviews = reviews.filter(r => r.rating === 3);
@@ -55,12 +71,56 @@ export async function POST(
       formatReviews(sampledNeutral, '3 Star Reviews - MIXED FEELINGS') +
       formatReviews(sampledPositive, '4-5 Star Reviews - WHAT WORKS');
 
-    const prompt = `You are analyzing competitor app reviews to inform the development of a new app. Analyze these ${reviews.length} App Store reviews for "${competitor.name}" (${competitor.rating?.toFixed(1) || 'N/A'}★) to extract competitive intelligence.
+    // Build Reddit insights section if available
+    const redditSection = redditAnalysis ? `
+
+=== REDDIT MARKET INSIGHTS ===
+(What the BROADER market needs - beyond this app's users)
+
+Unmet Needs Identified from Reddit:
+${redditAnalysis.unmetNeeds.map((need: UnmetNeed) => `
+- ${need.title} [Severity: ${need.severity}]
+  Problem: ${need.description}
+  Evidence: ${need.evidence.postCount} posts, ${need.evidence.avgUpvotes} avg upvotes
+  User's Solution Approach: ${need.solutionNotes || "Not yet defined"}
+`).join('')}
+
+Market Signals:
+- Discussion volume: ${redditAnalysis.trends.discussionVolume} posts/month
+- Trend: ${redditAnalysis.trends.trendDirection} (${redditAnalysis.trends.percentChange}% change)
+- Sentiment: ${redditAnalysis.sentiment.frustrated}% frustrated, ${redditAnalysis.sentiment.seekingHelp}% seeking help
+- Top communities: ${redditAnalysis.topSubreddits.slice(0, 3).map(s => `r/${s.name}`).join(', ')}
+` : '';
+
+    // Build analysis instructions based on data availability
+    const analysisInstructions = redditAnalysis
+      ? `Generate competitive intelligence that:
+1. Identifies what this app does well (to learn from)
+2. Identifies app-level weaknesses (from reviews)
+3. Identifies problem-domain gaps (from Reddit) with user's proposed solutions
+4. Creates strategic positioning based on solving what competitors miss
+
+For problem-domain gaps, output a section:
+
+## Problem-Domain Gaps
+For each unmet need from Reddit:
+| Need | How Competitors Fail | Proposed Solution | Strategic Value |
+|------|---------------------|-------------------|-----------------|
+| ... | ... | ... | ... |`
+      : `Generate competitive intelligence that:
+1. Identifies what this app does well (to learn from)
+2. Identifies app-level weaknesses (from reviews)
+3. Creates strategic positioning`;
+
+    const prompt = `You are analyzing competitor app reviews${redditAnalysis ? ' and Reddit market data' : ''} to inform the development of a new app. Analyze these ${reviews.length} App Store reviews for "${competitor.name}" (${competitor.rating?.toFixed(1) || 'N/A'}★) to extract competitive intelligence.
 
 ## REVIEW DISTRIBUTION:
 - 1-2 stars (critical): ${negativeReviews.length} reviews
 - 3 stars (neutral): ${neutralReviews.length} reviews
 - 4-5 stars (positive): ${positiveReviews.length} reviews
+${redditSection}
+
+${analysisInstructions}
 
 Provide a CONCISE analysis focused on actionable competitive insights:
 
@@ -75,7 +135,10 @@ Provide a CONCISE analysis focused on actionable competitive insights:
 
 ## User Segments
 - Who uses this app and what do they need?
-
+${redditAnalysis ? `
+## Problem-Domain Gaps
+(Table showing unmet needs from Reddit, how competitors fail, and your proposed solutions)
+` : ''}
 ## Competitive Positioning
 - How should we differentiate against this competitor?
 
