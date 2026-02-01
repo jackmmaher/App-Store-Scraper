@@ -602,8 +602,6 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
   };
 
   const saveAsProject = async () => {
-    if (reviews.length === 0) return;
-
     setSavingProject(true);
 
     try {
@@ -770,6 +768,43 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved }
                       </svg>
                       <span className="hidden sm:inline">Add to Database</span>
                       <span className="sm:hidden">Add</span>
+                    </>
+                  )}
+                </button>
+              )}
+              <span className="text-gray-300 dark:text-gray-600">|</span>
+              {projectSaved ? (
+                <a
+                  href={`/projects/${savedProjectId}`}
+                  className="text-sm text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 flex items-center gap-1"
+                >
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                  <span className="hidden sm:inline">In Projects - View</span>
+                  <span className="sm:hidden">View</span>
+                </a>
+              ) : (
+                <button
+                  onClick={saveAsProject}
+                  disabled={savingProject}
+                  className="text-sm text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 flex items-center gap-1 disabled:opacity-50"
+                >
+                  {savingProject ? (
+                    <>
+                      <svg className="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Adding...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                      </svg>
+                      <span className="hidden sm:inline">Add to Project</span>
+                      <span className="sm:hidden">Project</span>
                     </>
                   )}
                 </button>
