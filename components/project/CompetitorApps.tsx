@@ -1,6 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import SearchConfigPanel from '@/components/reddit/SearchConfigPanel';
+import UnmetNeedsPanel from '@/components/reddit/UnmetNeedsPanel';
+import TrendsSentimentPanel from '@/components/reddit/TrendsSentimentPanel';
+import type { RedditSearchConfig, RedditAnalysisResult } from '@/lib/reddit/types';
 
 interface AnalyzedApp {
   app_store_id: string;
@@ -20,6 +24,7 @@ interface LinkedCompetitor {
   ai_analysis?: string;
   scraped_at?: string;
   analyzed_at?: string;
+  reddit_analysis_id?: string;
 }
 
 interface CompetitorAppsProps {
@@ -43,6 +48,13 @@ export default function CompetitorApps({
   const [scrapingAll, setScrapingAll] = useState(false);
   const [analyzingAll, setAnalyzingAll] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; action: string } | null>(null);
+
+  // Reddit Deep Dive state
+  const [showRedditConfig, setShowRedditConfig] = useState<string | null>(null); // competitorId or null
+  const [redditAnalysis, setRedditAnalysis] = useState<Record<string, RedditAnalysisResult>>({});
+  const [isRedditAnalyzing, setIsRedditAnalyzing] = useState(false);
+  const [isSavingSolutions, setIsSavingSolutions] = useState(false);
+  const [expandedRedditAnalysis, setExpandedRedditAnalysis] = useState<string | null>(null);
 
   const linkedIds = new Set(linkedCompetitors.map(c => c.app_store_id));
   const unlinkedApps = analyzedApps.filter(app => !linkedIds.has(app.app_store_id));
@@ -223,6 +235,123 @@ export default function CompetitorApps({
     if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
     if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
     return n.toString();
+  };
+
+  // Load existing Reddit analyses for competitors with reddit_analysis_id
+  useEffect(() => {
+    const loadExistingAnalyses = async () => {
+      const competitorsWithAnalysis = linkedCompetitors.filter(c => c.reddit_analysis_id);
+
+      for (const comp of competitorsWithAnalysis) {
+        if (redditAnalysis[comp.app_store_id]) continue; // Already loaded
+
+        try {
+          const res = await fetch(`/api/reddit/analysis/${comp.app_store_id}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.analysis) {
+              setRedditAnalysis(prev => ({
+                ...prev,
+                [comp.app_store_id]: data.analysis,
+              }));
+            }
+          }
+        } catch (err) {
+          console.error(`Error loading Reddit analysis for ${comp.name}:`, err);
+        }
+      }
+    };
+
+    loadExistingAnalyses();
+  }, [linkedCompetitors]);
+
+  // Handle Reddit Deep Dive analysis
+  const handleRedditAnalyze = async (config: RedditSearchConfig) => {
+    setIsRedditAnalyzing(true);
+    try {
+      const response = await fetch('/api/reddit/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to analyze Reddit data');
+      }
+
+      const result = await response.json();
+
+      if (result.analysis) {
+        setRedditAnalysis(prev => ({
+          ...prev,
+          [config.competitorId]: result.analysis,
+        }));
+        setExpandedRedditAnalysis(config.competitorId);
+      }
+
+      setShowRedditConfig(null);
+      onRefresh(); // Refresh to get updated reddit_analysis_id
+    } catch (error) {
+      console.error('Reddit analysis failed:', error);
+      alert(error instanceof Error ? error.message : 'Failed to run Reddit analysis');
+    } finally {
+      setIsRedditAnalyzing(false);
+    }
+  };
+
+  // Handle solution notes change for unmet needs
+  const handleSolutionChange = (competitorId: string, needId: string, notes: string) => {
+    setRedditAnalysis(prev => {
+      const analysis = prev[competitorId];
+      if (!analysis) return prev;
+
+      return {
+        ...prev,
+        [competitorId]: {
+          ...analysis,
+          unmetNeeds: analysis.unmetNeeds.map(need =>
+            need.id === needId ? { ...need, solutionNotes: notes } : need
+          ),
+        },
+      };
+    });
+  };
+
+  // Save solutions for a competitor's Reddit analysis
+  const handleSaveSolutions = async (competitorId: string) => {
+    const analysis = redditAnalysis[competitorId];
+    if (!analysis) return;
+
+    setIsSavingSolutions(true);
+    try {
+      const solutions = analysis.unmetNeeds
+        .filter(need => need.solutionNotes)
+        .map(need => ({
+          needId: need.id,
+          notes: need.solutionNotes || '',
+        }));
+
+      const response = await fetch('/api/reddit/solutions', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          analysisId: analysis.id,
+          solutions,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to save solutions');
+      }
+
+      alert('Solutions saved successfully!');
+    } catch (error) {
+      console.error('Error saving solutions:', error);
+      alert('Failed to save solutions');
+    } finally {
+      setIsSavingSolutions(false);
+    }
   };
 
   return (
@@ -504,6 +633,45 @@ export default function CompetitorApps({
                               )}
                             </button>
                           )}
+
+                          {/* Reddit Deep Dive button - shows when competitor has scraped reviews */}
+                          {hasReviews ? (
+                            <button
+                              onClick={() => {
+                                if (redditAnalysis[comp.app_store_id]) {
+                                  // Toggle display of existing analysis
+                                  setExpandedRedditAnalysis(
+                                    expandedRedditAnalysis === comp.app_store_id ? null : comp.app_store_id
+                                  );
+                                } else {
+                                  // Open config panel to start new analysis
+                                  setShowRedditConfig(comp.app_store_id);
+                                }
+                              }}
+                              disabled={isRedditAnalyzing && showRedditConfig === comp.app_store_id}
+                              className={`px-3 py-1.5 text-xs rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1 ${
+                                redditAnalysis[comp.app_store_id]
+                                  ? 'bg-orange-100 dark:bg-orange-900/30 hover:bg-orange-200 dark:hover:bg-orange-900/50 text-orange-700 dark:text-orange-400'
+                                  : 'bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400'
+                              }`}
+                            >
+                              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0zm5.01 4.744c.688 0 1.25.561 1.25 1.249a1.25 1.25 0 0 1-2.498.056l-2.597-.547-.8 3.747c1.824.07 3.48.632 4.674 1.488.308-.309.73-.491 1.207-.491.968 0 1.754.786 1.754 1.754 0 .716-.435 1.333-1.01 1.614a3.111 3.111 0 0 1 .042.52c0 2.694-3.13 4.87-7.004 4.87-3.874 0-7.004-2.176-7.004-4.87 0-.183.015-.366.043-.534A1.748 1.748 0 0 1 4.028 12c0-.968.786-1.754 1.754-1.754.463 0 .898.196 1.207.49 1.207-.883 2.878-1.43 4.744-1.487l.885-4.182a.342.342 0 0 1 .14-.197.35.35 0 0 1 .238-.042l2.906.617a1.214 1.214 0 0 1 1.108-.701zM9.25 12C8.561 12 8 12.562 8 13.25c0 .687.561 1.248 1.25 1.248.687 0 1.248-.561 1.248-1.249 0-.688-.561-1.249-1.249-1.249zm5.5 0c-.687 0-1.248.561-1.248 1.25 0 .687.561 1.248 1.249 1.248.688 0 1.249-.561 1.249-1.249 0-.687-.562-1.249-1.25-1.249zm-5.466 3.99a.327.327 0 0 0-.231.094.33.33 0 0 0 0 .463c.842.842 2.484.913 2.961.913.477 0 2.105-.056 2.961-.913a.361.361 0 0 0 .029-.463.33.33 0 0 0-.464 0c-.547.533-1.684.73-2.512.73-.828 0-1.979-.196-2.512-.73a.326.326 0 0 0-.232-.095z"/>
+                              </svg>
+                              {redditAnalysis[comp.app_store_id] ? 'Reddit Insights' : 'Reddit Deep Dive'}
+                            </button>
+                          ) : (
+                            <button
+                              disabled
+                              title="Scrape reviews first to enable Reddit Deep Dive"
+                              className="px-3 py-1.5 text-xs bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 rounded-lg cursor-not-allowed flex items-center gap-1"
+                            >
+                              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0zm5.01 4.744c.688 0 1.25.561 1.25 1.249a1.25 1.25 0 0 1-2.498.056l-2.597-.547-.8 3.747c1.824.07 3.48.632 4.674 1.488.308-.309.73-.491 1.207-.491.968 0 1.754.786 1.754 1.754 0 .716-.435 1.333-1.01 1.614a3.111 3.111 0 0 1 .042.52c0 2.694-3.13 4.87-7.004 4.87-3.874 0-7.004-2.176-7.004-4.87 0-.183.015-.366.043-.534A1.748 1.748 0 0 1 4.028 12c0-.968.786-1.754 1.754-1.754.463 0 .898.196 1.207.49 1.207-.883 2.878-1.43 4.744-1.487l.885-4.182a.342.342 0 0 1 .14-.197.35.35 0 0 1 .238-.042l2.906.617a1.214 1.214 0 0 1 1.108-.701zM9.25 12C8.561 12 8 12.562 8 13.25c0 .687.561 1.248 1.25 1.248.687 0 1.248-.561 1.248-1.249 0-.688-.561-1.249-1.249-1.249zm5.5 0c-.687 0-1.248.561-1.248 1.25 0 .687.561 1.248 1.249 1.248.688 0 1.249-.561 1.249-1.249 0-.687-.562-1.249-1.25-1.249zm-5.466 3.99a.327.327 0 0 0-.231.094.33.33 0 0 0 0 .463c.842.842 2.484.913 2.961.913.477 0 2.105-.056 2.961-.913a.361.361 0 0 0 .029-.463.33.33 0 0 0-.464 0c-.547.533-1.684.73-2.512.73-.828 0-1.979-.196-2.512-.73a.326.326 0 0 0-.232-.095z"/>
+                              </svg>
+                              Reddit
+                            </button>
+                          )}
                         </div>
                       </div>
 
@@ -513,6 +681,57 @@ export default function CompetitorApps({
                           <p className="text-xs text-gray-600 dark:text-gray-400 line-clamp-3">
                             {comp.ai_analysis?.slice(0, 300)}...
                           </p>
+                        </div>
+                      )}
+
+                      {/* Reddit Deep Dive Config Panel */}
+                      {showRedditConfig === comp.app_store_id && (
+                        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                          <SearchConfigPanel
+                            competitorId={comp.app_store_id}
+                            competitorName={comp.name}
+                            onAnalyze={handleRedditAnalyze}
+                            onCancel={() => setShowRedditConfig(null)}
+                            isLoading={isRedditAnalyzing}
+                          />
+                        </div>
+                      )}
+
+                      {/* Reddit Analysis Results */}
+                      {redditAnalysis[comp.app_store_id] && expandedRedditAnalysis === comp.app_store_id && (
+                        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                          <div className="flex items-center justify-between mb-4">
+                            <h4 className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                              <svg className="w-4 h-4 text-orange-500" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0zm5.01 4.744c.688 0 1.25.561 1.25 1.249a1.25 1.25 0 0 1-2.498.056l-2.597-.547-.8 3.747c1.824.07 3.48.632 4.674 1.488.308-.309.73-.491 1.207-.491.968 0 1.754.786 1.754 1.754 0 .716-.435 1.333-1.01 1.614a3.111 3.111 0 0 1 .042.52c0 2.694-3.13 4.87-7.004 4.87-3.874 0-7.004-2.176-7.004-4.87 0-.183.015-.366.043-.534A1.748 1.748 0 0 1 4.028 12c0-.968.786-1.754 1.754-1.754.463 0 .898.196 1.207.49 1.207-.883 2.878-1.43 4.744-1.487l.885-4.182a.342.342 0 0 1 .14-.197.35.35 0 0 1 .238-.042l2.906.617a1.214 1.214 0 0 1 1.108-.701zM9.25 12C8.561 12 8 12.562 8 13.25c0 .687.561 1.248 1.25 1.248.687 0 1.248-.561 1.248-1.249 0-.688-.561-1.249-1.249-1.249zm5.5 0c-.687 0-1.248.561-1.248 1.25 0 .687.561 1.248 1.249 1.248.688 0 1.249-.561 1.249-1.249 0-.687-.562-1.249-1.25-1.249zm-5.466 3.99a.327.327 0 0 0-.231.094.33.33 0 0 0 0 .463c.842.842 2.484.913 2.961.913.477 0 2.105-.056 2.961-.913a.361.361 0 0 0 .029-.463.33.33 0 0 0-.464 0c-.547.533-1.684.73-2.512.73-.828 0-1.979-.196-2.512-.73a.326.326 0 0 0-.232-.095z"/>
+                              </svg>
+                              Reddit Deep Dive Results
+                            </h4>
+                            <button
+                              onClick={() => setShowRedditConfig(comp.app_store_id)}
+                              className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                            >
+                              Run New Analysis
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            <UnmetNeedsPanel
+                              needs={redditAnalysis[comp.app_store_id].unmetNeeds}
+                              onSolutionChange={(needId, notes) => handleSolutionChange(comp.app_store_id, needId, notes)}
+                              onSaveSolutions={() => handleSaveSolutions(comp.app_store_id)}
+                              isSaving={isSavingSolutions}
+                            />
+                            <TrendsSentimentPanel
+                              trends={redditAnalysis[comp.app_store_id].trends}
+                              sentiment={redditAnalysis[comp.app_store_id].sentiment}
+                              languagePatterns={redditAnalysis[comp.app_store_id].languagePatterns}
+                              topSubreddits={redditAnalysis[comp.app_store_id].topSubreddits}
+                            />
+                          </div>
+                          <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                            Analyzed {redditAnalysis[comp.app_store_id].rawData.postsAnalyzed} posts and {redditAnalysis[comp.app_store_id].rawData.commentsAnalyzed} comments
+                            {' '}from {redditAnalysis[comp.app_store_id].rawData.dateRange.start.split('T')[0]} to {redditAnalysis[comp.app_store_id].rawData.dateRange.end.split('T')[0]}
+                          </div>
                         </div>
                       )}
                     </div>
