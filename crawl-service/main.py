@@ -100,6 +100,23 @@ class ColorPaletteRequest(BaseModel):
     force_refresh: bool = False  # Force fresh crawl from Coolors
 
 
+class RedditDeepDiveRequest(BaseModel):
+    """Request model for Reddit deep dive crawling."""
+    search_topics: list[str]
+    subreddits: list[str]
+    time_filter: str = "month"  # week, month, year
+    max_posts_per_combo: int = 50
+    max_comments_per_post: int = 30
+
+
+class RedditDeepDiveResponse(BaseModel):
+    """Response model for Reddit deep dive crawling."""
+    posts: list[dict]
+    stats: dict
+    success: bool
+    error: Optional[str] = None
+
+
 class HealthResponse(BaseModel):
     status: str
     uptime_seconds: float
@@ -323,6 +340,47 @@ async def crawl_reddit(request: RedditCrawlRequest):
         raise HTTPException(status_code=500, detail=f"Failed to crawl Reddit: {str(e)}")
 
 
+@app.post("/crawl/reddit/deep-dive", response_model=RedditDeepDiveResponse)
+async def crawl_reddit_deep_dive(request: RedditDeepDiveRequest):
+    """
+    Deep dive Reddit scraping for semantic analysis.
+
+    Searches each topic in each subreddit, fetches comments on high-engagement posts.
+    Returns structured data for AI analysis.
+    """
+    logger.info(
+        f"Deep dive crawling Reddit - topics: {request.search_topics}, "
+        f"subreddits: {request.subreddits}, time_filter: {request.time_filter}"
+    )
+
+    try:
+        async with RedditCrawler() as crawler:
+            result = await crawler.crawl_deep_dive(
+                search_topics=request.search_topics,
+                subreddits=request.subreddits,
+                time_filter=request.time_filter,
+                max_posts_per_combo=request.max_posts_per_combo,
+                max_comments_per_post=request.max_comments_per_post,
+            )
+
+        return RedditDeepDiveResponse(
+            posts=result["posts"],
+            stats=result["stats"],
+            success=True,
+            error=None,
+        )
+    except Exception as e:
+        logger.exception(
+            f"Error in Reddit deep dive for topics {request.search_topics}"
+        )
+        return RedditDeepDiveResponse(
+            posts=[],
+            stats={},
+            success=False,
+            error=str(e),
+        )
+
+
 # ============================================================================
 # Website Endpoints
 # ============================================================================
@@ -437,6 +495,7 @@ async def root():
             "/crawl/app-store/whats-new",
             "/crawl/app-store/privacy",
             "/crawl/reddit",
+            "/crawl/reddit/deep-dive",
             "/crawl/website",
             "/crawl/palettes",
             "/crawl/palettes/refresh",
