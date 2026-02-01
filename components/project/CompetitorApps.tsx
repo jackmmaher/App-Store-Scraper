@@ -239,21 +239,30 @@ export default function CompetitorApps({
 
   // Load existing Reddit analyses for competitors with reddit_analysis_id
   useEffect(() => {
+    // Track which analyses we're loading to avoid duplicates
+    const loadingIds = new Set<string>();
+
     const loadExistingAnalyses = async () => {
       const competitorsWithAnalysis = linkedCompetitors.filter(c => c.reddit_analysis_id);
 
       for (const comp of competitorsWithAnalysis) {
-        if (redditAnalysis[comp.app_store_id]) continue; // Already loaded
+        // Skip if already loading or loaded
+        if (loadingIds.has(comp.app_store_id)) continue;
+        loadingIds.add(comp.app_store_id);
 
         try {
           const res = await fetch(`/api/reddit/analysis/${comp.app_store_id}`);
           if (res.ok) {
             const data = await res.json();
             if (data.analysis) {
-              setRedditAnalysis(prev => ({
-                ...prev,
-                [comp.app_store_id]: data.analysis,
-              }));
+              setRedditAnalysis(prev => {
+                // Double-check we haven't loaded this yet
+                if (prev[comp.app_store_id]) return prev;
+                return {
+                  ...prev,
+                  [comp.app_store_id]: data.analysis,
+                };
+              });
             }
           }
         } catch (err) {

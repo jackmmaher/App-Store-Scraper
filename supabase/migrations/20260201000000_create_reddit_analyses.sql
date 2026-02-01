@@ -4,7 +4,7 @@
 -- Reddit analyses table - stores analysis results for a competitor
 CREATE TABLE IF NOT EXISTS reddit_analyses (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  competitor_id UUID NOT NULL,
+  competitor_id TEXT NOT NULL,  -- app_store_id string (e.g., "com.app.example"), NOT UUID
   search_config JSONB NOT NULL,
   unmet_needs JSONB NOT NULL DEFAULT '[]',
   trends JSONB NOT NULL DEFAULT '{}',

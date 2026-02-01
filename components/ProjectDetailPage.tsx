@@ -11,6 +11,7 @@ import ChatPanel from './ChatPanel';
 import BlueprintTab from './blueprint/BlueprintTab';
 import OriginalIdeaBrief from './project/OriginalIdeaBrief';
 import CompetitorApps from './project/CompetitorApps';
+import RedditDeepDiveSection from './project/RedditDeepDiveSection';
 import AppDetailModal from './AppDetailModal';
 import type { AppProject, Review, LinkedCompetitor, AppIdeaRecommendationData, AppResult } from '@/lib/supabase';
 import { saveAppAnalysis, getMasterApp } from '@/lib/supabase';
@@ -534,6 +535,15 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
               onRefresh={fetchProject}
             />
           </>
+        )}
+
+        {/* Reddit Deep Dive for clone/tracking projects */}
+        {project.project_type !== 'original_idea' && project.app_store_id && (
+          <RedditDeepDiveSection
+            appId={project.app_store_id}
+            appName={project.app_name}
+            hasReviews={(project.reviews?.length || 0) > 0}
+          />
         )}
 
         {/* Tabs */}

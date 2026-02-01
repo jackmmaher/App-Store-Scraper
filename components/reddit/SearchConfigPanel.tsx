@@ -93,17 +93,24 @@ export default function SearchConfigPanel({
       try {
         setIsLoadingConfig(true);
         setError(null);
-        const response = await fetch(`/api/reddit/generate-config?competitorId=${competitorId}`);
+        // BUG FIX: Use POST method as API only handles POST
+        const response = await fetch('/api/reddit/generate-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ competitorId }),
+        });
         if (!response.ok) {
           throw new Error('Failed to generate config');
         }
         const data = await response.json();
+        // BUG FIX: Config is nested under data.config, not flat
+        const configData = data.config || data;
         setConfig({
           competitorId,
-          problemDomain: data.problemDomain || '',
-          searchTopics: data.searchTopics || [],
-          subreddits: data.subreddits || [],
-          timeRange: data.timeRange || 'month',
+          problemDomain: configData.problemDomain || '',
+          searchTopics: configData.searchTopics || [],
+          subreddits: configData.subreddits || [],
+          timeRange: configData.timeRange || 'month',
         });
       } catch (err) {
         setError('Failed to load configuration. You can still enter details manually.');
