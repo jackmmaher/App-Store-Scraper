@@ -137,6 +137,10 @@ export async function POST(request: NextRequest) {
           });
 
           // Call the Python crawler - it handles all sort types internally
+          // 5 minute timeout for the crawl request (browser scraping can be slow)
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000);
+
           const response = await fetch(`${CRAWL_SERVICE_URL}/crawl/app-store/reviews`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -145,7 +149,10 @@ export async function POST(request: NextRequest) {
               country,
               max_reviews: totalTarget,
             }),
+            signal: controller.signal,
           });
+
+          clearTimeout(timeoutId);
 
           // Stop heartbeat
           isRunning = false;
@@ -233,9 +240,19 @@ export async function POST(request: NextRequest) {
         } catch (error) {
           isRunning = false;
           clearInterval(heartbeatInterval);
+
+          let errorMessage = 'Unknown error';
+          if (error instanceof Error) {
+            if (error.name === 'AbortError') {
+              errorMessage = 'Review scraping timed out after 5 minutes. The crawl service may be slow or unresponsive. Try reducing the number of reviews or check crawl-service logs.';
+            } else {
+              errorMessage = error.message;
+            }
+          }
+
           sendEvent({
             type: 'error',
-            message: error instanceof Error ? error.message : 'Unknown error',
+            message: errorMessage,
           });
         } finally {
           controller.close();

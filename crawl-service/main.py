@@ -189,14 +189,22 @@ async def crawl_app_store_reviews(request: AppStoreReviewRequest):
     try:
         # Step 1: RSS API - fast, gets ~1000 reviews from primary country
         logger.info("Phase 1: RSS API scraping...")
-        async with AppStoreCrawler() as crawler:
-            rss_reviews = await crawler.crawl_reviews(
-                app_id=request.app_id,
-                country=request.country,
-                max_reviews=min(request.max_reviews, 2000),
-                min_rating=request.min_rating,
-                max_rating=request.max_rating,
-            )
+        try:
+            async with AppStoreCrawler() as crawler:
+                # Timeout RSS phase after 60 seconds
+                rss_reviews = await asyncio.wait_for(
+                    crawler.crawl_reviews(
+                        app_id=request.app_id,
+                        country=request.country,
+                        max_reviews=min(request.max_reviews, 2000),
+                        min_rating=request.min_rating,
+                        max_rating=request.max_rating,
+                    ),
+                    timeout=60.0  # 1 minute max for RSS phase
+                )
+        except asyncio.TimeoutError:
+            logger.warning("RSS API scraping timed out after 60 seconds")
+            rss_reviews = []
 
         # Add RSS reviews to collection
         for review in rss_reviews:
@@ -212,15 +220,23 @@ async def crawl_app_store_reviews(request: AppStoreReviewRequest):
             remaining = request.max_reviews - len(all_reviews)
             logger.info(f"Phase 2: Browser multi-country scraping for {remaining} more reviews...")
 
-            async with AppStoreBrowserCrawler(headless=True) as crawler:
-                browser_reviews = await crawler.crawl_reviews(
-                    app_id=request.app_id,
-                    country=request.country,
-                    max_reviews=remaining,
-                    min_rating=request.min_rating,
-                    max_rating=request.max_rating,
-                    multi_country=True,
-                )
+            try:
+                async with AppStoreBrowserCrawler(headless=True) as crawler:
+                    # Timeout browser scraping after 4 minutes to leave buffer for response
+                    browser_reviews = await asyncio.wait_for(
+                        crawler.crawl_reviews(
+                            app_id=request.app_id,
+                            country=request.country,
+                            max_reviews=remaining,
+                            min_rating=request.min_rating,
+                            max_rating=request.max_rating,
+                            multi_country=request.multi_country,
+                        ),
+                        timeout=240.0  # 4 minutes max for browser phase
+                    )
+            except asyncio.TimeoutError:
+                logger.warning(f"Browser scraping timed out after 4 minutes, proceeding with {len(all_reviews)} reviews from RSS")
+                browser_reviews = []
 
             # Add browser reviews, deduplicating by content
             new_from_browser = 0
