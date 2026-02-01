@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { RedditSearchConfig, RedditAnalysisResult } from './reddit/types';
 
 // Lazy initialization to avoid build-time errors when env vars aren't available
 let _supabase: SupabaseClient | null = null;
@@ -2394,5 +2395,182 @@ export async function addLinkedCompetitors(
 
   console.log('[addLinkedCompetitors] Success, now has:', data?.linked_competitors?.length || 0);
   return (data?.linked_competitors as LinkedCompetitor[]) || [];
+}
+
+// ============================================
+// Reddit Analysis Types & Operations
+// ============================================
+
+// Create a new Reddit analysis record
+export async function createRedditAnalysis(
+  competitorId: string,
+  searchConfig: RedditSearchConfig,
+  result: Omit<RedditAnalysisResult, 'id' | 'competitorId' | 'searchConfig' | 'createdAt'>
+): Promise<RedditAnalysisResult | null> {
+  const { data, error } = await supabaseAdmin
+    .from('reddit_analyses')
+    .insert({
+      competitor_id: competitorId,
+      search_config: searchConfig,
+      unmet_needs: result.unmetNeeds,
+      trends: result.trends,
+      sentiment: result.sentiment,
+      language_patterns: result.languagePatterns,
+      top_subreddits: result.topSubreddits,
+      raw_data: result.rawData,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error creating Reddit analysis:', error);
+    return null;
+  }
+
+  // Transform database row to RedditAnalysisResult
+  return {
+    id: data.id,
+    competitorId: data.competitor_id,
+    searchConfig: data.search_config as RedditSearchConfig,
+    unmetNeeds: data.unmet_needs,
+    trends: data.trends,
+    sentiment: data.sentiment,
+    languagePatterns: data.language_patterns || [],
+    topSubreddits: data.top_subreddits,
+    rawData: data.raw_data,
+    createdAt: data.created_at,
+  };
+}
+
+// Get Reddit analysis by competitor ID (most recent)
+export async function getRedditAnalysis(
+  competitorId: string
+): Promise<RedditAnalysisResult | null> {
+  const { data, error } = await supabase
+    .from('reddit_analyses')
+    .select('*')
+    .eq('competitor_id', competitorId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single();
+
+  if (error) {
+    if (error.code !== 'PGRST116') {
+      console.error('Error fetching Reddit analysis:', error);
+    }
+    return null;
+  }
+
+  return {
+    id: data.id,
+    competitorId: data.competitor_id,
+    searchConfig: data.search_config as RedditSearchConfig,
+    unmetNeeds: data.unmet_needs,
+    trends: data.trends,
+    sentiment: data.sentiment,
+    languagePatterns: data.language_patterns || [],
+    topSubreddits: data.top_subreddits,
+    rawData: data.raw_data,
+    createdAt: data.created_at,
+  };
+}
+
+// Get Reddit analysis by ID
+export async function getRedditAnalysisById(
+  analysisId: string
+): Promise<RedditAnalysisResult | null> {
+  const { data, error } = await supabase
+    .from('reddit_analyses')
+    .select('*')
+    .eq('id', analysisId)
+    .single();
+
+  if (error) {
+    if (error.code !== 'PGRST116') {
+      console.error('Error fetching Reddit analysis by ID:', error);
+    }
+    return null;
+  }
+
+  return {
+    id: data.id,
+    competitorId: data.competitor_id,
+    searchConfig: data.search_config as RedditSearchConfig,
+    unmetNeeds: data.unmet_needs,
+    trends: data.trends,
+    sentiment: data.sentiment,
+    languagePatterns: data.language_patterns || [],
+    topSubreddits: data.top_subreddits,
+    rawData: data.raw_data,
+    createdAt: data.created_at,
+  };
+}
+
+// Save solution notes for unmet needs
+export async function saveUnmetNeedSolutions(
+  analysisId: string,
+  solutions: Array<{ needId: string; notes: string }>
+): Promise<boolean> {
+  // Upsert each solution
+  for (const solution of solutions) {
+    const { error } = await supabaseAdmin
+      .from('unmet_need_solutions')
+      .upsert(
+        {
+          reddit_analysis_id: analysisId,
+          need_id: solution.needId,
+          solution_notes: solution.notes,
+          updated_at: new Date().toISOString(),
+        },
+        {
+          onConflict: 'reddit_analysis_id,need_id',
+        }
+      );
+
+    if (error) {
+      console.error('Error saving unmet need solution:', error);
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// Get solution notes for an analysis
+export async function getUnmetNeedSolutions(
+  analysisId: string
+): Promise<Array<{ needId: string; notes: string }>> {
+  const { data, error } = await supabase
+    .from('unmet_need_solutions')
+    .select('need_id, solution_notes')
+    .eq('reddit_analysis_id', analysisId);
+
+  if (error) {
+    console.error('Error fetching unmet need solutions:', error);
+    return [];
+  }
+
+  return (data || []).map(row => ({
+    needId: row.need_id,
+    notes: row.solution_notes || '',
+  }));
+}
+
+// Link a Reddit analysis to a competitor in linked_competitors
+export async function linkRedditAnalysisToCompetitor(
+  competitorId: string,
+  analysisId: string
+): Promise<boolean> {
+  const { error } = await supabaseAdmin
+    .from('linked_competitors')
+    .update({ reddit_analysis_id: analysisId })
+    .eq('app_store_id', competitorId);
+
+  if (error) {
+    console.error('Error linking Reddit analysis to competitor:', error);
+    return false;
+  }
+
+  return true;
 }
 
