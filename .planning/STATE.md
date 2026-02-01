@@ -2,7 +2,7 @@
 
 ## Current Position
 
-Phase 1 (Foundation) - Ready to plan
+Phase 1 (Foundation) - Plan 01-01 complete, ready for 01-02
 
 ## Accumulated Decisions
 
@@ -11,6 +11,8 @@ Phase 1 (Foundation) - Ready to plan
 - Each unmet need gets a solution annotation textarea
 - Combined analysis merges reviews + Reddit + annotations
 - Blueprint strategy section explicitly uses all three data sources
+- Prioritize negative reviews (1-3 stars) for pain point discovery in config generation
+- Default timeRange for Reddit searches is 'month'
 
 ## Deferred Issues
 
