@@ -11,7 +11,8 @@ import ChatPanel from './ChatPanel';
 import BlueprintTab from './blueprint/BlueprintTab';
 import OriginalIdeaBrief from './project/OriginalIdeaBrief';
 import CompetitorApps from './project/CompetitorApps';
-import type { AppProject, Review, LinkedCompetitor, AppIdeaRecommendationData } from '@/lib/supabase';
+import AppDetailModal from './AppDetailModal';
+import type { AppProject, Review, LinkedCompetitor, AppIdeaRecommendationData, AppResult } from '@/lib/supabase';
 import { saveAppAnalysis, getMasterApp } from '@/lib/supabase';
 import { useKeywordRanking } from '@/hooks/useKeywordRanking';
 import { useKeywordExtraction } from '@/hooks/useKeywordExtraction';
@@ -32,6 +33,7 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
   const [reAnalyzing, setReAnalyzing] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [analysisCopied, setAnalysisCopied] = useState(false);
+  const [showScrapeModal, setShowScrapeModal] = useState(false);
 
   // Review display filters
   const [ratingFilter, setRatingFilter] = useState<'all' | 1 | 2 | 3 | 4 | 5>('all');
@@ -853,7 +855,18 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
                     )}
 
                     {project.reviews.length === 0 ? (
-                      <p className="text-center text-gray-500 py-8">No reviews saved</p>
+                      <div className="text-center py-8">
+                        <p className="text-gray-500 dark:text-gray-400 mb-4">No reviews scraped yet</p>
+                        <button
+                          onClick={() => setShowScrapeModal(true)}
+                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2 mx-auto"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                          Scrape Reviews
+                        </button>
+                      </div>
                     ) : filteredReviews.length === 0 ? (
                       <div className="text-center py-8">
                         <p className="text-gray-500 dark:text-gray-400 mb-2">No reviews match your filters</p>
@@ -1177,6 +1190,44 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
             project={project}
             projectId={projectId}
             onClose={() => setChatOpen(false)}
+          />
+        )}
+
+        {/* Scrape Reviews Modal */}
+        {showScrapeModal && (
+          <AppDetailModal
+            app={{
+              id: project.app_store_id,
+              name: project.app_name,
+              bundle_id: project.app_bundle_id || '',
+              developer: project.app_developer || '',
+              developer_id: '',
+              price: project.app_price || 0,
+              currency: project.app_currency || 'USD',
+              rating: project.app_rating || 0,
+              rating_current_version: project.app_rating || 0,
+              review_count: project.app_review_count || 0,
+              review_count_current_version: project.app_review_count || 0,
+              version: '',
+              release_date: '',
+              current_version_release_date: '',
+              min_os_version: '',
+              file_size_bytes: '',
+              content_rating: '',
+              genres: project.app_primary_genre ? [project.app_primary_genre] : [],
+              primary_genre: project.app_primary_genre || '',
+              primary_genre_id: '',
+              url: project.app_url || '',
+              icon_url: project.app_icon_url || '',
+              description: '',
+            }}
+            country={project.country || 'us'}
+            onClose={() => setShowScrapeModal(false)}
+            existingProjectId={projectId}
+            onProjectSaved={() => {
+              setShowScrapeModal(false);
+              fetchProject(); // Refresh to show new reviews
+            }}
           />
         )}
       </div>
