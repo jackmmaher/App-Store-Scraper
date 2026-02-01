@@ -12,6 +12,9 @@ import {
   recordAnalysisPerformance,
 } from '@/lib/reddit/yield-tracker';
 
+// Allow up to 5 minutes for this long-running streaming operation
+export const maxDuration = 300;
+
 // Types for SSE events
 interface SSEEvent {
   event: string;

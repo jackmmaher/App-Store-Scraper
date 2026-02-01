@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import SearchConfigPanel from '@/components/reddit/SearchConfigPanel';
 import UnmetNeedsPanel from '@/components/reddit/UnmetNeedsPanel';
 import TrendsSentimentPanel from '@/components/reddit/TrendsSentimentPanel';
@@ -28,7 +28,6 @@ export default function RedditDeepDiveSection({
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [isSavingSolutions, setIsSavingSolutions] = useState(false);
   const [isLoadingExisting, setIsLoadingExisting] = useState(false);
-  const stageTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Load existing analysis on mount
   useEffect(() => {
@@ -53,58 +52,90 @@ export default function RedditDeepDiveSection({
     loadExistingAnalysis();
   }, [appId]);
 
-  // Cleanup timer on unmount
-  useEffect(() => {
-    return () => {
-      if (stageTimerRef.current) {
-        clearTimeout(stageTimerRef.current);
-      }
-    };
-  }, []);
-
   const handleAnalyze = async (config: RedditSearchConfig) => {
     setAnalysisStage('crawling');
     setAnalysisError(null);
     setShowConfig(false);
 
-    // Simulate stage transitions based on typical timing
-    // Crawling takes ~3-5min, then we move to analyzing
-    stageTimerRef.current = setTimeout(() => {
-      setAnalysisStage('analyzing');
-      // Analyzing takes ~30-60s, then storing
-      stageTimerRef.current = setTimeout(() => {
-        setAnalysisStage('storing');
-      }, 45000); // 45 seconds for AI analysis
-    }, 180000); // 3 minutes for crawling
-
     try {
-      const response = await fetch('/api/reddit/analyze', {
+      // Use the streaming endpoint for real-time progress updates
+      const response = await fetch('/api/reddit/analyze-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
       });
 
-      // Clear the simulated timers since we got a real response
-      if (stageTimerRef.current) {
-        clearTimeout(stageTimerRef.current);
-      }
-
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to analyze Reddit data');
+        throw new Error(errorData.error || 'Failed to start Reddit analysis');
       }
 
-      const result = await response.json();
+      if (!response.body) {
+        throw new Error('No response body from streaming endpoint');
+      }
 
-      if (result.analysis) {
-        setAnalysisStage('complete');
-        setAnalysis(result.analysis);
-        setIsExpanded(true);
+      // Process the SSE stream
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
 
-        // Reset stage after showing complete
-        setTimeout(() => {
-          setAnalysisStage('idle');
-        }, 2000);
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            const eventType = line.slice(7);
+            continue;
+          }
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              // Handle different event types
+              if (data.stage) {
+                // Stage change event
+                const stageMap: Record<string, RedditAnalysisStage> = {
+                  'validating': 'crawling',
+                  'crawling': 'crawling',
+                  'analyzing': 'analyzing',
+                  'storing': 'storing',
+                };
+                const mappedStage = stageMap[data.stage] || 'crawling';
+                setAnalysisStage(mappedStage);
+              }
+
+              if (data.message === 'Analysis timed out. Try reducing search scope.' || data.isTimeout) {
+                throw new Error('Reddit analysis timed out. Try reducing search scope.');
+              }
+
+              if (data.error || (data.message && line.includes('"error"'))) {
+                throw new Error(data.message || data.error || 'Analysis failed');
+              }
+
+              // Handle completion
+              if (data.analysis) {
+                setAnalysisStage('complete');
+                setAnalysis(data.analysis);
+                setIsExpanded(true);
+
+                // Reset stage after showing complete
+                setTimeout(() => {
+                  setAnalysisStage('idle');
+                }, 2000);
+                return;
+              }
+            } catch (parseError) {
+              // Ignore JSON parse errors for incomplete data
+              if (parseError instanceof SyntaxError) continue;
+              throw parseError;
+            }
+          }
+        }
       }
     } catch (error) {
       console.error('Reddit analysis failed:', error);

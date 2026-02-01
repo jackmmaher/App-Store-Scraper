@@ -12,6 +12,9 @@ import {
   recordAnalysisPerformance,
 } from '@/lib/reddit/yield-tracker';
 
+// Allow up to 5 minutes for this long-running operation
+export const maxDuration = 300;
+
 // POST /api/reddit/analyze - Orchestrate full Reddit deep dive analysis
 export async function POST(request: NextRequest) {
   const authed = await isAuthenticated();

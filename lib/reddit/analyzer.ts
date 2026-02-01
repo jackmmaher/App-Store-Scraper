@@ -548,6 +548,7 @@ async function callClaudeAPI(
         },
       ],
     }),
+    signal: AbortSignal.timeout(120000), // 2 minute timeout for Claude API
   });
 
   if (!response.ok) {
