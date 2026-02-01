@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isAuthenticated } from '@/lib/auth';
+import { getRedditAnalysisById, getUnmetNeedSolutions } from '@/lib/supabase';
+import { RedditAnalysisResult } from '@/lib/reddit/types';
 
 interface Review {
   title: string;
@@ -15,6 +17,7 @@ interface AnalyzeRequest {
   category?: string;
   rating?: number;
   totalReviews?: number;
+  redditAnalysisId?: string;
 }
 
 export async function POST(request: NextRequest) {
@@ -33,13 +36,24 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { reviews, appName, category, rating, totalReviews } = body as AnalyzeRequest;
+    const { reviews, appName, category, rating, totalReviews, redditAnalysisId } = body as AnalyzeRequest;
 
     if (!reviews || reviews.length === 0) {
       return NextResponse.json(
         { error: 'No reviews provided' },
         { status: 400 }
       );
+    }
+
+    // Fetch Reddit analysis if ID provided
+    let redditAnalysis: RedditAnalysisResult | null = null;
+    let solutionNotes: Array<{ needId: string; notes: string }> = [];
+
+    if (redditAnalysisId) {
+      redditAnalysis = await getRedditAnalysisById(redditAnalysisId);
+      if (redditAnalysis) {
+        solutionNotes = await getUnmetNeedSolutions(redditAnalysisId);
+      }
     }
 
     // Separate reviews by rating for better analysis
@@ -63,6 +77,60 @@ export async function POST(request: NextRequest) {
       formatReviews(sampledNegative, '1-2 Star Reviews - CRITICAL ISSUES') +
       formatReviews(sampledNeutral, '3 Star Reviews - MIXED FEELINGS') +
       formatReviews(sampledPositive, '4-5 Star Reviews - WHAT WORKS');
+
+    // Build Reddit context section if available
+    let redditContextSection = '';
+    if (redditAnalysis) {
+      // Merge solution notes into unmet needs
+      const solutionsMap = new Map(solutionNotes.map(s => [s.needId, s.notes]));
+
+      const unmetNeedsTable = redditAnalysis.unmetNeeds
+        .map(need => {
+          const solution = solutionsMap.get(need.id) || 'Not defined';
+          return `| ${need.title} | ${need.severity} | ${need.evidence.postCount} posts, ${need.evidence.avgUpvotes} avg upvotes | ${solution} |`;
+        })
+        .join('\n');
+
+      const topSubreddits = redditAnalysis.topSubreddits
+        .slice(0, 5)
+        .map(s => `- r/${s.name} (${s.postCount} posts, ${s.avgEngagement} avg engagement)`)
+        .join('\n');
+
+      redditContextSection = `
+
+---
+
+## Reddit Market Research
+
+In addition to app reviews, we have analyzed broader market discussions from Reddit:
+
+### Unmet Needs Discovered
+| Need | Severity | Evidence | User's Proposed Solution |
+|------|----------|----------|-------------------------|
+${unmetNeedsTable}
+
+### Market Trends
+- Discussion Volume: ${redditAnalysis.trends.discussionVolume} posts/month
+- Trend Direction: ${redditAnalysis.trends.trendDirection} (${redditAnalysis.trends.percentChange > 0 ? '+' : ''}${redditAnalysis.trends.percentChange}% change)
+
+### User Sentiment
+- Frustrated: ${redditAnalysis.sentiment.frustrated}%
+- Seeking Help: ${redditAnalysis.sentiment.seekingHelp}%
+- Success Stories: ${redditAnalysis.sentiment.successStories}%
+
+### Language Patterns (how users describe this problem)
+${redditAnalysis.languagePatterns.map(p => `- "${p}"`).join('\n')}
+
+### Top Communities
+${topSubreddits}
+
+---
+
+IMPORTANT: Your analysis must address BOTH:
+1. App-specific issues (from reviews)
+2. Broader market gaps (from Reddit research)
+`;
+    }
 
     const prompt = `You are a competitive intelligence analyst. Analyze these ${reviews.length} App Store reviews for "${appName}" to identify market opportunities for a competitor building an alternative.
 
@@ -143,11 +211,26 @@ Group technical issues by business impact:
 
 ---
 
-## 7. Opportunity Brief
+${redditAnalysis ? `## 7. Problem-Domain Opportunities (from Reddit Market Research)
+
+Based on unmet needs discovered in broader market discussions, identify strategic opportunities:
+
+| Unmet Need | App Gap Connection | Strategic Opportunity | Differentiation Potential |
+|------------|-------------------|----------------------|--------------------------|
+| [Need from Reddit] | [How this connects to app-level issues] | [Specific opportunity] | [High/Medium/Low] |
+
+For each high-severity unmet need from Reddit, explain how a competitor could:
+1. Address this gap that the current app ignores
+2. Build features the market is asking for
+3. Position against both app weaknesses AND market gaps
+
+---
+
+## 8. Opportunity Brief` : `## 7. Opportunity Brief`}
 
 If you were building a competitor, what would you do differently? Provide:
 
-**Positioning Statement**: One sentence describing how a competitor should position against this app.
+**Positioning Statement**: One sentence describing how a competitor should position against this app${redditAnalysis ? ' and address broader market needs' : ''}.
 
 **Must-Have Features** (table stakes):
 1. [Feature]
@@ -155,15 +238,17 @@ If you were building a competitor, what would you do differently? Provide:
 3. [Feature]
 
 **Differentiators** (opportunities to win):
-1. [Differentiator]: [why this matters based on reviews]
+1. [Differentiator]: [why this matters based on reviews${redditAnalysis ? ' and Reddit insights' : ''}]
 2. [Differentiator]: [why this matters]
 3. [Differentiator]: [why this matters]
 
-**Who to Target First**: [Specific segment] because [reason from review data].
+**Who to Target First**: [Specific segment] because [reason from review data${redditAnalysis ? ' and market research' : ''}].
+${redditAnalysis ? `
+**Market Gap to Exploit**: Based on Reddit research, the biggest underserved need is [specific gap] which current apps fail to address because [reason].` : ''}
 
 ---
 
-## 8. Raw Signal Log
+## ${redditAnalysis ? '9' : '8'}. Raw Signal Log
 
 Notable quotes that don't fit above but reveal user psychology:
 - "[Quote]" — reveals [insight]
@@ -173,7 +258,7 @@ Notable quotes that don't fit above but reveal user psychology:
 ---
 
 Be direct and analytical. Focus on actionable competitive intelligence, not just problem identification.
-
+${redditContextSection}
 ${reviewsText}`;
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {

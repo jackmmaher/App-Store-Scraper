@@ -190,6 +190,34 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
 
     setReAnalyzing(true);
     try {
+      // Find Reddit analysis ID from linked_competitors or by app_store_id
+      let redditAnalysisId: string | undefined;
+
+      // For original_idea projects, check linked_competitors
+      if (project.linked_competitors) {
+        for (const comp of project.linked_competitors) {
+          if (comp.reddit_analysis_id) {
+            redditAnalysisId = comp.reddit_analysis_id;
+            break;
+          }
+        }
+      }
+
+      // For competitor_research projects, fetch by app_store_id
+      if (!redditAnalysisId && project.app_store_id) {
+        try {
+          const redditRes = await fetch(`/api/reddit/analysis/${project.app_store_id}`);
+          if (redditRes.ok) {
+            const redditData = await redditRes.json();
+            if (redditData.analysis?.id) {
+              redditAnalysisId = redditData.analysis.id;
+            }
+          }
+        } catch (err) {
+          console.log('No Reddit analysis found for this app');
+        }
+      }
+
       const res = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -199,6 +227,7 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
           category: project.app_primary_genre,
           rating: project.app_rating,
           totalReviews: project.app_review_count,
+          redditAnalysisId,
         }),
       });
 
