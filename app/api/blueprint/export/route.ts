@@ -29,11 +29,11 @@ export async function GET(request: NextRequest) {
     // Fetch project for context
     const project = await getProject(blueprint.project_id);
 
-    // Use the chosen app name from identity, fallback to competitor name
+    // Use the chosen app name from identity (the user's app), NOT the competitor app
     const chosenAppName = blueprint.app_identity
       ? extractAppNameFromIdentity(blueprint.app_identity)
       : null;
-    const appName = chosenAppName || project?.app_name || 'App';
+    const appName = chosenAppName || 'My App';
     const safeName = appName.replace(/[^a-z0-9]/gi, '-').toLowerCase();
 
     // Create ZIP
