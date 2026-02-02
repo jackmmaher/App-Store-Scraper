@@ -602,6 +602,32 @@ async function callClaudeAPI(
   throw lastError || new Error('Failed to analyze Reddit data with Claude after retries');
 }
 
+/**
+ * Repair common JSON issues from LLM responses
+ */
+function repairJSON(jsonString: string): string {
+  let repaired = jsonString;
+
+  // Remove trailing commas before ] or }
+  repaired = repaired.replace(/,(\s*[\]}])/g, '$1');
+
+  // Fix unescaped newlines in strings (common LLM issue)
+  // Match strings and escape any literal newlines inside them
+  repaired = repaired.replace(/"([^"\\]|\\.)*"/g, (match) => {
+    return match.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
+  });
+
+  // Remove any control characters that aren't escaped
+  repaired = repaired.replace(/[\x00-\x1F\x7F]/g, (char) => {
+    if (char === '\n' || char === '\r' || char === '\t') {
+      return char; // Keep these, they're handled above in strings
+    }
+    return ''; // Remove other control chars
+  });
+
+  return repaired;
+}
+
 function parseClaudeAnalysisResponse(content: string): ClaudeAnalysisResult {
   // Extract JSON from response - handle code blocks and multiple strategies
   let jsonString: string | null = null;
@@ -652,8 +678,25 @@ function parseClaudeAnalysisResponse(content: string): ClaudeAnalysisResult {
     throw new Error('Could not parse Claude response as JSON');
   }
 
+  // Try parsing, with repair fallback
+  let parsed: Record<string, unknown>;
   try {
-    const parsed = JSON.parse(jsonString);
+    parsed = JSON.parse(jsonString);
+  } catch (firstError) {
+    // Try repairing common JSON issues
+    console.warn('Initial JSON parse failed, attempting repair...');
+    try {
+      const repairedJSON = repairJSON(jsonString);
+      parsed = JSON.parse(repairedJSON);
+      console.log('JSON repair successful');
+    } catch (repairError) {
+      console.error('JSON repair also failed:', repairError);
+      console.error('Original JSON (first 1000 chars):', jsonString.slice(0, 1000));
+      throw new Error(`Failed to parse Claude analysis response: ${firstError instanceof Error ? firstError.message : 'Invalid JSON'}`);
+    }
+  }
+
+  try {
 
     // Validate and normalize the response
     const unmetNeeds = Array.isArray(parsed.unmetNeeds)
@@ -723,8 +766,8 @@ function parseClaudeAnalysisResponse(content: string): ClaudeAnalysisResult {
       languagePatterns,
     };
   } catch (e) {
-    console.error('Failed to parse Claude response:', e, content);
-    throw new Error('Failed to parse Claude analysis response');
+    console.error('Failed to validate Claude response structure:', e);
+    throw new Error(`Failed to validate Claude analysis response: ${e instanceof Error ? e.message : 'Unknown validation error'}`);
   }
 }
 

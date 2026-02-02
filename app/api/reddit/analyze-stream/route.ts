@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
         if (streamClosed) return;
         streamClosed = true;
         try {
-          closeStream();
+          controller.close();
         } catch {
           // Already closed
         }
