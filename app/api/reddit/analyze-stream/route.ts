@@ -234,9 +234,25 @@ export async function POST(request: NextRequest) {
                   newPostsFromPass2: newPosts.length,
                   message: `Pass 2 complete: +${newPosts.length} new posts`,
                 });
+              } else {
+                // Pass 2 failed but we can continue with Pass 1 results
+                console.warn('[Reddit Analyze Stream] Pass 2 returned non-ok status:', pass2Response.status);
+                send('progress', {
+                  stage: 'crawling',
+                  progress: 90,
+                  pass2Failed: true,
+                  message: 'Language mining skipped - continuing with initial results',
+                });
               }
             } catch (pass2Error) {
               console.warn('[Reddit Analyze Stream] Pass 2 error:', pass2Error);
+              // Notify frontend that Pass 2 failed but analysis continues
+              send('progress', {
+                stage: 'crawling',
+                progress: 90,
+                pass2Failed: true,
+                message: 'Language mining encountered an issue - continuing with initial results',
+              });
             }
           }
         }

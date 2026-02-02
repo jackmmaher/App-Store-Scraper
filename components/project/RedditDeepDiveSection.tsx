@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import SearchConfigPanel from '@/components/reddit/SearchConfigPanel';
 import UnmetNeedsPanel from '@/components/reddit/UnmetNeedsPanel';
 import TrendsSentimentPanel from '@/components/reddit/TrendsSentimentPanel';
-import RedditAnalysisProgress, { type RedditAnalysisStage } from '@/components/reddit/RedditAnalysisProgress';
+import RedditAnalysisProgress, { type RedditAnalysisStage, type RealTimeProgress } from '@/components/reddit/RedditAnalysisProgress';
 import type { RedditSearchConfig, RedditAnalysisResult } from '@/lib/reddit/types';
 
 interface RedditDeepDiveSectionProps {
@@ -28,6 +28,8 @@ export default function RedditDeepDiveSection({
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [isSavingSolutions, setIsSavingSolutions] = useState(false);
   const [isLoadingExisting, setIsLoadingExisting] = useState(false);
+  const [realTimeProgress, setRealTimeProgress] = useState<RealTimeProgress | null>(null);
+  const [pass2Warning, setPass2Warning] = useState<string | null>(null);
 
   // Load existing analysis on mount
   useEffect(() => {
@@ -53,9 +55,11 @@ export default function RedditDeepDiveSection({
   }, [appId]);
 
   const handleAnalyze = async (config: RedditSearchConfig) => {
-    setAnalysisStage('crawling');
+    setAnalysisStage('validating'); // Start with validating stage
     setAnalysisError(null);
     setShowConfig(false);
+    setRealTimeProgress(null);
+    setPass2Warning(null);
 
     try {
       // Use the streaming endpoint for real-time progress updates
@@ -89,7 +93,7 @@ export default function RedditDeepDiveSection({
 
         for (const line of lines) {
           if (line.startsWith('event: ')) {
-            const eventType = line.slice(7);
+            // Event type line - we handle data in the data: line
             continue;
           }
           if (line.startsWith('data: ')) {
@@ -98,15 +102,45 @@ export default function RedditDeepDiveSection({
 
               // Handle different event types
               if (data.stage) {
-                // Stage change event
+                // Stage change event - map backend stages to frontend stages
                 const stageMap: Record<string, RedditAnalysisStage> = {
-                  'validating': 'crawling',
+                  'validating': 'validating',
                   'crawling': 'crawling',
                   'analyzing': 'analyzing',
                   'storing': 'storing',
                 };
                 const mappedStage = stageMap[data.stage] || 'crawling';
                 setAnalysisStage(mappedStage);
+
+                // Update real-time progress with all available data
+                setRealTimeProgress(prev => ({
+                  ...prev,
+                  stage: mappedStage,
+                  progress: data.progress,
+                  message: data.message,
+                  // Validation data
+                  validCount: data.validCount ?? prev?.validCount,
+                  invalidCount: data.invalidCount ?? prev?.invalidCount,
+                  discoveredCount: data.discoveredCount ?? prev?.discoveredCount,
+                  invalid: data.invalid ?? prev?.invalid,
+                  discovered: data.discovered ?? prev?.discovered,
+                  // Crawling data
+                  subredditsTotal: data.subredditsTotal ?? prev?.subredditsTotal,
+                  postsFound: data.postsFound ?? prev?.postsFound,
+                  commentsFound: data.commentsFound ?? prev?.commentsFound,
+                  newPostsFromPass2: data.newPostsFromPass2 ?? prev?.newPostsFromPass2,
+                  minedTerms: data.minedTerms ?? prev?.minedTerms,
+                  // Analysis data
+                  postsToAnalyze: data.postsToAnalyze ?? prev?.postsToAnalyze,
+                  needsFound: data.needsFound ?? prev?.needsFound,
+                  highSeverity: data.highSeverity ?? prev?.highSeverity,
+                  languagePatterns: data.languagePatterns ?? prev?.languagePatterns,
+                }));
+              }
+
+              // Handle Pass 2 warning (when Pass 2 fails but analysis continues)
+              if (data.pass2Failed) {
+                setPass2Warning('Language mining pass encountered an issue. Results may be less comprehensive.');
               }
 
               if (data.message === 'Analysis timed out. Try reducing search scope.' || data.isTimeout) {
@@ -123,9 +157,21 @@ export default function RedditDeepDiveSection({
                 setAnalysis(data.analysis);
                 setIsExpanded(true);
 
+                // Update final progress with summary
+                if (data.summary) {
+                  setRealTimeProgress(prev => ({
+                    ...prev,
+                    stage: 'complete',
+                    progress: 100,
+                    summary: data.summary,
+                    analysisId: data.analysisId,
+                  }));
+                }
+
                 // Reset stage after showing complete
                 setTimeout(() => {
                   setAnalysisStage('idle');
+                  setRealTimeProgress(null);
                 }, 2000);
                 return;
               }
@@ -141,6 +187,7 @@ export default function RedditDeepDiveSection({
       console.error('Reddit analysis failed:', error);
       setAnalysisError(error instanceof Error ? error.message : 'Failed to run Reddit analysis');
       setAnalysisStage('error');
+      setRealTimeProgress(null);
 
       // Reset after showing error
       setTimeout(() => {
@@ -276,7 +323,23 @@ export default function RedditDeepDiveSection({
 
       {/* Progress Tracker - shows during analysis */}
       {isAnalyzing && (
-        <RedditAnalysisProgress stage={analysisStage} error={analysisError} />
+        <RedditAnalysisProgress
+          stage={analysisStage}
+          error={analysisError}
+          realTimeData={realTimeProgress}
+        />
+      )}
+
+      {/* Pass 2 Warning - shows if language mining failed but analysis completed */}
+      {pass2Warning && analysis && !isAnalyzing && (
+        <div className="mx-4 mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+          <div className="flex items-start gap-2">
+            <svg className="w-5 h-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <p className="text-sm text-yellow-700 dark:text-yellow-300">{pass2Warning}</p>
+          </div>
+        </div>
       )}
 
       {/* Analysis Results */}

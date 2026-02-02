@@ -529,50 +529,131 @@ Respond in this exact JSON format:
 
 async function callClaudeAPI(
   apiKey: string,
-  prompt: string
+  prompt: string,
+  maxRetries: number = 3
 ): Promise<ClaudeAnalysisResult> {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 4000,
-      messages: [
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-    }),
-    signal: AbortSignal.timeout(120000), // 2 minute timeout for Claude API
-  });
+  let lastError: Error | null = null;
 
-  if (!response.ok) {
-    const error = await response.json();
-    console.error('Claude API error:', error);
-    throw new Error('Failed to analyze Reddit data with Claude');
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 4000,
+          messages: [
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+        }),
+        signal: AbortSignal.timeout(120000), // 2 minute timeout for Claude API
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error(`Claude API error (attempt ${attempt}/${maxRetries}):`, error);
+
+        // Check if it's a retryable error (rate limit, server error, overloaded)
+        const isRetryable = response.status === 429 || response.status >= 500 || error?.error?.type === 'overloaded_error';
+
+        if (isRetryable && attempt < maxRetries) {
+          // Exponential backoff: 2s, 4s, 8s
+          const delay = Math.pow(2, attempt) * 1000;
+          console.log(`Retrying Claude API in ${delay / 1000}s...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+
+        throw new Error(`Claude API error: ${error?.error?.message || response.statusText}`);
+      }
+
+      const data = await response.json();
+      const content = data.content[0]?.text || '';
+
+      return parseClaudeAnalysisResponse(content);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+
+      // Check if error is retryable (network errors, timeouts)
+      const isNetworkError = lastError.message.includes('fetch') ||
+                            lastError.name === 'TypeError' ||
+                            lastError.name === 'AbortError';
+
+      if (isNetworkError && attempt < maxRetries) {
+        const delay = Math.pow(2, attempt) * 1000;
+        console.warn(`Claude API network error (attempt ${attempt}/${maxRetries}), retrying in ${delay / 1000}s:`, lastError.message);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+
+      // Non-retryable or final attempt
+      throw lastError;
+    }
   }
 
-  const data = await response.json();
-  const content = data.content[0]?.text || '';
-
-  return parseClaudeAnalysisResponse(content);
+  // Should not reach here, but just in case
+  throw lastError || new Error('Failed to analyze Reddit data with Claude after retries');
 }
 
 function parseClaudeAnalysisResponse(content: string): ClaudeAnalysisResult {
-  // Extract JSON from response
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    console.error('Could not find JSON in Claude response:', content);
+  // Extract JSON from response - handle code blocks and multiple strategies
+  let jsonString: string | null = null;
+
+  // Strategy 1: Check for JSON in code blocks (```json or ```)
+  const codeBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (codeBlockMatch) {
+    const blockContent = codeBlockMatch[1].trim();
+    // Verify it starts with { (is JSON object)
+    if (blockContent.startsWith('{')) {
+      jsonString = blockContent;
+    }
+  }
+
+  // Strategy 2: Find JSON object directly (greedy match for outermost braces)
+  if (!jsonString) {
+    // Find the first { and match to its closing }
+    const startIdx = content.indexOf('{');
+    if (startIdx !== -1) {
+      let depth = 0;
+      let endIdx = -1;
+      for (let i = startIdx; i < content.length; i++) {
+        if (content[i] === '{') depth++;
+        else if (content[i] === '}') {
+          depth--;
+          if (depth === 0) {
+            endIdx = i;
+            break;
+          }
+        }
+      }
+      if (endIdx !== -1) {
+        jsonString = content.slice(startIdx, endIdx + 1);
+      }
+    }
+  }
+
+  // Strategy 3: Fallback to regex (original method)
+  if (!jsonString) {
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      jsonString = jsonMatch[0];
+    }
+  }
+
+  if (!jsonString) {
+    console.error('Could not find JSON in Claude response:', content.slice(0, 500));
     throw new Error('Could not parse Claude response as JSON');
   }
 
   try {
-    const parsed = JSON.parse(jsonMatch[0]);
+    const parsed = JSON.parse(jsonString);
 
     // Validate and normalize the response
     const unmetNeeds = Array.isArray(parsed.unmetNeeds)
