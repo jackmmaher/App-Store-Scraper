@@ -199,11 +199,14 @@ export async function saveSearch(
   return data;
 }
 
-export async function getSavedSearches(): Promise<SavedSearch[]> {
+export async function getSavedSearches(limit: number = 100): Promise<SavedSearch[]> {
+  const safeLimit = Math.min(Math.max(1, limit), 500); // Cap at 500
+
   const { data, error } = await supabase
     .from('saved_searches')
     .select('*')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(safeLimit);
 
   if (error) {
     console.error('Error fetching searches:', error);
@@ -1059,12 +1062,15 @@ export async function updateProject(
   return data;
 }
 
-// Get all projects
-export async function getProjects(): Promise<AppProject[]> {
+// Get all projects (with safety limit)
+export async function getProjects(limit: number = 200): Promise<AppProject[]> {
+  const safeLimit = Math.min(Math.max(1, limit), 500); // Cap at 500
+
   const { data, error } = await supabase
     .from('app_projects')
     .select('*')
-    .order('updated_at', { ascending: false });
+    .order('updated_at', { ascending: false })
+    .limit(safeLimit);
 
   if (error) {
     console.error('Error fetching projects:', error);
@@ -1109,15 +1115,52 @@ export async function getProject(id: string): Promise<AppProject | null> {
   return data;
 }
 
-// Delete a project
+// Delete a project and clean up related records
+// Note: project_blueprints and project_chat_messages cascade via FK
+// Reddit analyses linked via JSONB need manual cleanup
 export async function deleteProject(id: string): Promise<boolean> {
+  // First, get the project to find any linked reddit analyses
+  const { data: project, error: fetchError } = await supabase
+    .from('app_projects')
+    .select('linked_competitors')
+    .eq('id', id)
+    .single();
+
+  if (fetchError && fetchError.code !== 'PGRST116') {
+    console.error('[deleteProject] Error fetching project:', fetchError);
+    return false;
+  }
+
+  // Clean up reddit analyses if any linked competitors have them
+  if (project?.linked_competitors) {
+    const competitors = project.linked_competitors as LinkedCompetitor[];
+    const analysisIds = competitors
+      .map(c => c.reddit_analysis_id)
+      .filter((id): id is string => !!id);
+
+    if (analysisIds.length > 0) {
+      // Delete unmet_need_solutions first (FK to reddit_analyses)
+      await supabaseAdmin
+        .from('unmet_need_solutions')
+        .delete()
+        .in('reddit_analysis_id', analysisIds);
+
+      // Delete the reddit analyses
+      await supabaseAdmin
+        .from('reddit_analyses')
+        .delete()
+        .in('id', analysisIds);
+    }
+  }
+
+  // Now delete the project (cascades to blueprints, chat messages)
   const { error } = await supabase
     .from('app_projects')
     .delete()
     .eq('id', id);
 
   if (error) {
-    console.error('Error deleting project:', error);
+    console.error('[deleteProject] Error deleting project:', error);
     return false;
   }
 
@@ -1290,12 +1333,15 @@ export async function createGapSession(
   return data;
 }
 
-// Get all gap analysis sessions
-export async function getGapSessions(): Promise<GapAnalysisSession[]> {
+// Get all gap analysis sessions (with safety limit)
+export async function getGapSessions(limit: number = 100): Promise<GapAnalysisSession[]> {
+  const safeLimit = Math.min(Math.max(1, limit), 200); // Cap at 200
+
   const { data, error } = await supabase
     .from('gap_analysis_sessions')
     .select('*')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(safeLimit);
 
   if (error) {
     console.error('Error fetching gap sessions:', error);
@@ -2267,11 +2313,13 @@ export async function getAppIdeaSession(id: string): Promise<AppIdeaSession | nu
 export async function getAppIdeaSessions(
   limit: number = 50
 ): Promise<AppIdeaSession[]> {
+  const safeLimit = Math.min(Math.max(1, limit), 200); // Cap at 200
+
   const { data, error } = await supabase
     .from('app_idea_sessions')
     .select('*')
     .order('created_at', { ascending: false })
-    .limit(limit);
+    .limit(safeLimit);
 
   if (error) {
     console.error('Error fetching app idea sessions:', error);
@@ -2424,137 +2472,244 @@ export async function getLinkedCompetitors(projectId: string): Promise<LinkedCom
 }
 
 // Add a linked competitor to a project
+// Uses retry pattern to handle concurrent modifications safely
 export async function addLinkedCompetitor(
   projectId: string,
-  competitor: LinkedCompetitor
+  competitor: LinkedCompetitor,
+  maxRetries: number = 3
 ): Promise<LinkedCompetitor[] | null> {
-  // First get existing competitors
-  const existing = await getLinkedCompetitors(projectId);
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    // Get current state with updated_at for optimistic locking
+    const { data: project, error: fetchError } = await supabase
+      .from('app_projects')
+      .select('linked_competitors, updated_at')
+      .eq('id', projectId)
+      .single();
 
-  // Check if competitor already exists
-  if (existing.some(c => c.app_store_id === competitor.app_store_id)) {
-    return existing;
+    if (fetchError) {
+      console.error('[addLinkedCompetitor] Fetch error:', fetchError.message);
+      return null;
+    }
+
+    const existing = (project?.linked_competitors as LinkedCompetitor[]) || [];
+    const previousUpdatedAt = project?.updated_at;
+
+    // Check if competitor already exists
+    if (existing.some(c => c.app_store_id === competitor.app_store_id)) {
+      return existing;
+    }
+
+    // Add new competitor
+    const updated = [...existing, competitor];
+    const newUpdatedAt = new Date().toISOString();
+
+    // Update with optimistic lock check (updated_at must match)
+    const { data, error } = await supabase
+      .from('app_projects')
+      .update({
+        linked_competitors: updated,
+        updated_at: newUpdatedAt
+      })
+      .eq('id', projectId)
+      .eq('updated_at', previousUpdatedAt) // Optimistic lock
+      .select('linked_competitors')
+      .single();
+
+    if (error) {
+      // Check if it's a conflict (no rows updated due to updated_at mismatch)
+      if (error.code === 'PGRST116' && attempt < maxRetries - 1) {
+        // Row was modified by another request, retry
+        await new Promise(r => setTimeout(r, 50 * (attempt + 1))); // Backoff
+        continue;
+      }
+      console.error('[addLinkedCompetitor] Error:', error.message);
+      return null;
+    }
+
+    return (data?.linked_competitors as LinkedCompetitor[]) || [];
   }
 
-  // Add new competitor
-  const updated = [...existing, competitor];
-
-  const { data, error } = await supabase
-    .from('app_projects')
-    .update({
-      linked_competitors: updated,
-      updated_at: new Date().toISOString()
-    })
-    .eq('id', projectId)
-    .select('linked_competitors')
-    .single();
-
-  if (error) {
-    console.error('[addLinkedCompetitor] Error:', error.message);
-    return null;
-  }
-
-  return (data?.linked_competitors as LinkedCompetitor[]) || [];
+  console.error('[addLinkedCompetitor] Max retries exceeded');
+  return null;
 }
 
 // Update a linked competitor's data (e.g., after scraping or analysis)
+// Uses retry pattern to handle concurrent modifications safely
 export async function updateLinkedCompetitor(
   projectId: string,
   appStoreId: string,
-  updates: Partial<LinkedCompetitor>
+  updates: Partial<LinkedCompetitor>,
+  maxRetries: number = 3
 ): Promise<LinkedCompetitor[] | null> {
-  // Get existing competitors
-  const existing = await getLinkedCompetitors(projectId);
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    // Get current state with updated_at for optimistic locking
+    const { data: project, error: fetchError } = await supabase
+      .from('app_projects')
+      .select('linked_competitors, updated_at')
+      .eq('id', projectId)
+      .single();
 
-  // Find and update the competitor
-  const updated = existing.map(c => {
-    if (c.app_store_id === appStoreId) {
-      return { ...c, ...updates };
+    if (fetchError) {
+      console.error('[updateLinkedCompetitor] Fetch error:', fetchError.message);
+      return null;
     }
-    return c;
-  });
 
-  const { data, error } = await supabase
-    .from('app_projects')
-    .update({
-      linked_competitors: updated,
-      updated_at: new Date().toISOString()
-    })
-    .eq('id', projectId)
-    .select('linked_competitors')
-    .single();
+    const existing = (project?.linked_competitors as LinkedCompetitor[]) || [];
+    const previousUpdatedAt = project?.updated_at;
 
-  if (error) {
-    console.error('Error updating linked competitor:', error);
-    return null;
+    // Find and update the competitor
+    const updated = existing.map(c => {
+      if (c.app_store_id === appStoreId) {
+        return { ...c, ...updates };
+      }
+      return c;
+    });
+
+    const newUpdatedAt = new Date().toISOString();
+
+    // Update with optimistic lock check
+    const { data, error } = await supabase
+      .from('app_projects')
+      .update({
+        linked_competitors: updated,
+        updated_at: newUpdatedAt
+      })
+      .eq('id', projectId)
+      .eq('updated_at', previousUpdatedAt) // Optimistic lock
+      .select('linked_competitors')
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116' && attempt < maxRetries - 1) {
+        await new Promise(r => setTimeout(r, 50 * (attempt + 1)));
+        continue;
+      }
+      console.error('[updateLinkedCompetitor] Error:', error.message);
+      return null;
+    }
+
+    return (data?.linked_competitors as LinkedCompetitor[]) || [];
   }
 
-  return (data?.linked_competitors as LinkedCompetitor[]) || [];
+  console.error('[updateLinkedCompetitor] Max retries exceeded');
+  return null;
 }
 
 // Remove a linked competitor from a project
+// Uses retry pattern to handle concurrent modifications safely
 export async function removeLinkedCompetitor(
   projectId: string,
-  appStoreId: string
+  appStoreId: string,
+  maxRetries: number = 3
 ): Promise<LinkedCompetitor[] | null> {
-  // Get existing competitors
-  const existing = await getLinkedCompetitors(projectId);
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    // Get current state with updated_at for optimistic locking
+    const { data: project, error: fetchError } = await supabase
+      .from('app_projects')
+      .select('linked_competitors, updated_at')
+      .eq('id', projectId)
+      .single();
 
-  // Filter out the competitor
-  const updated = existing.filter(c => c.app_store_id !== appStoreId);
+    if (fetchError) {
+      console.error('[removeLinkedCompetitor] Fetch error:', fetchError.message);
+      return null;
+    }
 
-  const { data, error } = await supabase
-    .from('app_projects')
-    .update({
-      linked_competitors: updated,
-      updated_at: new Date().toISOString()
-    })
-    .eq('id', projectId)
-    .select('linked_competitors')
-    .single();
+    const existing = (project?.linked_competitors as LinkedCompetitor[]) || [];
+    const previousUpdatedAt = project?.updated_at;
 
-  if (error) {
-    console.error('Error removing linked competitor:', error);
-    return null;
+    // Filter out the competitor
+    const updated = existing.filter(c => c.app_store_id !== appStoreId);
+    const newUpdatedAt = new Date().toISOString();
+
+    // Update with optimistic lock check
+    const { data, error } = await supabase
+      .from('app_projects')
+      .update({
+        linked_competitors: updated,
+        updated_at: newUpdatedAt
+      })
+      .eq('id', projectId)
+      .eq('updated_at', previousUpdatedAt) // Optimistic lock
+      .select('linked_competitors')
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116' && attempt < maxRetries - 1) {
+        await new Promise(r => setTimeout(r, 50 * (attempt + 1)));
+        continue;
+      }
+      console.error('[removeLinkedCompetitor] Error:', error.message);
+      return null;
+    }
+
+    return (data?.linked_competitors as LinkedCompetitor[]) || [];
   }
 
-  return (data?.linked_competitors as LinkedCompetitor[]) || [];
+  console.error('[removeLinkedCompetitor] Max retries exceeded');
+  return null;
 }
 
 // Add multiple linked competitors at once
+// Uses retry pattern to handle concurrent modifications safely
 export async function addLinkedCompetitors(
   projectId: string,
-  competitors: LinkedCompetitor[]
+  competitors: LinkedCompetitor[],
+  maxRetries: number = 3
 ): Promise<LinkedCompetitor[] | null> {
-  // Get existing competitors
-  const existing = await getLinkedCompetitors(projectId);
-  const existingIds = new Set(existing.map(c => c.app_store_id));
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    // Get current state with updated_at for optimistic locking
+    const { data: project, error: fetchError } = await supabase
+      .from('app_projects')
+      .select('linked_competitors, updated_at')
+      .eq('id', projectId)
+      .single();
 
-  // Filter out duplicates and add new ones
-  const newCompetitors = competitors.filter(c => !existingIds.has(c.app_store_id));
+    if (fetchError) {
+      console.error('[addLinkedCompetitors] Fetch error:', fetchError.message);
+      return null;
+    }
 
-  if (newCompetitors.length === 0) {
-    return existing;
+    const existing = (project?.linked_competitors as LinkedCompetitor[]) || [];
+    const existingIds = new Set(existing.map(c => c.app_store_id));
+    const previousUpdatedAt = project?.updated_at;
+
+    // Filter out duplicates and add new ones
+    const newCompetitors = competitors.filter(c => !existingIds.has(c.app_store_id));
+
+    if (newCompetitors.length === 0) {
+      return existing;
+    }
+
+    const updated = [...existing, ...newCompetitors];
+    const newUpdatedAt = new Date().toISOString();
+
+    // Update with optimistic lock check
+    const { data, error } = await supabase
+      .from('app_projects')
+      .update({
+        linked_competitors: updated,
+        updated_at: newUpdatedAt
+      })
+      .eq('id', projectId)
+      .eq('updated_at', previousUpdatedAt) // Optimistic lock
+      .select('linked_competitors')
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116' && attempt < maxRetries - 1) {
+        await new Promise(r => setTimeout(r, 50 * (attempt + 1)));
+        continue;
+      }
+      console.error('[addLinkedCompetitors] Error:', error.message);
+      return null;
+    }
+
+    return (data?.linked_competitors as LinkedCompetitor[]) || [];
   }
 
-  const updated = [...existing, ...newCompetitors];
-
-  const { data, error } = await supabase
-    .from('app_projects')
-    .update({
-      linked_competitors: updated,
-      updated_at: new Date().toISOString()
-    })
-    .eq('id', projectId)
-    .select('linked_competitors')
-    .single();
-
-  if (error) {
-    console.error('[addLinkedCompetitors] Error:', error.message);
-    return null;
-  }
-
-  return (data?.linked_competitors as LinkedCompetitor[]) || [];
+  console.error('[addLinkedCompetitors] Max retries exceeded');
+  return null;
 }
 
 // ============================================

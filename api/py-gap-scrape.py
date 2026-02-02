@@ -178,7 +178,7 @@ def scrape_country(country: str, category_id: int, limit: int = 50, include_paid
 class handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", self.headers.get("Origin", "http://localhost:3000"))
         self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
@@ -209,7 +209,7 @@ class handler(BaseHTTPRequestHandler):
                 except ValueError:
                     self.send_response(400)
                     self.send_header("Content-Type", "application/json")
-                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.send_header("Access-Control-Allow-Origin", self.headers.get("Origin", "http://localhost:3000"))
                     self.end_headers()
                     self.wfile.write(json.dumps({"error": f"Invalid category: {category}"}).encode())
                     return
@@ -219,7 +219,7 @@ class handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
             self.send_header("Connection", "keep-alive")
-            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Origin", self.headers.get("Origin", "http://localhost:3000"))
             self.end_headers()
 
             # Track all unique apps across countries
@@ -320,7 +320,7 @@ class handler(BaseHTTPRequestHandler):
                 try:
                     self.send_response(500)
                     self.send_header("Content-Type", "application/json")
-                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.send_header("Access-Control-Allow-Origin", self.headers.get("Origin", "http://localhost:3000"))
                     self.end_headers()
                     self.wfile.write(json.dumps({"error": str(e)}).encode())
                 except (BrokenPipeError, ConnectionResetError, OSError):

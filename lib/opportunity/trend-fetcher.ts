@@ -259,16 +259,36 @@ export async function fetchRedditData(
 }
 
 /**
+ * Validate subreddit name to prevent URL injection
+ * Reddit subreddit names: 2-21 alphanumeric characters or underscores
+ */
+function isValidSubreddit(subreddit: string): boolean {
+  return /^[a-zA-Z0-9_]{2,21}$/.test(subreddit);
+}
+
+/**
  * Search a single subreddit for keyword mentions
  */
 async function searchRedditSubreddit(
   subreddit: string,
   keyword: string
 ): Promise<RedditPost[]> {
-  try {
-    const url = `https://www.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(keyword)}&restrict_sr=on&sort=new&limit=100&t=month`;
+  // SECURITY FIX: Validate subreddit name to prevent URL injection
+  if (!isValidSubreddit(subreddit)) {
+    console.error(`Invalid subreddit name rejected: ${subreddit.slice(0, 50)}`);
+    return [];
+  }
 
-    const response = await fetch(url, {
+  try {
+    // Use URL constructor for safe URL building
+    const url = new URL(`https://www.reddit.com/r/${subreddit}/search.json`);
+    url.searchParams.set('q', keyword);
+    url.searchParams.set('restrict_sr', 'on');
+    url.searchParams.set('sort', 'new');
+    url.searchParams.set('limit', '100');
+    url.searchParams.set('t', 'month');
+
+    const response = await fetch(url.toString(), {
       headers: {
         'User-Agent': 'AppStoreScraper/1.0',
       },
@@ -459,10 +479,22 @@ async function searchRedditPainPoints(
   subreddit: string,
   query: string
 ): Promise<PainPointSignal[]> {
-  try {
-    const url = `https://www.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(query)}&restrict_sr=on&sort=relevance&limit=25&t=year`;
+  // SECURITY FIX: Validate subreddit name to prevent URL injection
+  if (!isValidSubreddit(subreddit)) {
+    console.error(`Invalid subreddit name rejected: ${subreddit.slice(0, 50)}`);
+    return [];
+  }
 
-    const response = await fetch(url, {
+  try {
+    // Use URL constructor for safe URL building
+    const url = new URL(`https://www.reddit.com/r/${subreddit}/search.json`);
+    url.searchParams.set('q', query);
+    url.searchParams.set('restrict_sr', 'on');
+    url.searchParams.set('sort', 'relevance');
+    url.searchParams.set('limit', '25');
+    url.searchParams.set('t', 'year');
+
+    const response = await fetch(url.toString(), {
       headers: {
         'User-Agent': 'AppStoreScraper/1.0',
       },

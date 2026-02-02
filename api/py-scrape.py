@@ -261,7 +261,7 @@ def apply_filters(apps: list, params: dict) -> list:
 class handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", self.headers.get("Origin", "http://localhost:3000"))
         self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
@@ -293,13 +293,13 @@ class handler(BaseHTTPRequestHandler):
             # Response
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Origin", self.headers.get("Origin", "http://localhost:3000"))
             self.end_headers()
             self.wfile.write(json.dumps(filtered).encode())
 
         except Exception as e:
             self.send_response(500)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Origin", self.headers.get("Origin", "http://localhost:3000"))
             self.end_headers()
             self.wfile.write(json.dumps({"error": str(e)}).encode())

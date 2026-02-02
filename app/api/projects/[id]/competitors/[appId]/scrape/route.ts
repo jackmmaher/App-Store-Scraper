@@ -51,12 +51,12 @@ export async function POST(
     }
 
     // Map ExtendedReview to Review, adding missing fields
-    // Note: Missing/invalid ratings are stored as 0 (we can't use null in the Review type)
-    // but we validate to avoid storing invalid data
+    // Rating is null for missing/invalid values to avoid biasing analytics
+    // (defaulting to 0 would skew average rating calculations)
     const reviews: Review[] = (scrapeData.reviews || []).map((r) => {
-      // Validate rating - only accept 1-5, default to 0 if invalid
+      // Validate rating - only accept 1-5, use null for invalid
       const rawRating = r.rating;
-      let rating = 0;
+      let rating: number | null = null;
       if (rawRating !== null && rawRating !== undefined) {
         const numRating = Number(rawRating);
         if (!isNaN(numRating) && numRating >= 1 && numRating <= 5) {

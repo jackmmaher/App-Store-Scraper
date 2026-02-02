@@ -19,7 +19,13 @@ export async function GET(request: NextRequest) {
 
   const searchParams = request.nextUrl.searchParams;
 
-  // Parse filter parameters
+  // Parse filter parameters with safety limits
+  const MAX_LIMIT = 500; // Prevent resource exhaustion
+  const MAX_OFFSET = 100000; // Reasonable pagination limit
+
+  const requestedLimit = searchParams.get('limit') ? parseInt(searchParams.get('limit')!) : 50;
+  const requestedOffset = searchParams.get('offset') ? parseInt(searchParams.get('offset')!) : 0;
+
   const filters: AppFilters = {
     minReviews: searchParams.get('minReviews') ? parseInt(searchParams.get('minReviews')!) : undefined,
     maxReviews: searchParams.get('maxReviews') ? parseInt(searchParams.get('maxReviews')!) : undefined,
@@ -31,8 +37,8 @@ export async function GET(request: NextRequest) {
     search: searchParams.get('search') || undefined,
     sortBy: (searchParams.get('sortBy') as AppFilters['sortBy']) || 'reviews',
     sortOrder: (searchParams.get('sortOrder') as 'asc' | 'desc') || 'desc',
-    limit: searchParams.get('limit') ? parseInt(searchParams.get('limit')!) : 50,
-    offset: searchParams.get('offset') ? parseInt(searchParams.get('offset')!) : 0,
+    limit: Math.min(Math.max(1, requestedLimit), MAX_LIMIT),
+    offset: Math.min(Math.max(0, requestedOffset), MAX_OFFSET),
   };
 
   try {
