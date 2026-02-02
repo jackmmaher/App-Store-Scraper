@@ -72,7 +72,7 @@ export async function POST(
         author: r.author,
         version: r.version || 'Unknown',
         vote_count: r.helpful_count || 0,
-        vote_sum: 0, // vote_sum not available from crawler, don't duplicate vote_count
+        vote_sum: r.helpful_count || 0, // Use helpful_count - App Store only has "helpful" votes
         country: r.country,
         date: r.date || '',
       };
