@@ -311,6 +311,12 @@ export async function POST(request: NextRequest) {
       } catch (candidatesError) {
         console.error('[Identity] Error getting candidate names:', candidatesError);
       }
+
+      // Critical validation: If we still have no name, use project name as fallback
+      if (!chosenName || chosenName.trim() === '') {
+        chosenName = project.app_name || 'MyApp';
+        console.warn(`[Identity] CRITICAL: No name chosen from candidates, using project name fallback: ${chosenName}`);
+      }
     }
 
     // Fetch Reddit analysis for the project (for pareto section)
@@ -396,11 +402,19 @@ export async function POST(request: NextRequest) {
         let fullContent = '';
         let lastSaveTime = Date.now();
         const SAVE_INTERVAL = 30000; // Save every 30 seconds as backup
+        let heartbeatCleared = false; // Guard against double-clear
 
         // Send heartbeat to keep connection alive during long Claude processing
         const heartbeatInterval = setInterval(() => {
           sendEvent('heartbeat', { timestamp: Date.now() });
         }, 10000); // Every 10 seconds
+
+        const clearHeartbeat = () => {
+          if (!heartbeatCleared) {
+            clearInterval(heartbeatInterval);
+            heartbeatCleared = true;
+          }
+        };
 
         try {
           // Call Claude API with streaming
@@ -472,12 +486,12 @@ export async function POST(request: NextRequest) {
           }
 
           // Save completed content
-          clearInterval(heartbeatInterval);
+          clearHeartbeat();
           await updateBlueprintSection(blueprintId, section, fullContent, 'completed');
 
           sendEvent('complete', { content: fullContent });
         } catch (error) {
-          clearInterval(heartbeatInterval);
+          clearHeartbeat();
           console.error('[Generate] Error:', error);
 
           await updateBlueprintSectionStatus(blueprintId, section, 'error');

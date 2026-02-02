@@ -51,19 +51,32 @@ export async function POST(
     }
 
     // Map ExtendedReview to Review, adding missing fields
-    // Note: rating defaults to 0 (not 5) to avoid biasing analytics when extraction fails
-    const reviews: Review[] = (scrapeData.reviews || []).map((r) => ({
-      id: r.id,
-      title: r.title,
-      content: r.content,
-      rating: r.rating || 0,
-      author: r.author,
-      version: r.version || 'Unknown',
-      vote_count: r.helpful_count || 0,
-      vote_sum: 0, // vote_sum not available from crawler, don't duplicate vote_count
-      country: r.country,
-      date: r.date || '',
-    }));
+    // Note: Missing/invalid ratings are stored as 0 (we can't use null in the Review type)
+    // but we validate to avoid storing invalid data
+    const reviews: Review[] = (scrapeData.reviews || []).map((r) => {
+      // Validate rating - only accept 1-5, default to 0 if invalid
+      const rawRating = r.rating;
+      let rating = 0;
+      if (rawRating !== null && rawRating !== undefined) {
+        const numRating = Number(rawRating);
+        if (!isNaN(numRating) && numRating >= 1 && numRating <= 5) {
+          rating = numRating;
+        }
+      }
+
+      return {
+        id: r.id,
+        title: r.title,
+        content: r.content,
+        rating,
+        author: r.author,
+        version: r.version || 'Unknown',
+        vote_count: r.helpful_count || 0,
+        vote_sum: 0, // vote_sum not available from crawler, don't duplicate vote_count
+        country: r.country,
+        date: r.date || '',
+      };
+    });
 
     if (reviews.length === 0) {
       return NextResponse.json({ error: 'No reviews found' }, { status: 404 });

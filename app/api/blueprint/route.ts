@@ -23,11 +23,16 @@ async function recoverStuckGenerating(blueprint: ProjectBlueprint): Promise<Proj
     return blueprint;
   }
 
+  // Check ALL 9 sections for stuck 'generating' status
   const sectionsToCheck: Array<{ key: keyof ProjectBlueprint; section: BlueprintSection }> = [
     { key: 'pareto_status', section: 'pareto' },
+    { key: 'app_identity_status', section: 'identity' },
+    { key: 'design_system_status', section: 'design_system' },
     { key: 'ui_wireframes_status', section: 'wireframes' },
     { key: 'tech_stack_status', section: 'tech_stack' },
+    { key: 'xcode_setup_status', section: 'xcode_setup' },
     { key: 'prd_status', section: 'prd' },
+    { key: 'aso_status', section: 'aso' },
     { key: 'build_manifest_status', section: 'manifest' },
   ];
 
@@ -116,7 +121,8 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'section and content required' }, { status: 400 });
     }
 
-    const validSections: BlueprintSection[] = ['pareto', 'wireframes', 'tech_stack', 'prd', 'manifest'];
+    // All 9 blueprint sections
+    const validSections: BlueprintSection[] = ['pareto', 'identity', 'design_system', 'wireframes', 'tech_stack', 'xcode_setup', 'prd', 'aso', 'manifest'];
     if (!validSections.includes(section)) {
       return NextResponse.json({ error: 'Invalid section' }, { status: 400 });
     }
