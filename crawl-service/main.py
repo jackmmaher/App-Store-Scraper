@@ -9,19 +9,23 @@ FastAPI service providing crawling capabilities for:
 """
 
 import asyncio
+import hashlib
 import logging
 import os
 import time
 import uuid
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings
+from starlette.middleware.base import BaseHTTPMiddleware
 
 # Load environment variables
 load_dotenv()
@@ -61,6 +65,85 @@ settings = Settings()
 
 # Service start time for uptime tracking
 start_time = time.time()
+
+
+# ============================================================================
+# Rate Limiting
+# ============================================================================
+
+class RateLimiter:
+    """Simple in-memory rate limiter using sliding window."""
+
+    def __init__(self, requests_per_minute: int = 30, burst_limit: int = 10):
+        self.requests_per_minute = requests_per_minute
+        self.burst_limit = burst_limit
+        self.window_size = 60  # 1 minute window
+        self.requests: dict[str, list[float]] = defaultdict(list)
+
+    def _clean_old_requests(self, client_id: str, current_time: float) -> None:
+        """Remove requests older than the window."""
+        cutoff = current_time - self.window_size
+        self.requests[client_id] = [
+            t for t in self.requests[client_id] if t > cutoff
+        ]
+
+    def is_allowed(self, client_id: str) -> tuple[bool, int]:
+        """Check if request is allowed. Returns (allowed, retry_after_seconds)."""
+        current_time = time.time()
+        self._clean_old_requests(client_id, current_time)
+
+        recent_requests = self.requests[client_id]
+
+        # Check burst limit (requests in last 5 seconds)
+        burst_window = current_time - 5
+        burst_count = sum(1 for t in recent_requests if t > burst_window)
+        if burst_count >= self.burst_limit:
+            return False, 5
+
+        # Check rate limit
+        if len(recent_requests) >= self.requests_per_minute:
+            oldest = min(recent_requests) if recent_requests else current_time
+            retry_after = int(oldest + self.window_size - current_time) + 1
+            return False, max(1, retry_after)
+
+        self.requests[client_id].append(current_time)
+        return True, 0
+
+
+# Global rate limiter instance
+rate_limiter = RateLimiter(
+    requests_per_minute=int(os.getenv("RATE_LIMIT_PER_MINUTE", "30")),
+    burst_limit=int(os.getenv("RATE_LIMIT_BURST", "10")),
+)
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """Middleware to apply rate limiting to all requests."""
+
+    async def dispatch(self, request: Request, call_next):
+        # Skip rate limiting for health checks
+        if request.url.path == "/health" or request.url.path == "/":
+            return await call_next(request)
+
+        # Use client IP as identifier (or X-Forwarded-For if behind proxy)
+        client_ip = request.headers.get("X-Forwarded-For", request.client.host if request.client else "unknown")
+        # Take first IP if multiple are present
+        client_ip = client_ip.split(",")[0].strip()
+
+        allowed, retry_after = rate_limiter.is_allowed(client_ip)
+
+        if not allowed:
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "error": "Rate limit exceeded",
+                    "retry_after": retry_after,
+                    "message": f"Too many requests. Please retry after {retry_after} seconds.",
+                },
+                headers={"Retry-After": str(retry_after)},
+            )
+
+        return await call_next(request)
 
 
 # ============================================================================
@@ -163,14 +246,19 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS middleware
+# CORS middleware - restrict origins for security
+# When using allow_credentials=True, we cannot use wildcard origins
+allowed_origins = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
+
+# Rate limiting middleware - protect against DoS attacks
+app.add_middleware(RateLimitMiddleware)
 
 
 # ============================================================================
@@ -197,17 +285,20 @@ async def crawl_app_store_reviews(request: AppStoreReviewRequest):
     Crawl App Store reviews for an app.
 
     Automatically combines RSS API + browser multi-country scraping for maximum coverage.
+
+    Note: iTunes RSS API is limited to ~500 reviews per country. Browser scraping
+    is required for apps with more reviews, but Apple's page structure changes frequently.
     """
     logger.info(f"Crawling reviews for app {request.app_id} - target: {request.max_reviews}")
 
     all_reviews = {}
 
     try:
-        # Step 1: RSS API - fast, gets ~1000 reviews from primary country
-        logger.info("Phase 1: RSS API scraping...")
+        # Step 1: RSS API - fast, but limited to ~500 reviews per country
+        logger.info("Phase 1: RSS API scraping (limited to ~500 reviews per country)...")
         try:
             async with AppStoreCrawler() as crawler:
-                # Timeout RSS phase after 60 seconds
+                # Timeout RSS phase after 90 seconds
                 rss_reviews = await asyncio.wait_for(
                     crawler.crawl_reviews(
                         app_id=request.app_id,
@@ -216,29 +307,29 @@ async def crawl_app_store_reviews(request: AppStoreReviewRequest):
                         min_rating=request.min_rating,
                         max_rating=request.max_rating,
                     ),
-                    timeout=60.0  # 1 minute max for RSS phase
+                    timeout=90.0  # 1.5 minute max for RSS phase
                 )
         except asyncio.TimeoutError:
-            logger.warning("RSS API scraping timed out after 60 seconds")
+            logger.warning("RSS API scraping timed out after 90 seconds")
             rss_reviews = []
 
-        # Add RSS reviews to collection
+        # Add RSS reviews to collection using deterministic hash (not Python's randomized hash())
         for review in rss_reviews:
-            content_hash = hash(review.get('content', '')[:100])
-            review_id = f"{review.get('author', '')}_{content_hash}"
+            content_key = f"{review.get('author', '')}:{review.get('content', '')[:100]}"
+            review_id = hashlib.sha256(content_key.encode()).hexdigest()[:16]
             review['source'] = 'rss_api'
             all_reviews[review_id] = review
 
-        logger.info(f"RSS API: collected {len(all_reviews)} reviews")
+        logger.info(f"RSS API Phase Complete: collected {len(all_reviews)} reviews")
 
-        # Step 2: Browser multi-country - if we need more reviews
+        # Step 2: Browser multi-country - ALWAYS try if we need more reviews
         if len(all_reviews) < request.max_reviews:
             remaining = request.max_reviews - len(all_reviews)
-            logger.info(f"Phase 2: Browser multi-country scraping for {remaining} more reviews...")
+            logger.info(f"Phase 2: Browser scraping for {remaining} more reviews (RSS API has fundamental limits)...")
 
             try:
                 async with AppStoreBrowserCrawler(headless=True) as crawler:
-                    # Timeout browser scraping after 4 minutes to leave buffer for response
+                    # Timeout browser scraping after 5 minutes
                     browser_reviews = await asyncio.wait_for(
                         crawler.crawl_reviews(
                             app_id=request.app_id,
@@ -248,22 +339,29 @@ async def crawl_app_store_reviews(request: AppStoreReviewRequest):
                             max_rating=request.max_rating,
                             multi_country=request.multi_country,
                         ),
-                        timeout=240.0  # 4 minutes max for browser phase
+                        timeout=300.0  # 5 minutes max for browser phase
                     )
+                    logger.info(f"Browser scraping returned {len(browser_reviews)} reviews")
             except asyncio.TimeoutError:
-                logger.warning(f"Browser scraping timed out after 4 minutes, proceeding with {len(all_reviews)} reviews from RSS")
+                logger.warning(f"Browser scraping timed out after 5 minutes, proceeding with {len(all_reviews)} reviews from RSS")
+                browser_reviews = []
+            except Exception as e:
+                logger.error(f"Browser scraping error: {e}")
                 browser_reviews = []
 
-            # Add browser reviews, deduplicating by content
+            # Add browser reviews, deduplicating by content using deterministic hash
             new_from_browser = 0
             for review in browser_reviews:
-                content_hash = hash(review.get('content', '')[:100])
-                review_id = f"{review.get('author', '')}_{content_hash}"
+                content_key = f"{review.get('author', '')}:{review.get('content', '')[:100]}"
+                review_id = hashlib.sha256(content_key.encode()).hexdigest()[:16]
                 if review_id not in all_reviews:
+                    review['source'] = 'browser'
                     all_reviews[review_id] = review
                     new_from_browser += 1
 
-            logger.info(f"Browser: added {new_from_browser} unique reviews (total: {len(all_reviews)})")
+            logger.info(f"Browser Phase Complete: added {new_from_browser} unique reviews (total: {len(all_reviews)})")
+        else:
+            logger.info("Skipping browser phase - RSS API met target")
 
         reviews = list(all_reviews.values())[:request.max_reviews]
 

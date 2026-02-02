@@ -699,6 +699,7 @@ export interface Review {
   vote_sum: number;
   country?: string;
   sort_source?: string;
+  date?: string;
 }
 
 export interface ReviewStats {

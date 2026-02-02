@@ -148,15 +148,29 @@ def scrape_reviews_streaming(
                     if not review_id:
                         continue
 
+                    # Safely parse numeric fields
+                    try:
+                        rating = int(entry.get("im:rating", {}).get("label", "0"))
+                    except (ValueError, TypeError):
+                        rating = 0
+                    try:
+                        vote_count = int(entry.get("im:voteCount", {}).get("label", "0"))
+                    except (ValueError, TypeError):
+                        vote_count = 0
+                    try:
+                        vote_sum = int(entry.get("im:voteSum", {}).get("label", "0"))
+                    except (ValueError, TypeError):
+                        vote_sum = 0
+
                     review = {
                         "id": review_id,
                         "title": entry.get("title", {}).get("label", ""),
                         "content": entry.get("content", {}).get("label", ""),
-                        "rating": int(entry.get("im:rating", {}).get("label", "0")),
+                        "rating": rating,
                         "author": entry.get("author", {}).get("name", {}).get("label", ""),
                         "version": entry.get("im:version", {}).get("label", ""),
-                        "vote_count": int(entry.get("im:voteCount", {}).get("label", "0")),
-                        "vote_sum": int(entry.get("im:voteSum", {}).get("label", "0")),
+                        "vote_count": vote_count,
+                        "vote_sum": vote_sum,
                         "country": country,
                         "sort_source": sort_by,
                     }
@@ -189,12 +203,13 @@ def scrape_reviews_streaming(
                 'nextDelayMs': int(delay * 1000),
             }
 
-            # Early termination: stop if 2 consecutive pages return 0 reviews
-            if consecutive_empty >= 2:
+            # Early termination: stop if 5 consecutive pages return 0 reviews
+            # (increased from 2 to avoid premature stopping)
+            if consecutive_empty >= 5:
                 yield {
                     'type': 'filterEarlyStop',
                     'filter': sort_by,
-                    'reason': 'No more reviews available',
+                    'reason': 'No more reviews available from RSS API',
                     'pagesCompleted': page,
                 }
                 break
@@ -313,15 +328,29 @@ def scrape_reviews_legacy(
                     if not review_id:
                         continue
 
+                    # Safely parse numeric fields
+                    try:
+                        rating = int(entry.get("im:rating", {}).get("label", "0"))
+                    except (ValueError, TypeError):
+                        rating = 0
+                    try:
+                        vote_count = int(entry.get("im:voteCount", {}).get("label", "0"))
+                    except (ValueError, TypeError):
+                        vote_count = 0
+                    try:
+                        vote_sum = int(entry.get("im:voteSum", {}).get("label", "0"))
+                    except (ValueError, TypeError):
+                        vote_sum = 0
+
                     review = {
                         "id": review_id,
                         "title": entry.get("title", {}).get("label", ""),
                         "content": entry.get("content", {}).get("label", ""),
-                        "rating": int(entry.get("im:rating", {}).get("label", "0")),
+                        "rating": rating,
                         "author": entry.get("author", {}).get("name", {}).get("label", ""),
                         "version": entry.get("im:version", {}).get("label", ""),
-                        "vote_count": int(entry.get("im:voteCount", {}).get("label", "0")),
-                        "vote_sum": int(entry.get("im:voteSum", {}).get("label", "0")),
+                        "vote_count": vote_count,
+                        "vote_sum": vote_sum,
                         "country": c,
                         "sort_source": sort_by,
                     }
@@ -373,6 +402,15 @@ class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             content_length = int(self.headers.get("Content-Length", 0))
+            # Limit request size to 100KB to prevent memory exhaustion attacks
+            max_content_length = 100 * 1024  # 100KB
+            if content_length > max_content_length:
+                self.send_response(413)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "Request body too large"}).encode())
+                return
             body = self.rfile.read(content_length).decode()
             params = json.loads(body) if body else {}
 
@@ -394,12 +432,12 @@ class handler(BaseHTTPRequestHandler):
                 # New streaming mode with extended filters
                 country = params.get("country", "us")
 
-                # Validate and normalize filters
+                # Validate and normalize filters (limit to 10 filters to prevent DoS)
                 if not filters:
                     filters = DEFAULT_FILTERS
                 else:
                     validated_filters = []
-                    for f in filters:
+                    for f in filters[:10]:  # Limit to 10 filters max
                         sort_order = f.get('sort', 'mostRecent')
                         if sort_order in VALID_SORT_ORDERS:
                             validated_filters.append({
@@ -425,11 +463,15 @@ class handler(BaseHTTPRequestHandler):
                 self.send_header("Access-Control-Allow-Origin", "*")
                 self.end_headers()
 
-                # Stream events
-                for event in scrape_reviews_streaming(app_id, country, filters, stealth):
-                    event_data = json.dumps(event)
-                    self.wfile.write(f"data: {event_data}\n\n".encode())
-                    self.wfile.flush()
+                # Stream events with error handling for client disconnections
+                try:
+                    for event in scrape_reviews_streaming(app_id, country, filters, stealth):
+                        event_data = json.dumps(event)
+                        self.wfile.write(f"data: {event_data}\n\n".encode())
+                        self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    # Client disconnected mid-stream, this is normal behavior
+                    return
 
             else:
                 # Legacy mode for backwards compatibility
@@ -463,8 +505,15 @@ class handler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps(response_data).encode())
 
         except Exception as e:
-            self.send_response(500)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-            self.wfile.write(json.dumps({"error": str(e)}).encode())
+            import traceback
+            print(f"Error in py-reviews handler: {e}")
+            traceback.print_exc()
+            try:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode())
+            except (BrokenPipeError, ConnectionResetError):
+                # Client already disconnected
+                pass

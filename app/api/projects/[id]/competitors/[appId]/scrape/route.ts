@@ -48,16 +48,18 @@ export async function POST(
     }
 
     // Map ExtendedReview to Review, adding missing fields
+    // Note: rating defaults to 0 (not 5) to avoid biasing analytics when extraction fails
     const reviews: Review[] = (scrapeData.reviews || []).map((r) => ({
       id: r.id,
       title: r.title,
       content: r.content,
-      rating: r.rating,
+      rating: r.rating || 0,
       author: r.author,
       version: r.version || 'Unknown',
       vote_count: r.helpful_count || 0,
-      vote_sum: r.helpful_count || 0,
+      vote_sum: 0, // vote_sum not available from crawler, don't duplicate vote_count
       country: r.country,
+      date: r.date || '',
     }));
 
     if (reviews.length === 0) {

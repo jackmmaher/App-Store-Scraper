@@ -42,6 +42,7 @@ interface Review {
   vote_sum: number;
   country: string;
   sort_source: string;
+  date?: string;
 }
 
 export async function POST(request: NextRequest) {
@@ -172,17 +173,19 @@ export async function POST(request: NextRequest) {
           const reviews = data.reviews || [];
 
           // Format all reviews to match Review interface
+          // Note: rating defaults to 0 (not 5) to avoid biasing analytics when extraction fails
           const formattedReviews: Review[] = reviews.map((r: Record<string, unknown>) => ({
             id: String(r.id || `review-${Date.now()}-${Math.random()}`),
             author: String(r.author || 'Anonymous'),
-            rating: Number(r.rating) || 5,
+            rating: Number(r.rating) || 0,
             title: String(r.title || ''),
             content: String(r.content || r.text || ''),
             version: String(r.version || 'Unknown'),
-            vote_count: Number(r.vote_count) || 0,
+            vote_count: Number(r.vote_count || r.helpful_count) || 0,
             vote_sum: Number(r.vote_sum) || 0,
             country: String(r.country || country),
             sort_source: String(r.sort_source || 'mostRecent'),
+            date: String(r.date || r.dateISO || ''),
           }));
 
           // Count reviews per sort source
