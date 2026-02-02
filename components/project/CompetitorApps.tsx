@@ -332,6 +332,10 @@ export default function CompetitorApps({
 
       const result = await response.json();
 
+      if (!result.analysis) {
+        throw new Error(result.error || "Analysis completed but no results returned. Please try again.");
+      }
+
       if (result.analysis) {
         setRedditAnalysisStage('complete');
         setRedditAnalysis(prev => ({
@@ -350,15 +354,19 @@ export default function CompetitorApps({
       onRefresh(); // Refresh to get updated reddit_analysis_id
     } catch (error) {
       console.error('Reddit analysis failed:', error);
-      setRedditAnalysisError(error instanceof Error ? error.message : 'Failed to run Reddit analysis');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to run Reddit analysis';
+      setRedditAnalysisError(errorMessage);
       setRedditAnalysisStage('error');
 
-      // Reset after showing error
+      // Show toast for immediate feedback
+      toast.error(errorMessage);
+
+      // Keep error displayed longer (5 seconds) before allowing retry
       setTimeout(() => {
         setRedditAnalysisStage('idle');
         setRedditAnalyzingId(null);
         setShowRedditConfig(config.competitorId);
-      }, 3000);
+      }, 5000);
     }
   };
 

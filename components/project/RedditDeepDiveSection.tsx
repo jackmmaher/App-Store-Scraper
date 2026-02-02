@@ -85,8 +85,13 @@ export default function RedditDeepDiveSection({
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+      let receivedAnalysis = false;
+      let lastError: string | null = null;
+      let jsonParseErrorCount = 0;
+      const MAX_JSON_PARSE_ERRORS = 5; // Allow some parse errors, but not too many
 
-      while (true) {
+      try {
+        while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
@@ -150,12 +155,15 @@ export default function RedditDeepDiveSection({
                 throw new Error('Reddit analysis timed out. Try reducing search scope.');
               }
 
-              if (data.error || (data.message && line.includes('"error"'))) {
-                throw new Error(data.message || data.error || 'Analysis failed');
+              // Check for explicit error in the data
+              if (data.error) {
+                lastError = data.error;
+                throw new Error(data.error);
               }
 
               // Handle completion
               if (data.analysis) {
+                receivedAnalysis = true;
                 setAnalysisStage('complete');
                 setAnalysis(data.analysis);
                 setIsExpanded(true);
@@ -179,24 +187,51 @@ export default function RedditDeepDiveSection({
                 return;
               }
             } catch (parseError) {
-              // Ignore JSON parse errors for incomplete data
-              if (parseError instanceof SyntaxError) continue;
-              throw parseError;
-            }
+                // Track JSON parse errors - too many might indicate a problem
+                if (parseError instanceof SyntaxError) {
+                  jsonParseErrorCount++;
+                  console.warn("JSON parse error in SSE stream:", line.slice(6, 100));
+
+                  // If we get too many parse errors, something is wrong
+                  if (jsonParseErrorCount >= MAX_JSON_PARSE_ERRORS) {
+                    throw new Error("Failed to parse analysis data. The server response may be malformed.");
+                  }
+                  continue;
+                }
+                throw parseError;
+              }
           }
         }
       }
+      } finally {
+        // Always close the reader to prevent resource leaks
+        try {
+          reader.releaseLock();
+        } catch {
+          // Ignore errors when releasing lock
+        }
+      }
+
+      // If we finished the stream without receiving analysis, show an error
+      if (!receivedAnalysis) {
+        const errorMessage = lastError || "Analysis ended unexpectedly without results. Please try again.";
+        throw new Error(errorMessage);
+      }
     } catch (error) {
       console.error('Reddit analysis failed:', error);
-      setAnalysisError(error instanceof Error ? error.message : 'Failed to run Reddit analysis');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to run Reddit analysis';
+      setAnalysisError(errorMessage);
       setAnalysisStage('error');
       setRealTimeProgress(null);
 
-      // Reset after showing error
+      // Show toast for immediate feedback
+      toast.error(errorMessage);
+
+      // Keep error displayed longer (5 seconds) before allowing retry
       setTimeout(() => {
         setAnalysisStage('idle');
         setShowConfig(true);
-      }, 3000);
+      }, 5000);
     }
   };
 
@@ -324,8 +359,8 @@ export default function RedditDeepDiveSection({
         </div>
       )}
 
-      {/* Progress Tracker - shows during analysis */}
-      {isAnalyzing && (
+      {/* Progress Tracker - shows during analysis OR when there's an error */}
+      {(isAnalyzing || analysisStage === 'error') && (
         <RedditAnalysisProgress
           stage={analysisStage}
           error={analysisError}
@@ -370,7 +405,7 @@ export default function RedditDeepDiveSection({
       )}
 
       {/* Empty state when no analysis and not showing config */}
-      {!analysis && !showConfig && hasReviews && !isAnalyzing && (
+      {!analysis && !showConfig && hasReviews && !isAnalyzing && analysisStage !== 'error' && (
         <div className="p-6 text-center">
           <div className="w-12 h-12 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
             <svg className="w-6 h-6 text-orange-500" viewBox="0 0 24 24" fill="currentColor">

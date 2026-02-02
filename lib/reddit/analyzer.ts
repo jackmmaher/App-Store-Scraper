@@ -545,7 +545,7 @@ async function callClaudeAPI(
         },
         body: JSON.stringify({
           model: 'claude-sonnet-4-20250514',
-          max_tokens: 4000,
+          max_tokens: 8000,
           messages: [
             {
               role: 'user',
@@ -604,6 +604,7 @@ async function callClaudeAPI(
 
 /**
  * Repair common JSON issues from LLM responses
+ * Handles: trailing commas, unescaped newlines, missing commas, unbalanced brackets, truncated JSON
  */
 function repairJSON(jsonString: string): string {
   let repaired = jsonString;
@@ -625,7 +626,163 @@ function repairJSON(jsonString: string): string {
     return ''; // Remove other control chars
   });
 
+  // Step 4: Fix missing commas between array elements (e.g., "foo" "bar" -> "foo", "bar")
+  // This pattern finds adjacent string values without a comma between them
+  repaired = repaired.replace(/"\s*\n\s*"/g, '",\n"');
+  // Also handle objects/arrays adjacent without commas: } { or ] [ or } [ or ] {
+  repaired = repaired.replace(/\}\s*\{/g, '}, {');
+  repaired = repaired.replace(/\]\s*\[/g, '], [');
+  repaired = repaired.replace(/\}\s*\[/g, '}, [');
+  repaired = repaired.replace(/\]\s*\{/g, '], {');
+  // Handle string followed by object/array: "value" { or "value" [
+  repaired = repaired.replace(/"\s*\{/g, '", {');
+  repaired = repaired.replace(/"\s*\[/g, '", [');
+  // Handle object/array followed by string: } "value" or ] "value"
+  repaired = repaired.replace(/\}\s*"/g, '}, "');
+  repaired = repaired.replace(/\]\s*"/g, '], "');
+  // Handle number followed by string/object/array: 123 "value"
+  repaired = repaired.replace(/(\d)\s+"/g, '$1, "');
+  repaired = repaired.replace(/(\d)\s+\{/g, '$1, {');
+  repaired = repaired.replace(/(\d)\s+\[/g, '$1, [');
+
+  // Step 5: Handle unbalanced brackets - attempt to close them
+  repaired = fixUnbalancedBrackets(repaired);
+
   return repaired;
+}
+
+/**
+ * Fix unbalanced brackets in JSON by adding missing closing brackets
+ * This is string-context-aware to avoid counting brackets inside strings
+ */
+function fixUnbalancedBrackets(jsonString: string): string {
+  let braceCount = 0;
+  let bracketCount = 0;
+  let inString = false;
+  let escapeNext = false;
+
+  for (let i = 0; i < jsonString.length; i++) {
+    const char = jsonString[i];
+
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+
+    if (char === '\\' && inString) {
+      escapeNext = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    // Only count brackets when not inside a string
+    if (!inString) {
+      if (char === '{') braceCount++;
+      else if (char === '}') braceCount--;
+      else if (char === '[') bracketCount++;
+      else if (char === ']') bracketCount--;
+    }
+  }
+
+  // If we're inside an unclosed string at the end (truncated), try to close it
+  if (inString) {
+    jsonString += '"';
+  }
+
+  // Add missing closing brackets/braces
+  let result = jsonString;
+
+  // Only handle missing closing brackets (positive counts)
+  while (bracketCount > 0) {
+    result += ']';
+    bracketCount--;
+  }
+  while (braceCount > 0) {
+    result += '}';
+    braceCount--;
+  }
+
+  return result;
+}
+
+/**
+ * Attempt to recover a valid JSON object from a truncated response
+ * Returns the repaired JSON string or null if recovery fails
+ */
+function recoverTruncatedJSON(jsonString: string): string | null {
+  let repaired = jsonString.trim();
+
+  // If it ends with a partial string, try to close it
+  const lastQuoteIndex = repaired.lastIndexOf('"');
+  const quotesBefore = (repaired.substring(0, lastQuoteIndex).match(/"/g) || []).length;
+
+  // If odd number of quotes, the last string is unclosed
+  if (quotesBefore % 2 === 1) {
+    const afterLastQuote = repaired.substring(lastQuoteIndex + 1);
+    if (!afterLastQuote.match(/^\s*[,:\]\}]/)) {
+      // Truncated in the middle of a string value
+      repaired = repaired.substring(0, lastQuoteIndex) + '..."';
+    }
+  }
+
+  // Remove trailing partial tokens
+  repaired = repaired.replace(/,\s*"[^"]*$/g, '');
+  repaired = repaired.replace(/:\s*"[^"]*$/g, ': ""');
+  repaired = repaired.replace(/:\s*\d+$/g, ': 0');
+  repaired = repaired.replace(/:\s*$/g, ': null');
+  repaired = repaired.replace(/,\s*$/, '');
+
+  // Now fix unbalanced brackets
+  repaired = fixUnbalancedBrackets(repaired);
+
+  return repaired;
+}
+
+/**
+ * Find matching brace for JSON extraction - string-context-aware
+ * Properly handles braces inside quoted strings and escaped quotes
+ */
+function findMatchingBrace(content: string, startIdx: number): number {
+  let depth = 0;
+  let inString = false;
+  let escapeNext = false;
+
+  for (let i = startIdx; i < content.length; i++) {
+    const char = content[i];
+
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+
+    if (char === '\\' && inString) {
+      escapeNext = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    // Only count braces when not inside a string
+    if (!inString) {
+      if (char === '{') {
+        depth++;
+      } else if (char === '}') {
+        depth--;
+        if (depth === 0) {
+          return i;
+        }
+      }
+    }
+  }
+
+  return -1; // No matching brace found
 }
 
 function parseClaudeAnalysisResponse(content: string): ClaudeAnalysisResult {
@@ -642,23 +799,12 @@ function parseClaudeAnalysisResponse(content: string): ClaudeAnalysisResult {
     }
   }
 
-  // Strategy 2: Find JSON object directly (greedy match for outermost braces)
+  // Strategy 2: Find JSON object directly (string-context-aware brace matching)
   if (!jsonString) {
     // Find the first { and match to its closing }
     const startIdx = content.indexOf('{');
     if (startIdx !== -1) {
-      let depth = 0;
-      let endIdx = -1;
-      for (let i = startIdx; i < content.length; i++) {
-        if (content[i] === '{') depth++;
-        else if (content[i] === '}') {
-          depth--;
-          if (depth === 0) {
-            endIdx = i;
-            break;
-          }
-        }
-      }
+      const endIdx = findMatchingBrace(content, startIdx);
       if (endIdx !== -1) {
         jsonString = content.slice(startIdx, endIdx + 1);
       }
@@ -690,14 +836,25 @@ function parseClaudeAnalysisResponse(content: string): ClaudeAnalysisResult {
       parsed = JSON.parse(repairedJSON);
       console.log('JSON repair successful');
     } catch (repairError) {
-      console.error('JSON repair also failed:', repairError);
-      console.error('Original JSON (first 1000 chars):', jsonString.slice(0, 1000));
-      throw new Error(`Failed to parse Claude analysis response: ${firstError instanceof Error ? firstError.message : 'Invalid JSON'}`);
+      // Try truncated JSON recovery as last resort
+      console.warn('Standard repair failed, attempting truncated JSON recovery...');
+      try {
+        const recoveredJSON = recoverTruncatedJSON(jsonString);
+        if (recoveredJSON) {
+          parsed = JSON.parse(recoveredJSON);
+          console.log('Truncated JSON recovery successful');
+        } else {
+          throw repairError;
+        }
+      } catch (recoveryError) {
+        console.error('All JSON recovery attempts failed:', recoveryError);
+        console.error('Original JSON (first 1000 chars):', jsonString.slice(0, 1000));
+        throw new Error(`Failed to parse Claude analysis response: ${firstError instanceof Error ? firstError.message : 'Invalid JSON'}`);
+      }
     }
   }
 
   try {
-
     // Validate and normalize the response
     const unmetNeeds = Array.isArray(parsed.unmetNeeds)
       ? parsed.unmetNeeds.map((need: Record<string, unknown>) => {

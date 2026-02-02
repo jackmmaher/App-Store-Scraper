@@ -69,7 +69,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           if (streamClosed) return;
           streamClosed = true;
           try {
-            closeStream();
+            controller.close();
           } catch {
             // Already closed
           }

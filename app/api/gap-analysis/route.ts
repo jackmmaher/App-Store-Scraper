@@ -201,7 +201,7 @@ async function handleScrape(sessionId: string) {
           if (streamClosed) return;
           streamClosed = true;
           try {
-            closeStream();
+            controller.close();
           } catch {
             // Already closed
           }
