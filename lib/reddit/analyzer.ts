@@ -749,7 +749,7 @@ function parseClaudeAnalysisResponse(content: string): ClaudeAnalysisResult {
         })
       : [];
 
-    const sentiment = parsed.sentiment || {};
+    const sentiment = (parsed.sentiment || {}) as Record<string, unknown>;
     const normalizedSentiment = normalizeSentiment({
       frustrated: Number(sentiment.frustrated) || 0,
       seekingHelp: Number(sentiment.seekingHelp) || 0,
