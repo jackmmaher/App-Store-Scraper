@@ -6,6 +6,8 @@ import UnmetNeedsPanel from '@/components/reddit/UnmetNeedsPanel';
 import TrendsSentimentPanel from '@/components/reddit/TrendsSentimentPanel';
 import RedditAnalysisProgress, { type RedditAnalysisStage } from '@/components/reddit/RedditAnalysisProgress';
 import type { RedditSearchConfig, RedditAnalysisResult } from '@/lib/reddit/types';
+import { useToast } from '@/components/ui/Toast';
+import { getOperationErrorMessage } from '@/lib/errors';
 
 interface AnalyzedApp {
   app_store_id: string;
@@ -41,6 +43,7 @@ export default function CompetitorApps({
   linkedCompetitors,
   onRefresh,
 }: CompetitorAppsProps) {
+  const toast = useToast();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [addingApp, setAddingApp] = useState<string | null>(null);
   const [scrapingApp, setScrapingApp] = useState<string | null>(null);
@@ -88,9 +91,10 @@ export default function CompetitorApps({
       }
 
       onRefresh();
+      toast.success('Competitor added');
     } catch (err) {
       console.error('Error adding competitor:', err);
-      alert('Failed to add competitor');
+      toast.error(getOperationErrorMessage('save', err));
     } finally {
       setAddingApp(null);
     }
@@ -118,9 +122,10 @@ export default function CompetitorApps({
       }
 
       onRefresh();
+      toast.success('All competitors added');
     } catch (err) {
       console.error('Error adding all competitors:', err);
-      alert('Failed to add competitors');
+      toast.error(getOperationErrorMessage('save', err));
     } finally {
       setAddingAll(false);
     }
@@ -138,9 +143,10 @@ export default function CompetitorApps({
       }
 
       onRefresh();
+      toast.success('Reviews scraped successfully');
     } catch (err) {
       console.error('Error scraping reviews:', err);
-      alert('Failed to scrape reviews');
+      toast.error(getOperationErrorMessage('scrape', err));
     } finally {
       setScrapingApp(null);
     }
@@ -158,9 +164,10 @@ export default function CompetitorApps({
       }
 
       onRefresh();
+      toast.success('Reviews analyzed');
     } catch (err) {
       console.error('Error analyzing reviews:', err);
-      alert('Failed to analyze reviews');
+      toast.error(getOperationErrorMessage('analyze', err));
     } finally {
       setAnalyzingApp(null);
     }
@@ -196,7 +203,9 @@ export default function CompetitorApps({
     onRefresh();
 
     if (successCount < unscrapedCompetitors.length) {
-      alert(`Scraped ${successCount}/${unscrapedCompetitors.length} competitors. Some failed.`);
+      toast.warning(`Scraped ${successCount}/${unscrapedCompetitors.length} competitors. Some failed.`);
+    } else {
+      toast.success(`All ${successCount} competitors scraped successfully`);
     }
   };
 
@@ -230,7 +239,9 @@ export default function CompetitorApps({
     onRefresh();
 
     if (successCount < unanalyzedCompetitors.length) {
-      alert(`Analyzed ${successCount}/${unanalyzedCompetitors.length} competitors. Some failed.`);
+      toast.warning(`Analyzed ${successCount}/${unanalyzedCompetitors.length} competitors. Some failed.`);
+    } else {
+      toast.success(`All ${successCount} competitors analyzed successfully`);
     }
   };
 
@@ -398,10 +409,10 @@ export default function CompetitorApps({
         throw new Error('Failed to save solutions');
       }
 
-      alert('Solutions saved successfully!');
+      toast.success('Solutions saved successfully');
     } catch (error) {
       console.error('Error saving solutions:', error);
-      alert('Failed to save solutions');
+      toast.error(getOperationErrorMessage('save', error));
     } finally {
       setIsSavingSolutions(false);
     }

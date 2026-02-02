@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import type { SavedSearch } from '@/lib/supabase';
 import { CATEGORY_NAMES, COUNTRY_CODES } from '@/lib/constants';
+import { useToast } from '@/components/ui/Toast';
+import { getOperationErrorMessage } from '@/lib/errors';
 
 interface Props {
   search: SavedSearch;
@@ -12,6 +14,7 @@ interface Props {
 
 export default function SavedSearchCard({ search, onDelete }: Props) {
   const router = useRouter();
+  const toast = useToast();
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -23,9 +26,10 @@ export default function SavedSearchCard({ search, onDelete }: Props) {
       const res = await fetch(`/api/searches/${search.id}`, { method: 'DELETE' });
       if (res.ok && onDelete) {
         onDelete();
+        toast.success('Search deleted');
       }
-    } catch {
-      alert('Failed to delete search');
+    } catch (err) {
+      toast.error(getOperationErrorMessage('delete', err));
     }
   };
 

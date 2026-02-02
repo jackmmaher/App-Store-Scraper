@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
+import { ToastProvider } from '@/components/ui/Toast';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -34,7 +35,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.className} overflow-x-hidden`}>
-        <main className="min-h-screen overflow-x-hidden">{children}</main>
+        <ToastProvider>
+          <main className="min-h-screen overflow-x-hidden">{children}</main>
+        </ToastProvider>
       </body>
     </html>
   );

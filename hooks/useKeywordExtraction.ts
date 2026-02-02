@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import type { Review } from '@/lib/supabase';
+import { getOperationErrorMessage } from '@/lib/errors';
 
 export interface ExtractedKeyword {
   keyword: string;
@@ -10,16 +11,19 @@ export interface ExtractedKeyword {
 interface UseKeywordExtractionProps {
   appName: string;
   appDescription?: string;
+  onError?: (message: string) => void;
 }
 
-export function useKeywordExtraction({ appName, appDescription }: UseKeywordExtractionProps) {
+export function useKeywordExtraction({ appName, appDescription, onError }: UseKeywordExtractionProps) {
   const [extractedKeywords, setExtractedKeywords] = useState<ExtractedKeyword[]>([]);
   const [extracting, setExtracting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const extractKeywords = useCallback(async (reviews: Review[]) => {
     if (reviews.length === 0) return;
 
     setExtracting(true);
+    setError(null);
 
     try {
       const res = await fetch('/api/keywords/extract', {
@@ -40,11 +44,13 @@ export function useKeywordExtraction({ appName, appDescription }: UseKeywordExtr
       setExtractedKeywords(data.allKeywords || []);
     } catch (err) {
       console.error('Error extracting keywords:', err);
-      alert('Failed to extract keywords from reviews');
+      const message = getOperationErrorMessage('analyze', err);
+      setError(message);
+      onError?.(message);
     } finally {
       setExtracting(false);
     }
-  }, [appName, appDescription]);
+  }, [appName, appDescription, onError]);
 
   const clearKeywords = useCallback(() => {
     setExtractedKeywords([]);
@@ -55,5 +61,6 @@ export function useKeywordExtraction({ appName, appDescription }: UseKeywordExtr
     extracting,
     extractKeywords,
     clearKeywords,
+    error,
   };
 }

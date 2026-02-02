@@ -1,15 +1,19 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { ChatMessage } from '@/lib/supabase';
+import { getOperationErrorMessage } from '@/lib/errors';
 
 interface UseChatProps {
   projectId: string;
   aiAnalysis?: string | null;
+  onError?: (message: string) => void;
+  onInfo?: (message: string) => void;
 }
 
-export function useChat({ projectId, aiAnalysis }: UseChatProps) {
+export function useChat({ projectId, aiAnalysis, onError, onInfo }: UseChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Load messages on mount
   const loadMessages = useCallback(async () => {
@@ -37,6 +41,7 @@ export function useChat({ projectId, aiAnalysis }: UseChatProps) {
     if (!content.trim() || !projectId) return;
 
     setIsLoading(true);
+    setError(null);
 
     // Optimistically add user message
     const tempUserMessage: ChatMessage = {
@@ -73,17 +78,22 @@ export function useChat({ projectId, aiAnalysis }: UseChatProps) {
       console.error('Error sending message:', err);
       // Remove optimistic message on error
       setMessages((prev) => prev.filter((m) => m.id !== tempUserMessage.id));
-      alert('Failed to send message. Please try again.');
+      const message = getOperationErrorMessage('send', err);
+      setError(message);
+      onError?.(message);
     } finally {
       setIsLoading(false);
     }
-  }, [projectId]);
+  }, [projectId, onError]);
 
   // Clear the conversation
-  const clearConversation = useCallback(async () => {
+  const clearConversation = useCallback(async (confirmed?: boolean) => {
     if (!projectId) return;
 
-    if (!confirm('Clear all messages in this conversation?')) return;
+    // If not pre-confirmed, this should be handled by the component
+    if (!confirmed && typeof window !== 'undefined' && !window.confirm('Clear all messages in this conversation?')) {
+      return;
+    }
 
     try {
       const res = await fetch(`/api/chat?projectId=${projectId}`, {
@@ -95,20 +105,22 @@ export function useChat({ projectId, aiAnalysis }: UseChatProps) {
       }
     } catch (err) {
       console.error('Error clearing conversation:', err);
-      alert('Failed to clear conversation');
+      const message = getOperationErrorMessage('delete', err);
+      setError(message);
+      onError?.(message);
     }
-  }, [projectId]);
+  }, [projectId, onError]);
 
   // Insert analysis as a user message (for context sharing)
   const insertAnalysis = useCallback(() => {
     if (!aiAnalysis) {
-      alert('No AI analysis available for this project');
+      onInfo?.('No AI analysis available for this project');
       return null;
     }
 
     // Return the analysis text so the ChatPanel can insert it into the input
     return aiAnalysis;
-  }, [aiAnalysis]);
+  }, [aiAnalysis, onInfo]);
 
   return {
     messages,
@@ -118,5 +130,6 @@ export function useChat({ projectId, aiAnalysis }: UseChatProps) {
     loadMessages,
     clearConversation,
     insertAnalysis,
+    error,
   };
 }

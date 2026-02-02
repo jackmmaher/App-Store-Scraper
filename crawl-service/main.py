@@ -23,8 +23,10 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings
+import ipaddress
+from urllib.parse import urlparse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 # Load environment variables
@@ -72,13 +74,14 @@ start_time = time.time()
 # ============================================================================
 
 class RateLimiter:
-    """Simple in-memory rate limiter using sliding window."""
+    """Simple in-memory rate limiter using sliding window with thread-safe access."""
 
     def __init__(self, requests_per_minute: int = 30, burst_limit: int = 10):
         self.requests_per_minute = requests_per_minute
         self.burst_limit = burst_limit
         self.window_size = 60  # 1 minute window
         self.requests: dict[str, list[float]] = defaultdict(list)
+        self._lock = asyncio.Lock()
 
     def _clean_old_requests(self, client_id: str, current_time: float) -> None:
         """Remove requests older than the window."""
@@ -87,27 +90,28 @@ class RateLimiter:
             t for t in self.requests[client_id] if t > cutoff
         ]
 
-    def is_allowed(self, client_id: str) -> tuple[bool, int]:
+    async def is_allowed(self, client_id: str) -> tuple[bool, int]:
         """Check if request is allowed. Returns (allowed, retry_after_seconds)."""
-        current_time = time.time()
-        self._clean_old_requests(client_id, current_time)
+        async with self._lock:
+            current_time = time.time()
+            self._clean_old_requests(client_id, current_time)
 
-        recent_requests = self.requests[client_id]
+            recent_requests = self.requests[client_id]
 
-        # Check burst limit (requests in last 5 seconds)
-        burst_window = current_time - 5
-        burst_count = sum(1 for t in recent_requests if t > burst_window)
-        if burst_count >= self.burst_limit:
-            return False, 5
+            # Check burst limit (requests in last 5 seconds)
+            burst_window = current_time - 5
+            burst_count = sum(1 for t in recent_requests if t > burst_window)
+            if burst_count >= self.burst_limit:
+                return False, 5
 
-        # Check rate limit
-        if len(recent_requests) >= self.requests_per_minute:
-            oldest = min(recent_requests) if recent_requests else current_time
-            retry_after = int(oldest + self.window_size - current_time) + 1
-            return False, max(1, retry_after)
+            # Check rate limit
+            if len(recent_requests) >= self.requests_per_minute:
+                oldest = min(recent_requests) if recent_requests else current_time
+                retry_after = int(oldest + self.window_size - current_time) + 1
+                return False, max(1, retry_after)
 
-        self.requests[client_id].append(current_time)
-        return True, 0
+            self.requests[client_id].append(current_time)
+            return True, 0
 
 
 # Global rate limiter instance
@@ -130,7 +134,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Take first IP if multiple are present
         client_ip = client_ip.split(",")[0].strip()
 
-        allowed, retry_after = rate_limiter.is_allowed(client_ip)
+        allowed, retry_after = await rate_limiter.is_allowed(client_ip)
 
         if not allowed:
             return JSONResponse(
@@ -153,7 +157,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 class AppStoreReviewRequest(BaseModel):
     app_id: str
     country: str = "us"
-    max_reviews: int = 1000
+    max_reviews: int = Field(default=1000, ge=1, le=10000)
     min_rating: Optional[int] = None
     max_rating: Optional[int] = None
     use_browser: bool = False  # Use browser automation for multi-country scraping
@@ -161,12 +165,30 @@ class AppStoreReviewRequest(BaseModel):
 
 
 class RedditCrawlRequest(BaseModel):
-    keywords: list[str]
-    subreddits: Optional[list[str]] = None
+    keywords: list[str] = Field(max_length=10)
+    subreddits: Optional[list[str]] = Field(default=None, max_length=20)
     max_posts: int = 50
     max_comments_per_post: int = 20
     time_filter: str = "year"
     sort: str = "relevance"
+
+
+def _is_internal_ip(host: str) -> bool:
+    """Check if a host resolves to an internal/private IP address."""
+    try:
+        # Try parsing as IP address directly
+        ip = ipaddress.ip_address(host)
+        return (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_reserved
+            or ip.is_link_local
+            or ip.is_multicast
+        )
+    except ValueError:
+        # Not an IP address, check common internal hostnames
+        internal_hostnames = ['localhost', 'localhost.localdomain', '127.0.0.1', '::1']
+        return host.lower() in internal_hostnames
 
 
 class WebsiteCrawlRequest(BaseModel):
@@ -175,6 +197,38 @@ class WebsiteCrawlRequest(BaseModel):
     include_subpages: bool = True
     extract_pricing: bool = True
     extract_features: bool = True
+
+    @field_validator('url')
+    @classmethod
+    def validate_url(cls, v: str) -> str:
+        """Validate URL scheme and block internal IPs for SSRF prevention."""
+        parsed = urlparse(v)
+
+        # Validate scheme
+        if parsed.scheme not in ('http', 'https'):
+            raise ValueError('URL must use http or https scheme')
+
+        # Extract hostname
+        host = parsed.hostname
+        if not host:
+            raise ValueError('URL must have a valid hostname')
+
+        # Block internal IPs
+        if _is_internal_ip(host):
+            raise ValueError('URLs pointing to internal/private IP addresses are not allowed')
+
+        # Block common internal IP patterns
+        internal_patterns = [
+            '10.', '192.168.', '172.16.', '172.17.', '172.18.', '172.19.',
+            '172.20.', '172.21.', '172.22.', '172.23.', '172.24.', '172.25.',
+            '172.26.', '172.27.', '172.28.', '172.29.', '172.30.', '172.31.',
+            '169.254.', '0.', '127.',
+        ]
+        for pattern in internal_patterns:
+            if host.startswith(pattern):
+                raise ValueError('URLs pointing to internal/private IP addresses are not allowed')
+
+        return v
 
 
 class ColorPaletteRequest(BaseModel):
@@ -186,10 +240,10 @@ class ColorPaletteRequest(BaseModel):
 
 class RedditDeepDiveRequest(BaseModel):
     """Request model for Reddit deep dive crawling."""
-    search_topics: list[str]
-    subreddits: list[str]
+    search_topics: list[str] = Field(max_length=10)
+    subreddits: list[str] = Field(max_length=20)
     time_filter: str = "month"  # week, month, year
-    max_posts_per_combo: int = 50
+    max_posts_per_combo: int = Field(default=50, ge=1, le=100)
     max_comments_per_post: int = 30
     validate_subreddits: bool = True  # Whether to validate subreddits before crawling
     use_adaptive_thresholds: bool = True  # Use community-size-based engagement thresholds

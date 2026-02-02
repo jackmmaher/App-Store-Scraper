@@ -1,14 +1,17 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { GapAnalysisChatMessage } from '@/lib/supabase';
+import { getOperationErrorMessage } from '@/lib/errors';
 
 interface UseGapChatProps {
   sessionId: string;
+  onError?: (message: string) => void;
 }
 
-export function useGapChat({ sessionId }: UseGapChatProps) {
+export function useGapChat({ sessionId, onError }: UseGapChatProps) {
   const [messages, setMessages] = useState<GapAnalysisChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Load messages on mount (using query param)
   const loadMessages = useCallback(async () => {
@@ -36,6 +39,7 @@ export function useGapChat({ sessionId }: UseGapChatProps) {
     if (!content.trim() || !sessionId) return;
 
     setIsLoading(true);
+    setError(null);
 
     // Optimistically add user message
     const tempUserMessage: GapAnalysisChatMessage = {
@@ -69,17 +73,22 @@ export function useGapChat({ sessionId }: UseGapChatProps) {
       console.error('Error sending gap chat message:', err);
       // Remove optimistic message on error
       setMessages((prev) => prev.filter((m) => m.id !== tempUserMessage.id));
-      alert('Failed to send message. Please try again.');
+      const message = getOperationErrorMessage('send', err);
+      setError(message);
+      onError?.(message);
     } finally {
       setIsLoading(false);
     }
-  }, [sessionId]);
+  }, [sessionId, onError]);
 
   // Clear the conversation (using query param)
-  const clearConversation = useCallback(async () => {
+  const clearConversation = useCallback(async (confirmed?: boolean) => {
     if (!sessionId) return;
 
-    if (!confirm('Clear all messages in this conversation?')) return;
+    // If not pre-confirmed, this should be handled by the component
+    if (!confirmed && typeof window !== 'undefined' && !window.confirm('Clear all messages in this conversation?')) {
+      return;
+    }
 
     try {
       const res = await fetch(`/api/gap-analysis?id=${sessionId}&action=clear-chat`, {
@@ -91,9 +100,11 @@ export function useGapChat({ sessionId }: UseGapChatProps) {
       }
     } catch (err) {
       console.error('Error clearing gap chat conversation:', err);
-      alert('Failed to clear conversation');
+      const message = getOperationErrorMessage('delete', err);
+      setError(message);
+      onError?.(message);
     }
-  }, [sessionId]);
+  }, [sessionId, onError]);
 
   return {
     messages,
@@ -102,5 +113,6 @@ export function useGapChat({ sessionId }: UseGapChatProps) {
     sendMessage,
     loadMessages,
     clearConversation,
+    error,
   };
 }

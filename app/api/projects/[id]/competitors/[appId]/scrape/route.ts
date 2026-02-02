@@ -3,6 +3,9 @@ import { isAuthenticated } from '@/lib/auth';
 import { getLinkedCompetitors, updateLinkedCompetitor, Review } from '@/lib/supabase';
 import { getCrawlOrchestrator } from '@/lib/crawl';
 
+// Allow up to 10 minutes for scraping large apps
+export const maxDuration = 600;
+
 // POST /api/projects/[id]/competitors/[appId]/scrape - Scrape reviews for a linked competitor
 export async function POST(
   request: NextRequest,

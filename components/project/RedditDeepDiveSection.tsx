@@ -6,6 +6,8 @@ import UnmetNeedsPanel from '@/components/reddit/UnmetNeedsPanel';
 import TrendsSentimentPanel from '@/components/reddit/TrendsSentimentPanel';
 import RedditAnalysisProgress, { type RedditAnalysisStage, type RealTimeProgress } from '@/components/reddit/RedditAnalysisProgress';
 import type { RedditSearchConfig, RedditAnalysisResult } from '@/lib/reddit/types';
+import { useToast } from '@/components/ui/Toast';
+import { getOperationErrorMessage } from '@/lib/errors';
 
 interface RedditDeepDiveSectionProps {
   appId: string;
@@ -21,6 +23,7 @@ export default function RedditDeepDiveSection({
   appName,
   hasReviews,
 }: RedditDeepDiveSectionProps) {
+  const toast = useToast();
   const [isExpanded, setIsExpanded] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
   const [analysis, setAnalysis] = useState<RedditAnalysisResult | null>(null);
@@ -235,10 +238,10 @@ export default function RedditDeepDiveSection({
         throw new Error('Failed to save solutions');
       }
 
-      alert('Solutions saved successfully!');
+      toast.success('Solutions saved successfully');
     } catch (error) {
       console.error('Error saving solutions:', error);
-      alert('Failed to save solutions');
+      toast.error(getOperationErrorMessage('save', error));
     } finally {
       setIsSavingSolutions(false);
     }

@@ -7,6 +7,8 @@ import ResultsTable from './ResultsTable';
 import ExportBar from './ExportBar';
 import type { SavedSearch } from '@/lib/supabase';
 import { CATEGORY_NAMES, COUNTRY_CODES } from '@/lib/constants';
+import { useToast } from '@/components/ui/Toast';
+import { getOperationErrorMessage } from '@/lib/errors';
 
 interface Props {
   searchId: string;
@@ -17,6 +19,7 @@ export default function SavedSearchView({ searchId }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const toast = useToast();
 
   useEffect(() => {
     const fetchSearch = async () => {
@@ -46,10 +49,11 @@ export default function SavedSearchView({ searchId }: Props) {
     try {
       const res = await fetch(`/api/searches/${searchId}`, { method: 'DELETE' });
       if (res.ok) {
+        toast.success('Search deleted');
         router.push('/');
       }
-    } catch {
-      alert('Failed to delete search');
+    } catch (err) {
+      toast.error(getOperationErrorMessage('delete', err));
     }
   };
 

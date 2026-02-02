@@ -6,6 +6,7 @@ import {
   COUNTRY_CODES,
   CATEGORY_GROUPS,
 } from '@/lib/constants';
+import { useToast } from '@/components/ui/Toast';
 
 interface Props {
   onSubmit: (data: {
@@ -55,6 +56,7 @@ const COUNTRY_FLAGS: Record<string, string> = {
 };
 
 export default function GapSetupForm({ onSubmit, loading }: Props) {
+  const toast = useToast();
   const [name, setName] = useState('');
   const [category, setCategory] = useState('health-fitness');
   const [selectedCountries, setSelectedCountries] = useState<string[]>(['us', 'gb', 'de']);
@@ -94,7 +96,7 @@ export default function GapSetupForm({ onSubmit, loading }: Props) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (selectedCountries.length < 2) {
-      alert('Please select at least 2 countries');
+      toast.warning('Please select at least 2 countries');
       return;
     }
     onSubmit({

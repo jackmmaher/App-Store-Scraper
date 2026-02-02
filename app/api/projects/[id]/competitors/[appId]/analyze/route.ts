@@ -3,6 +3,9 @@ import { isAuthenticated } from '@/lib/auth';
 import { getLinkedCompetitors, updateLinkedCompetitor, Review, getRedditAnalysisById, getUnmetNeedSolutions } from '@/lib/supabase';
 import { RedditAnalysisResult, UnmetNeed } from '@/lib/reddit/types';
 
+// Allow up to 5 minutes for AI analysis
+export const maxDuration = 300;
+
 // POST /api/projects/[id]/competitors/[appId]/analyze - Analyze reviews for a linked competitor
 export async function POST(
   request: NextRequest,
@@ -191,6 +194,24 @@ ${reviewsText}`;
     });
   } catch (err) {
     console.error('Error analyzing competitor reviews:', err);
+
+    // Handle timeout-specific errors
+    if (err instanceof Error) {
+      if (err.name === 'AbortError' || err.name === 'TimeoutError') {
+        return NextResponse.json(
+          { error: 'Analysis timed out. The AI service may be slow or the review set may be too large. Try again or reduce the number of reviews.' },
+          { status: 504 }
+        );
+      }
+      // Handle fetch errors that might indicate network timeout
+      if (err.message.includes('timeout') || err.message.includes('ETIMEDOUT')) {
+        return NextResponse.json(
+          { error: 'Request timed out while connecting to AI service. Please try again.' },
+          { status: 504 }
+        );
+      }
+    }
+
     return NextResponse.json({ error: 'Failed to analyze reviews' }, { status: 500 });
   }
 }

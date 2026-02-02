@@ -29,109 +29,131 @@ class AppStoreCrawler(BaseCrawler):
         """
         Crawl reviews for an app using iTunes RSS API.
         Returns up to max_reviews reviews.
+
+        Note: iTunes RSS API is limited to ~500 reviews per country/sort.
+        For more reviews, browser scraping is needed.
         """
         all_reviews = {}
-        max_pages = min(max_reviews // 50 + 1, 40)  # 50 reviews per page, max 40 pages
+        # iTunes RSS allows pages 1-10 (500 reviews max per sort)
+        max_pages = 10
 
-        logger.info(f"Starting review crawl for app {app_id} in {country}, max {max_reviews} reviews")
+        logger.info(f"Starting RSS review crawl for app {app_id} in {country}, max {max_reviews} reviews")
 
-        for sort_by in self.SORT_OPTIONS:
+        # Try multiple countries for RSS to maximize coverage
+        countries_to_try = [country]
+        if max_reviews > 500:
+            additional_countries = ['us', 'gb', 'ca', 'au', 'de', 'fr']
+            countries_to_try += [c for c in additional_countries if c != country]
+            countries_to_try = countries_to_try[:4]  # Limit to 4 countries for RSS
+
+        for current_country in countries_to_try:
             if len(all_reviews) >= max_reviews:
                 break
 
-            consecutive_empty = 0
-            pages_crawled = 0
-
-            for page in range(1, max_pages + 1):
+            for sort_by in self.SORT_OPTIONS:
                 if len(all_reviews) >= max_reviews:
                     break
 
-                url = f"https://itunes.apple.com/{country}/rss/customerreviews/page={page}/id={app_id}/sortBy={sort_by}/json"
-
-                data = await self.fetch_json(url)
-
-                # Handle various error cases
-                if not data:
-                    consecutive_empty += 1
-                    logger.debug(f"Empty response for {sort_by} page {page}")
-                    if consecutive_empty >= 3:
-                        logger.info(f"Stopping {sort_by} after {consecutive_empty} consecutive empty pages")
-                        break
-                    continue
-
-                # Check for XML error response (Apple sometimes returns XML errors)
-                if isinstance(data, str) and data.strip().startswith('<?xml'):
-                    logger.warning(f"Received XML error response for {sort_by} page {page}")
-                    consecutive_empty += 1
-                    if consecutive_empty >= 3:
-                        break
-                    continue
-
-                feed = data.get("feed", {})
-                entries = feed.get("entry", [])
-
-                if not entries:
-                    consecutive_empty += 1
-                    logger.debug(f"No entries in {sort_by} page {page}")
-                    if consecutive_empty >= 3:
-                        logger.info(f"Stopping {sort_by} after {consecutive_empty} consecutive empty pages")
-                        break
-                    continue
-
                 consecutive_empty = 0
-                pages_crawled += 1
-                new_reviews_this_page = 0
+                pages_crawled = 0
 
-                for entry in entries:
-                    # Skip app info entry
-                    if "im:rating" not in entry:
+                for page in range(1, max_pages + 1):
+                    if len(all_reviews) >= max_reviews:
+                        break
+
+                    url = f"https://itunes.apple.com/{current_country}/rss/customerreviews/page={page}/id={app_id}/sortBy={sort_by}/json"
+
+                    data = await self.fetch_json(url)
+
+                    # Handle various error cases
+                    if not data:
+                        consecutive_empty += 1
+                        logger.debug(f"Empty response for {sort_by} page {page}")
+                        if consecutive_empty >= 5:  # Increased threshold
+                            logger.info(f"Stopping {sort_by} after {consecutive_empty} consecutive empty pages")
+                            break
                         continue
 
-                    review_id = entry.get("id", {}).get("label", "")
-                    if not review_id or review_id in all_reviews:
+                    # Check for XML error response (Apple sometimes returns XML errors)
+                    if isinstance(data, str) and data.strip().startswith('<?xml'):
+                        logger.warning(f"Received XML error response for {sort_by} page {page}")
+                        consecutive_empty += 1
+                        if consecutive_empty >= 5:
+                            break
                         continue
 
-                    try:
-                        rating = int(entry.get("im:rating", {}).get("label", "0"))
-                    except (ValueError, TypeError):
-                        rating = 0
+                    feed = data.get("feed", {})
+                    entries = feed.get("entry", [])
 
-                    # Apply rating filters
-                    if min_rating and rating < min_rating:
+                    if not entries:
+                        consecutive_empty += 1
+                        logger.debug(f"No entries in {sort_by} page {page}")
+                        if consecutive_empty >= 5:  # Increased threshold
+                            logger.info(f"Stopping {sort_by} after {consecutive_empty} consecutive empty pages")
+                            break
                         continue
-                    if max_rating and rating > max_rating:
-                        continue
 
-                    try:
-                        vote_count = int(entry.get("im:voteCount", {}).get("label", "0"))
-                    except (ValueError, TypeError):
-                        vote_count = 0
+                    consecutive_empty = 0
+                    pages_crawled += 1
+                    new_reviews_this_page = 0
 
-                    review = {
-                        "id": review_id,
-                        "title": entry.get("title", {}).get("label", ""),
-                        "content": entry.get("content", {}).get("label", ""),
-                        "rating": rating,
-                        "author": entry.get("author", {}).get("name", {}).get("label", ""),
-                        "version": entry.get("im:version", {}).get("label", ""),
-                        "vote_count": vote_count,
-                        "country": country,
-                        "sort_source": sort_by,
-                    }
-                    all_reviews[review_id] = review
-                    new_reviews_this_page += 1
+                    for entry in entries:
+                        # Skip app info entry
+                        if "im:rating" not in entry:
+                            continue
 
-                logger.debug(f"{sort_by} page {page}: {new_reviews_this_page} new reviews (total: {len(all_reviews)})")
+                        review_id = entry.get("id", {}).get("label", "")
+                        if not review_id or review_id in all_reviews:
+                            continue
 
-                # Small delay between requests
-                await asyncio.sleep(random.uniform(0.5, 1.5))
+                        # Parse rating - use None for missing/invalid to avoid biasing analytics
+                        try:
+                            rating_label = entry.get("im:rating", {}).get("label")
+                            if rating_label is not None:
+                                rating = int(rating_label)
+                                if rating < 1 or rating > 5:
+                                    rating = None
+                            else:
+                                rating = None
+                        except (ValueError, TypeError):
+                            rating = None
 
-            logger.info(f"Completed {sort_by}: crawled {pages_crawled} pages, total unique reviews: {len(all_reviews)}")
+                        # Apply rating filters (skip reviews with null ratings if filters are set)
+                        if min_rating and (rating is None or rating < min_rating):
+                            continue
+                        if max_rating and (rating is None or rating > max_rating):
+                            continue
 
-            # Longer delay between sort types
-            await asyncio.sleep(random.uniform(1.0, 2.0))
+                        try:
+                            vote_count = int(entry.get("im:voteCount", {}).get("label", "0"))
+                        except (ValueError, TypeError):
+                            vote_count = 0
 
-        logger.info(f"Review crawl complete: {len(all_reviews)} unique reviews collected")
+                        review = {
+                            "id": review_id,
+                            "title": entry.get("title", {}).get("label", ""),
+                            "content": entry.get("content", {}).get("label", ""),
+                            "rating": rating,
+                            "author": entry.get("author", {}).get("name", {}).get("label", ""),
+                            "version": entry.get("im:version", {}).get("label", ""),
+                            "vote_count": vote_count,
+                            "country": current_country,
+                            "sort_source": sort_by,
+                        }
+                        all_reviews[review_id] = review
+                        new_reviews_this_page += 1
+
+                    logger.debug(f"{current_country}/{sort_by} page {page}: {new_reviews_this_page} new reviews (total: {len(all_reviews)})")
+
+                    # Small delay between requests
+                    await asyncio.sleep(random.uniform(0.3, 0.8))
+
+                logger.info(f"Completed {current_country}/{sort_by}: crawled {pages_crawled} pages, total unique: {len(all_reviews)}")
+
+                # Delay between sort types
+                await asyncio.sleep(random.uniform(0.5, 1.0))
+
+        logger.info(f"RSS review crawl complete: {len(all_reviews)} unique reviews collected from {len(countries_to_try)} countries")
         return list(all_reviews.values())[:max_reviews]
 
     async def crawl_whats_new(

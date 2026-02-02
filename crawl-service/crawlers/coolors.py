@@ -130,7 +130,7 @@ def detect_palette_mood(colors: List[str]) -> str:
             return "light"
         else:
             return "neutral"
-    except:
+    except (ValueError, ZeroDivisionError, IndexError, TypeError):
         return "neutral"
 
 

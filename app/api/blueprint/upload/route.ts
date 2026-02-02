@@ -26,7 +26,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'blueprintId, section, and file required' }, { status: 400 });
     }
 
-    const validSections: BlueprintSection[] = ['pareto', 'wireframes', 'tech_stack', 'prd'];
+    // All 9 blueprint sections that support attachments
+    const validSections: BlueprintSection[] = ['pareto', 'identity', 'design_system', 'wireframes', 'tech_stack', 'xcode_setup', 'prd', 'aso', 'manifest'];
     if (!validSections.includes(section)) {
       return NextResponse.json({ error: 'Invalid section' }, { status: 400 });
     }
@@ -49,9 +50,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Blueprint not found' }, { status: 404 });
     }
 
-    // Generate storage path
+    // Generate storage path - derive extension from validated MIME type, not user filename
     const timestamp = Date.now();
-    const extension = file.name.split('.').pop() || 'png';
+    const mimeToExt: Record<string, string> = {
+      'image/png': 'png',
+      'image/jpeg': 'jpg',
+      'image/gif': 'gif',
+      'image/webp': 'webp',
+    };
+    const extension = mimeToExt[file.type] || 'png';
     const storagePath = `${blueprintId}/${section}/${timestamp}.${extension}`;
 
     // Upload to Supabase Storage

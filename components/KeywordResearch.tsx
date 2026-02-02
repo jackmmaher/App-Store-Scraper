@@ -5,6 +5,7 @@ import { Keyword, KeywordScoreResult, DiscoveryMethod, KeywordJob, KeywordRankin
 import type { AppResult } from '@/lib/supabase';
 import { ensureAppInMasterDb } from '@/lib/supabase';
 import AppDetailModal from './AppDetailModal';
+import { useToast } from '@/components/ui/Toast';
 
 // Tooltip component for metric explanations
 // Uses fixed positioning to escape modal overflow constraints
@@ -145,6 +146,8 @@ interface KeywordResearchProps {
 }
 
 export default function KeywordResearch({ initialQuery, initialCountry }: KeywordResearchProps = {}) {
+  const toast = useToast();
+
   // State
   const [keywords, setKeywords] = useState<Keyword[]>([]);
   const [totalKeywords, setTotalKeywords] = useState(0);
@@ -478,7 +481,7 @@ export default function KeywordResearch({ initialQuery, initialCountry }: Keywor
   // Start discovery
   const handleDiscover = async () => {
     if (discoveryMethod === 'autosuggest' && !seedKeyword.trim()) {
-      alert('Please enter a seed keyword');
+      toast.warning('Please enter a seed keyword');
       return;
     }
 

@@ -18,6 +18,8 @@ import { saveAppAnalysis, getMasterApp } from '@/lib/supabase';
 import { useKeywordRanking } from '@/hooks/useKeywordRanking';
 import { useKeywordExtraction } from '@/hooks/useKeywordExtraction';
 import { formatDateTime, formatNumber } from '@/lib/formatting';
+import { useToast } from '@/components/ui/Toast';
+import { getOperationErrorMessage } from '@/lib/errors';
 
 interface ProjectDetailPageProps {
   projectId: string;
@@ -25,6 +27,7 @@ interface ProjectDetailPageProps {
 
 export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps) {
   const router = useRouter();
+  const toast = useToast();
   const [project, setProject] = useState<AppProject | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -261,9 +264,10 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
         const updateData = await updateRes.json();
         setProject(updateData.project);
       }
+      toast.success('Analysis completed');
     } catch (err) {
       console.error('Error re-running analysis:', err);
-      alert('Failed to re-run analysis');
+      toast.error(getOperationErrorMessage('analyze', err));
     } finally {
       setReAnalyzing(false);
     }

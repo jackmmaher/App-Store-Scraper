@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useChat } from '@/hooks/useChat';
 import ChatMessage from './ChatMessage';
 import type { AppProject } from '@/lib/supabase';
+import { useToast } from '@/components/ui/Toast';
 
 interface ChatPanelProps {
   project: AppProject;
@@ -18,6 +19,7 @@ export default function ChatPanel({ project, projectId, onClose }: ChatPanelProp
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const toast = useToast();
 
   const {
     messages,
@@ -29,6 +31,8 @@ export default function ChatPanel({ project, projectId, onClose }: ChatPanelProp
   } = useChat({
     projectId,
     aiAnalysis: project.ai_analysis,
+    onError: (message) => toast.error(message),
+    onInfo: (message) => toast.info(message),
   });
 
   // Auto-scroll to bottom when new messages arrive
@@ -193,7 +197,7 @@ export default function ChatPanel({ project, projectId, onClose }: ChatPanelProp
           Ask about Analysis
         </button>
         <button
-          onClick={clearConversation}
+          onClick={() => clearConversation()}
           disabled={messages.length === 0}
           className="px-3 py-1.5 text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >

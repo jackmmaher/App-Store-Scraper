@@ -14,12 +14,14 @@ import {
 import { CATEGORY_NAMES } from '@/lib/constants';
 import type { GapAnalysisApp } from '@/lib/supabase';
 import Header from './Header';
+import { useToast } from '@/components/ui/Toast';
 
 interface Props {
   sessionId: string;
 }
 
 export default function GapSessionDetailPage({ sessionId }: Props) {
+  const toast = useToast();
   const {
     currentSession,
     apps,
@@ -42,7 +44,10 @@ export default function GapSessionDetailPage({ sessionId }: Props) {
     isLoading: isChatLoading,
     sendMessage,
     clearConversation,
-  } = useGapChat({ sessionId });
+  } = useGapChat({
+    sessionId,
+    onError: (message) => toast.error(message),
+  });
 
   const [selectedApp, setSelectedApp] = useState<GapAnalysisApp | null>(null);
   const [showChat, setShowChat] = useState(false);
@@ -271,7 +276,7 @@ export default function GapSessionDetailPage({ sessionId }: Props) {
                 messages={messages}
                 isLoading={isChatLoading}
                 onSendMessage={sendMessage}
-                onClearConversation={clearConversation}
+                onClearConversation={() => clearConversation()}
               />
             </div>
           )}

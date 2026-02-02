@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { getOperationErrorMessage } from '@/lib/errors';
 
 export interface KeywordRank {
   keyword: string;
@@ -19,18 +20,21 @@ export interface KeywordRank {
 interface UseKeywordRankingProps {
   appId: string;
   country: string;
+  onError?: (message: string) => void;
 }
 
-export function useKeywordRanking({ appId, country }: UseKeywordRankingProps) {
+export function useKeywordRanking({ appId, country, onError }: UseKeywordRankingProps) {
   const [keywordInput, setKeywordInput] = useState('');
   const [keywordRanks, setKeywordRanks] = useState<KeywordRank[]>([]);
   const [checking, setChecking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const checkKeywordRank = useCallback(async (keyword?: string) => {
     const searchKeyword = keyword || keywordInput.trim();
     if (!searchKeyword) return;
 
     setChecking(true);
+    setError(null);
 
     try {
       const res = await fetch('/api/keywords/rank', {
@@ -67,11 +71,13 @@ export function useKeywordRanking({ appId, country }: UseKeywordRankingProps) {
       setKeywordInput('');
     } catch (err) {
       console.error('Error checking keyword:', err);
-      alert('Failed to check keyword ranking');
+      const message = getOperationErrorMessage('search', err);
+      setError(message);
+      onError?.(message);
     } finally {
       setChecking(false);
     }
-  }, [keywordInput, appId, country]);
+  }, [keywordInput, appId, country, onError]);
 
   const clearRanks = useCallback(() => {
     setKeywordRanks([]);
@@ -84,5 +90,6 @@ export function useKeywordRanking({ appId, country }: UseKeywordRankingProps) {
     checking,
     checkKeywordRank,
     clearRanks,
+    error,
   };
 }

@@ -34,7 +34,7 @@ interface ReviewRequest {
 interface Review {
   id: string;
   author: string;
-  rating: number;
+  rating: number | null;
   title: string;
   content: string;
   version: string;
@@ -93,11 +93,25 @@ export async function POST(request: NextRequest) {
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
+        // Track if stream has been closed to prevent double-close
+        let streamClosed = false;
+
         const sendEvent = (data: Record<string, unknown>) => {
+          if (streamClosed) return;
           try {
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
           } catch {
             // Controller might be closed
+          }
+        };
+
+        const closeStream = () => {
+          if (streamClosed) return;
+          streamClosed = true;
+          try {
+            controller.close();
+          } catch {
+            // Already closed
           }
         };
 
@@ -165,7 +179,7 @@ export async function POST(request: NextRequest) {
               type: 'error',
               message: `Crawler error: ${response.status} - ${errorText}`,
             });
-            controller.close(); // Close the stream controller
+            // Let finally block handle stream cleanup
             return;
           }
 
@@ -173,20 +187,33 @@ export async function POST(request: NextRequest) {
           const reviews = data.reviews || [];
 
           // Format all reviews to match Review interface
-          // Note: rating defaults to 0 (not 5) to avoid biasing analytics when extraction fails
-          const formattedReviews: Review[] = reviews.map((r: Record<string, unknown>) => ({
-            id: String(r.id || `review-${Date.now()}-${Math.random()}`),
-            author: String(r.author || 'Anonymous'),
-            rating: Number(r.rating) || 0,
-            title: String(r.title || ''),
-            content: String(r.content || r.text || ''),
-            version: String(r.version || 'Unknown'),
-            vote_count: Number(r.vote_count || r.helpful_count) || 0,
-            vote_sum: Number(r.vote_sum) || 0,
-            country: String(r.country || country),
-            sort_source: String(r.sort_source || 'mostRecent'),
-            date: String(r.date || r.dateISO || ''),
-          }));
+          // Note: rating is null when missing so it can be filtered out in analytics
+          // (defaulting to 0 or 5 would bias average rating calculations)
+          const formattedReviews: Review[] = reviews.map((r: Record<string, unknown>) => {
+            // Parse rating - use null for missing/invalid values to avoid biasing analytics
+            const rawRating = r.rating;
+            let rating: number | null = null;
+            if (rawRating !== null && rawRating !== undefined) {
+              const numRating = Number(rawRating);
+              if (!isNaN(numRating) && numRating >= 1 && numRating <= 5) {
+                rating = numRating;
+              }
+            }
+
+            return {
+              id: String(r.id || `review-${Date.now()}-${Math.random()}`),
+              author: String(r.author || 'Anonymous'),
+              rating,
+              title: String(r.title || ''),
+              content: String(r.content || r.text || ''),
+              version: String(r.version || 'Unknown'),
+              vote_count: Number(r.vote_count || r.helpful_count) || 0,
+              vote_sum: Number(r.vote_sum) || 0,
+              country: String(r.country || country),
+              sort_source: String(r.sort_source || 'mostRecent'),
+              date: String(r.date || r.dateISO || ''),
+            };
+          });
 
           // Count reviews per sort source
           const sortCounts: Record<string, number> = {};
@@ -217,15 +244,18 @@ export async function POST(request: NextRequest) {
             nextDelayMs: 0,
           });
 
-          // Calculate stats
-          const ratings = formattedReviews.map((r) => r.rating);
-          const avgRating = ratings.length > 0
-            ? ratings.reduce((a, b) => a + b, 0) / ratings.length
+          // Calculate stats - filter out null ratings to avoid biasing analytics
+          const validRatings = formattedReviews
+            .map((r) => r.rating)
+            .filter((r): r is number => r !== null);
+          const avgRating = validRatings.length > 0
+            ? validRatings.reduce((a, b) => a + b, 0) / validRatings.length
             : 0;
 
-          const ratingDistribution: Record<string, number> = { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 };
-          for (const rating of ratings) {
-            ratingDistribution[String(rating)] = (ratingDistribution[String(rating)] || 0) + 1;
+          const ratingDistribution: Record<string, number> = { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0, 'null': 0 };
+          for (const review of formattedReviews) {
+            const key = review.rating !== null ? String(review.rating) : 'null';
+            ratingDistribution[key] = (ratingDistribution[key] || 0) + 1;
           }
 
           // Send complete event with all reviews
@@ -258,7 +288,7 @@ export async function POST(request: NextRequest) {
             message: errorMessage,
           });
         } finally {
-          controller.close();
+          closeStream();
         }
       },
     });

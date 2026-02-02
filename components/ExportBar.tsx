@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import type { AppResult, SearchParams } from '@/lib/supabase';
+import { useToast } from '@/components/ui/Toast';
+import { getOperationErrorMessage } from '@/lib/errors';
 
 interface Props {
   results: AppResult[];
@@ -14,6 +16,7 @@ export default function ExportBar({ results, params, onSave, showSave = true }: 
   const [saving, setSaving] = useState(false);
   const [saveName, setSaveName] = useState('');
   const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const toast = useToast();
 
   const exportCSV = () => {
     const headers = ['Name', 'Reviews', 'Rating', 'Developer', 'Price', 'Version', 'URL', 'Bundle ID'];
@@ -77,11 +80,12 @@ export default function ExportBar({ results, params, onSave, showSave = true }: 
         setShowSaveDialog(false);
         setSaveName('');
         onSave();
+        toast.success('Search saved successfully');
       } else {
-        alert('Failed to save search');
+        toast.error(getOperationErrorMessage('save'));
       }
-    } catch {
-      alert('Error saving search');
+    } catch (err) {
+      toast.error(getOperationErrorMessage('save', err));
     } finally {
       setSaving(false);
     }

@@ -7,11 +7,39 @@ import asyncio
 import hashlib
 import logging
 import re
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Optional, Dict, Any
-from playwright.async_api import async_playwright, Page, Browser, TimeoutError as PlaywrightTimeout
+from typing import List, Optional, Dict, Any, Tuple
+from playwright.async_api import (
+    async_playwright,
+    Page,
+    Browser,
+    BrowserContext,
+    TimeoutError as PlaywrightTimeout,
+)
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class BrowserPage:
+    """Container for browser context and page to prevent memory leaks"""
+    context: BrowserContext
+    page: Page
+
+    async def close(self):
+        """Properly close both page and context"""
+        try:
+            if self.page:
+                await self.page.close()
+        except Exception as e:
+            logger.debug(f"Error closing page: {e}")
+        try:
+            if self.context:
+                await self.context.close()
+        except Exception as e:
+            logger.debug(f"Error closing context: {e}")
 
 
 class AppStoreBrowserCrawler:
@@ -21,6 +49,7 @@ class AppStoreBrowserCrawler:
         self.headless = headless
         self.browser: Optional[Browser] = None
         self.playwright = None
+        self._page_lock = asyncio.Lock()  # Prevent race conditions when creating pages
 
     async def __aenter__(self):
         self.playwright = await async_playwright().start()
@@ -40,22 +69,41 @@ class AppStoreBrowserCrawler:
         if self.playwright:
             await self.playwright.stop()
 
-    async def _create_page(self) -> Page:
-        """Create a new page with anti-detection measures"""
-        context = await self.browser.new_context(
-            viewport={'width': 1920, 'height': 1080},
-            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            locale='en-US',
-        )
-        page = await context.new_page()
+    async def _create_page(self) -> BrowserPage:
+        """Create a new page with anti-detection measures.
 
-        # Remove webdriver detection
-        await page.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-            Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
-        """)
+        Returns a BrowserPage dataclass containing both context and page
+        to ensure proper cleanup and prevent memory leaks.
+        """
+        async with self._page_lock:  # Prevent race conditions
+            context = await self.browser.new_context(
+                viewport={'width': 1920, 'height': 1080},
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                locale='en-US',
+            )
+            page = await context.new_page()
 
-        return page
+            # Remove webdriver detection
+            await page.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+            """)
+
+            return BrowserPage(context=context, page=page)
+
+    @asynccontextmanager
+    async def _managed_page(self):
+        """Async context manager for automatic page cleanup.
+
+        Usage:
+            async with self._managed_page() as browser_page:
+                await browser_page.page.goto(url)
+        """
+        browser_page = await self._create_page()
+        try:
+            yield browser_page
+        finally:
+            await browser_page.close()
 
     # Countries with significant App Store review volumes
     COUNTRIES = [
@@ -91,115 +139,114 @@ class AppStoreBrowserCrawler:
 
         logger.info(f"Starting browser crawl for app {app_id}, target: {max_reviews} reviews, countries: {len(countries_to_scrape)}")
 
-        page = await self._create_page()
+        async with self._managed_page() as browser_page:
+            page = browser_page.page
 
-        try:
-            for current_country in countries_to_scrape:
-                if len(all_reviews) >= max_reviews:
-                    break
-
-                # Try multiple URL patterns - Apple changes these
-                url_patterns = [
-                    f"https://apps.apple.com/{current_country}/app/id{app_id}",
-                    f"https://apps.apple.com/{current_country}/app/app/id{app_id}",
-                ]
-
-                page_loaded = False
-                for url in url_patterns:
-                    try:
-                        logger.info(f"Trying URL: {url}")
-                        response = await page.goto(url, wait_until='domcontentloaded', timeout=30000)
-                        if response and response.status == 200:
-                            page_loaded = True
-                            break
-                    except Exception as e:
-                        logger.debug(f"URL {url} failed: {e}")
-                        continue
-
-                if not page_loaded:
-                    logger.warning(f"Could not load page for country {current_country}")
-                    continue
-
-                # Wait for page to fully render
-                await asyncio.sleep(3)
-
-                # Try to click "See All Reviews" link if present
-                try:
-                    see_all_selectors = [
-                        'a:has-text("See All")',
-                        'a[href*="see-all=reviews"]',
-                        'button:has-text("See All")',
-                        '.we-truncate__button',
-                        'a:has-text("Ratings and Reviews")',
-                    ]
-                    for selector in see_all_selectors:
-                        try:
-                            link = page.locator(selector).first
-                            if await link.is_visible(timeout=2000):
-                                await link.click()
-                                await asyncio.sleep(2)
-                                logger.info(f"Clicked 'See All' link for {current_country}")
-                                break
-                        except (PlaywrightTimeout, Exception) as e:
-                            logger.debug(f"Selector {selector} failed: {e}")
-                            continue
-                except Exception as e:
-                    logger.debug(f"No 'See All' link found: {e}")
-
-                # Extract reviews with multiple scroll attempts
-                total_new_this_country = 0
-                previous_count = 0
-                no_new_reviews_count = 0
-
-                for scroll_attempt in range(10):  # More scroll attempts
+            try:
+                for current_country in countries_to_scrape:
                     if len(all_reviews) >= max_reviews:
                         break
 
-                    page_reviews = await self._extract_reviews(page, current_country)
+                    # Try multiple URL patterns - Apple changes these
+                    url_patterns = [
+                        f"https://apps.apple.com/{current_country}/app/id{app_id}",
+                        f"https://apps.apple.com/{current_country}/app/app/id{app_id}",
+                    ]
 
-                    new_count = 0
-                    for review in page_reviews:
-                        # Use deterministic hash for deduplication (not Python's randomized hash())
-                        content_key = f"{review.get('author', '')}:{review.get('content', '')[:100]}"
-                        review_id = hashlib.sha256(content_key.encode()).hexdigest()[:16]
-
-                        if review_id in all_reviews:
+                    page_loaded = False
+                    for url in url_patterns:
+                        try:
+                            logger.info(f"Trying URL: {url}")
+                            response = await page.goto(url, wait_until='domcontentloaded', timeout=30000)
+                            if response and response.status == 200:
+                                page_loaded = True
+                                break
+                        except Exception as e:
+                            logger.debug(f"URL {url} failed: {e}")
                             continue
 
-                        rating = review.get('rating', 0)
-                        if min_rating and rating < min_rating:
-                            continue
-                        if max_rating and rating > max_rating:
-                            continue
+                    if not page_loaded:
+                        logger.warning(f"Could not load page for country {current_country}")
+                        continue
 
-                        all_reviews[review_id] = review
-                        new_count += 1
+                    # Wait for page to fully render
+                    await asyncio.sleep(3)
 
-                    total_new_this_country += new_count
+                    # Try to click "See All Reviews" link if present
+                    try:
+                        see_all_selectors = [
+                            'a:has-text("See All")',
+                            'a[href*="see-all=reviews"]',
+                            'button:has-text("See All")',
+                            '.we-truncate__button',
+                            'a:has-text("Ratings and Reviews")',
+                        ]
+                        for selector in see_all_selectors:
+                            try:
+                                link = page.locator(selector).first
+                                if await link.is_visible(timeout=2000):
+                                    await link.click()
+                                    await asyncio.sleep(2)
+                                    logger.info(f"Clicked 'See All' link for {current_country}")
+                                    break
+                            except (PlaywrightTimeout, Exception) as e:
+                                logger.debug(f"Selector {selector} failed: {e}")
+                                continue
+                    except Exception as e:
+                        logger.debug(f"No 'See All' link found: {e}")
 
-                    if new_count == 0:
-                        no_new_reviews_count += 1
-                        if no_new_reviews_count >= 3:
-                            logger.info(f"No new reviews after {scroll_attempt + 1} scrolls, moving to next country")
+                    # Extract reviews with multiple scroll attempts
+                    total_new_this_country = 0
+                    previous_count = 0
+                    no_new_reviews_count = 0
+
+                    for scroll_attempt in range(10):  # More scroll attempts
+                        if len(all_reviews) >= max_reviews:
                             break
-                    else:
-                        no_new_reviews_count = 0
 
-                    if scroll_attempt < 9:
-                        await self._scroll_page(page)
-                        await asyncio.sleep(1.5)
+                        page_reviews = await self._extract_reviews(page, current_country)
 
-                logger.info(f"Country {current_country}: got {total_new_this_country} new reviews (total: {len(all_reviews)})")
+                        new_count = 0
+                        for review in page_reviews:
+                            # Use deterministic hash for deduplication (not Python's randomized hash())
+                            content_key = f"{review.get('author', '')}:{review.get('content', '')[:100]}"
+                            review_id = hashlib.sha256(content_key.encode()).hexdigest()[:16]
 
-                # Delay between countries
-                await asyncio.sleep(1.5)
+                            if review_id in all_reviews:
+                                continue
 
-            logger.info(f"Browser crawl complete: {len(all_reviews)} reviews collected from {len(countries_to_scrape)} countries")
+                            rating = review.get('rating', 0)
+                            if min_rating and rating < min_rating:
+                                continue
+                            if max_rating and rating > max_rating:
+                                continue
 
-        except Exception as e:
-            logger.exception(f"Error during browser crawl: {e}")
-        finally:
-            await page.context.close()
+                            all_reviews[review_id] = review
+                            new_count += 1
+
+                        total_new_this_country += new_count
+
+                        if new_count == 0:
+                            no_new_reviews_count += 1
+                            if no_new_reviews_count >= 3:
+                                logger.info(f"No new reviews after {scroll_attempt + 1} scrolls, moving to next country")
+                                break
+                        else:
+                            no_new_reviews_count = 0
+
+                        if scroll_attempt < 9:
+                            await self._scroll_page(page)
+                            await asyncio.sleep(1.5)
+
+                    logger.info(f"Country {current_country}: got {total_new_this_country} new reviews (total: {len(all_reviews)})")
+
+                    # Delay between countries
+                    await asyncio.sleep(1.5)
+
+                logger.info(f"Browser crawl complete: {len(all_reviews)} reviews collected from {len(countries_to_scrape)} countries")
+
+            except Exception as e:
+                logger.exception(f"Error during browser crawl: {e}")
 
         return list(all_reviews.values())[:max_reviews]
 
@@ -413,13 +460,16 @@ class AppStoreBrowserCrawler:
                             // Must have content to be valid
                             if (content && content.length > 10) {
                                 seenContent.add(contentKey);
+                                // Use null for missing/invalid ratings to avoid biasing analytics
+                                // (0 would pull down averages, 5 would pull up - null lets analytics filter them out)
+                                const validRating = (rating >= 1 && rating <= 5) ? rating : null;
                                 results.push({
                                     id: `browser_${index}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                                     date: date,
                                     dateISO: dateISO,
                                     author: author || 'Anonymous',
                                     content: content.substring(0, 5000),
-                                    rating: rating || 0,  // Default to 0 if not found (avoids biasing analytics upward)
+                                    rating: validRating,
                                     title: title,
                                 });
                             }
@@ -510,61 +560,61 @@ class AppStoreBrowserCrawler:
         versions = []
 
         reviews_url = f"https://apps.apple.com/{country}/app/id{app_id}"
-        page = await self._create_page()
 
-        try:
-            await page.goto(reviews_url, wait_until='networkidle', timeout=60000)
-            await asyncio.sleep(3)
+        async with self._managed_page() as browser_page:
+            page = browser_page.page
 
-            # Try to find and click "Version History" link
             try:
-                version_link = page.locator('a:has-text("Version History"), a[href*="version-history"]')
-                if await version_link.count() > 0:
-                    await version_link.first.click()
-                    await asyncio.sleep(2)
-            except (PlaywrightTimeout, Exception) as e:
-                logger.debug(f"Version History link not found or not clickable: {e}")
+                await page.goto(reviews_url, wait_until='networkidle', timeout=60000)
+                await asyncio.sleep(3)
 
-            # Extract version info from the page
-            versions_data = await page.evaluate("""
-                () => {
-                    const versions = [];
+                # Try to find and click "Version History" link
+                try:
+                    version_link = page.locator('a:has-text("Version History"), a[href*="version-history"]')
+                    if await version_link.count() > 0:
+                        await version_link.first.click()
+                        await asyncio.sleep(2)
+                except (PlaywrightTimeout, Exception) as e:
+                    logger.debug(f"Version History link not found or not clickable: {e}")
 
-                    // Look for version history items
-                    const versionItems = document.querySelectorAll('[class*="version"]');
+                # Extract version info from the page
+                versions_data = await page.evaluate("""
+                    () => {
+                        const versions = [];
 
-                    versionItems.forEach(item => {
-                        const text = item.textContent.trim();
-                        // Try to parse version info
-                        const versionMatch = text.match(/Version\\s*([\\d.]+)/i);
-                        if (versionMatch) {
+                        // Look for version history items
+                        const versionItems = document.querySelectorAll('[class*="version"]');
+
+                        versionItems.forEach(item => {
+                            const text = item.textContent.trim();
+                            // Try to parse version info
+                            const versionMatch = text.match(/Version\\s*([\\d.]+)/i);
+                            if (versionMatch) {
+                                versions.push({
+                                    version: versionMatch[1],
+                                    text: text.substring(0, 500)
+                                });
+                            }
+                        });
+
+                        // Also get current version from page
+                        const currentVersion = document.querySelector('[class*="version"]');
+                        if (currentVersion && versions.length === 0) {
                             versions.push({
-                                version: versionMatch[1],
-                                text: text.substring(0, 500)
+                                version: currentVersion.textContent.trim(),
+                                text: 'Current version'
                             });
                         }
-                    });
 
-                    // Also get current version from page
-                    const currentVersion = document.querySelector('[class*="version"]');
-                    if (currentVersion && versions.length === 0) {
-                        versions.push({
-                            version: currentVersion.textContent.trim(),
-                            text: 'Current version'
-                        });
+                        return versions;
                     }
+                """)
 
-                    return versions;
-                }
-            """)
+                versions = versions_data[:max_versions]
+                logger.info(f"Found {len(versions)} version entries")
 
-            versions = versions_data[:max_versions]
-            logger.info(f"Found {len(versions)} version entries")
-
-        except Exception as e:
-            logger.error(f"Error crawling version history: {e}")
-        finally:
-            await page.context.close()
+            except Exception as e:
+                logger.error(f"Error crawling version history: {e}")
 
         return versions
 
@@ -579,51 +629,51 @@ class AppStoreBrowserCrawler:
         labels = []
 
         app_url = f"https://apps.apple.com/{country}/app/id{app_id}"
-        page = await self._create_page()
 
-        try:
-            await page.goto(app_url, wait_until='networkidle', timeout=60000)
-            await asyncio.sleep(3)
+        async with self._managed_page() as browser_page:
+            page = browser_page.page
 
-            # Try to expand privacy section
             try:
-                privacy_link = page.locator('a:has-text("See Details"), a:has-text("App Privacy")')
-                if await privacy_link.count() > 0:
-                    await privacy_link.first.click()
-                    await asyncio.sleep(2)
-            except (PlaywrightTimeout, Exception) as e:
-                logger.debug(f"Privacy section link not found or not clickable: {e}")
+                await page.goto(app_url, wait_until='networkidle', timeout=60000)
+                await asyncio.sleep(3)
 
-            # Extract privacy info
-            labels_data = await page.evaluate("""
-                () => {
-                    const labels = [];
+                # Try to expand privacy section
+                try:
+                    privacy_link = page.locator('a:has-text("See Details"), a:has-text("App Privacy")')
+                    if await privacy_link.count() > 0:
+                        await privacy_link.first.click()
+                        await asyncio.sleep(2)
+                except (PlaywrightTimeout, Exception) as e:
+                    logger.debug(f"Privacy section link not found or not clickable: {e}")
 
-                    // Look for privacy-related sections
-                    const privacySections = document.querySelectorAll('[class*="privacy"], [class*="Privacy"]');
+                # Extract privacy info
+                labels_data = await page.evaluate("""
+                    () => {
+                        const labels = [];
 
-                    privacySections.forEach(section => {
-                        const text = section.textContent.trim();
-                        if (text.length > 10 && text.length < 1000) {
-                            labels.push({
-                                category: 'Privacy Information',
-                                text: text.substring(0, 500),
-                                data_types: [],
-                                purposes: []
-                            });
-                        }
-                    });
+                        // Look for privacy-related sections
+                        const privacySections = document.querySelectorAll('[class*="privacy"], [class*="Privacy"]');
 
-                    return labels;
-                }
-            """)
+                        privacySections.forEach(section => {
+                            const text = section.textContent.trim();
+                            if (text.length > 10 && text.length < 1000) {
+                                labels.push({
+                                    category: 'Privacy Information',
+                                    text: text.substring(0, 500),
+                                    data_types: [],
+                                    purposes: []
+                                });
+                            }
+                        });
 
-            labels = labels_data
-            logger.info(f"Found {len(labels)} privacy label sections")
+                        return labels;
+                    }
+                """)
 
-        except Exception as e:
-            logger.error(f"Error crawling privacy labels: {e}")
-        finally:
-            await page.context.close()
+                labels = labels_data
+                logger.info(f"Found {len(labels)} privacy label sections")
+
+            except Exception as e:
+                logger.error(f"Error crawling privacy labels: {e}")
 
         return labels

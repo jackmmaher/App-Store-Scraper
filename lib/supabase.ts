@@ -1,5 +1,79 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient, PostgrestError } from '@supabase/supabase-js';
 import { RedditSearchConfig, RedditAnalysisResult } from './reddit/types';
+
+// ============================================
+// Error Types for better error handling
+// ============================================
+
+export class SupabaseError extends Error {
+  code: string;
+  details: string | null;
+  hint: string | null;
+
+  constructor(message: string, code: string, details: string | null = null, hint: string | null = null) {
+    super(message);
+    this.name = 'SupabaseError';
+    this.code = code;
+    this.details = details;
+    this.hint = hint;
+  }
+
+  static fromPostgrestError(error: PostgrestError): SupabaseError {
+    return new SupabaseError(error.message, error.code, error.details, error.hint);
+  }
+}
+
+export class NotFoundError extends SupabaseError {
+  constructor(resource: string, identifier: string) {
+    super(`${resource} not found: ${identifier}`, 'NOT_FOUND');
+    this.name = 'NotFoundError';
+  }
+}
+
+export class ValidationError extends SupabaseError {
+  constructor(message: string) {
+    super(message, 'VALIDATION_ERROR');
+    this.name = 'ValidationError';
+  }
+}
+
+// Result type for operations that can fail
+export type Result<T, E = SupabaseError> =
+  | { success: true; data: T }
+  | { success: false; error: E };
+
+// Helper to create success/failure results
+export function success<T>(data: T): Result<T> {
+  return { success: true, data };
+}
+
+export function failure<E extends SupabaseError>(error: E): Result<never, E> {
+  return { success: false, error };
+}
+
+// ============================================
+// Security Helpers
+// ============================================
+
+/**
+ * Escapes special characters in a search string to prevent SQL injection
+ * when used with PostgREST's ilike filter.
+ *
+ * This function escapes:
+ * - Backslash (escape character itself)
+ * - Percent and underscore (SQL LIKE wildcards)
+ * - Comma, period, parentheses (PostgREST syntax characters)
+ */
+export function escapeSearchString(search: string): string {
+  return search
+    .replace(/\\/g, '\\\\')  // Escape backslashes first
+    .replace(/%/g, '\\%')    // Escape percent (SQL wildcard)
+    .replace(/_/g, '\\_')    // Escape underscore (SQL wildcard)
+    .replace(/,/g, '\\,')    // Escape commas (PostgREST OR separator)
+    .replace(/\./g, '\\.')   // Escape periods (PostgREST field separator)
+    .replace(/\(/g, '\\(')   // Escape parentheses (PostgREST grouping)
+    .replace(/\)/g, '\\)');
+}
 
 // Lazy initialization to avoid build-time errors when env vars aren't available
 let _supabase: SupabaseClient | null = null;
@@ -227,98 +301,121 @@ export interface AppsResponse {
   filters: AppFilters;
 }
 
-// Upsert apps to master database
+// Upsert apps to master database - OPTIMIZED: batch operations instead of N+1 queries
 export async function upsertApps(
   apps: AppResult[],
   country: string,
   category: string
-): Promise<{ inserted: number; updated: number }> {
+): Promise<{ inserted: number; updated: number; errors?: number }> {
+  if (apps.length === 0) {
+    return { inserted: 0, updated: 0, errors: 0 };
+  }
+
   let inserted = 0;
   let updated = 0;
+  let errors = 0;
 
-  for (const app of apps) {
-    // Check if app exists
-    const { data: existing } = await supabase
+  // Step 1: Batch fetch all existing apps in ONE query
+  const appStoreIds = apps.map(app => app.id);
+  const { data: existingApps, error: fetchError } = await supabase
+    .from('apps')
+    .select('app_store_id, countries_found, categories_found, scrape_count')
+    .in('app_store_id', appStoreIds);
+
+  if (fetchError) {
+    console.error('Error fetching existing apps:', fetchError);
+    return { inserted: 0, updated: 0, errors: apps.length };
+  }
+
+  // Build lookup map for existing apps
+  const existingMap = new Map<string, {
+    countries_found: string[];
+    categories_found: string[];
+    scrape_count: number;
+  }>();
+  for (const existing of existingApps || []) {
+    existingMap.set(existing.app_store_id, {
+      countries_found: existing.countries_found || [],
+      categories_found: existing.categories_found || [],
+      scrape_count: existing.scrape_count || 1,
+    });
+  }
+
+  // Step 2: Prepare rows for bulk upsert
+  const rows = apps.map(app => {
+    const existing = existingMap.get(app.id);
+
+    // Merge countries and categories if app exists
+    const countriesFound = existing
+      ? [...new Set([...existing.countries_found, country])]
+      : [country];
+    const categoriesFound = existing
+      ? [...new Set([...existing.categories_found, category])]
+      : [category];
+
+    return {
+      app_store_id: app.id,
+      name: app.name,
+      bundle_id: app.bundle_id,
+      developer: app.developer,
+      developer_id: app.developer_id,
+      price: app.price,
+      currency: app.currency,
+      rating: app.rating,
+      rating_current_version: app.rating_current_version,
+      review_count: app.review_count,
+      review_count_current_version: app.review_count_current_version,
+      version: app.version,
+      release_date: app.release_date || null,
+      current_version_release_date: app.current_version_release_date || null,
+      min_os_version: app.min_os_version,
+      file_size_bytes: parseInt(app.file_size_bytes) || null,
+      content_rating: app.content_rating,
+      genres: app.genres,
+      primary_genre: app.primary_genre,
+      primary_genre_id: app.primary_genre_id,
+      url: app.url,
+      icon_url: app.icon_url,
+      description: app.description,
+      countries_found: countriesFound,
+      categories_found: categoriesFound,
+      last_updated_at: new Date().toISOString(),
+      scrape_count: existing ? existing.scrape_count + 1 : 1,
+    };
+  });
+
+  // Step 3: Bulk upsert in batches of 100
+  const batchSize = 100;
+  for (let i = 0; i < rows.length; i += batchSize) {
+    const batch = rows.slice(i, i + batchSize);
+    const { error } = await supabase
       .from('apps')
-      .select('id, countries_found, categories_found, scrape_count')
-      .eq('app_store_id', app.id)
-      .single();
+      .upsert(batch, {
+        onConflict: 'app_store_id',
+        ignoreDuplicates: false,
+      });
 
-    if (existing) {
-      // Update existing app
-      const countriesFound = [...new Set([...(existing.countries_found || []), country])];
-      const categoriesFound = [...new Set([...(existing.categories_found || []), category])];
-
-      const { error } = await supabase
-        .from('apps')
-        .update({
-          name: app.name,
-          bundle_id: app.bundle_id,
-          developer: app.developer,
-          developer_id: app.developer_id,
-          price: app.price,
-          currency: app.currency,
-          rating: app.rating,
-          rating_current_version: app.rating_current_version,
-          review_count: app.review_count,
-          review_count_current_version: app.review_count_current_version,
-          version: app.version,
-          release_date: app.release_date || null,
-          current_version_release_date: app.current_version_release_date || null,
-          min_os_version: app.min_os_version,
-          file_size_bytes: parseInt(app.file_size_bytes) || null,
-          content_rating: app.content_rating,
-          genres: app.genres,
-          primary_genre: app.primary_genre,
-          primary_genre_id: app.primary_genre_id,
-          url: app.url,
-          icon_url: app.icon_url,
-          description: app.description,
-          countries_found: countriesFound,
-          categories_found: categoriesFound,
-          last_updated_at: new Date().toISOString(),
-          scrape_count: (existing.scrape_count || 1) + 1,
-        })
-        .eq('id', existing.id);
-
-      if (!error) updated++;
+    if (error) {
+      console.error(`Batch ${Math.floor(i / batchSize) + 1} error:`, error);
+      errors += batch.length;
     } else {
-      // Insert new app
-      const { error } = await supabase
-        .from('apps')
-        .insert({
-          app_store_id: app.id,
-          name: app.name,
-          bundle_id: app.bundle_id,
-          developer: app.developer,
-          developer_id: app.developer_id,
-          price: app.price,
-          currency: app.currency,
-          rating: app.rating,
-          rating_current_version: app.rating_current_version,
-          review_count: app.review_count,
-          review_count_current_version: app.review_count_current_version,
-          version: app.version,
-          release_date: app.release_date || null,
-          current_version_release_date: app.current_version_release_date || null,
-          min_os_version: app.min_os_version,
-          file_size_bytes: parseInt(app.file_size_bytes) || null,
-          content_rating: app.content_rating,
-          genres: app.genres,
-          primary_genre: app.primary_genre,
-          primary_genre_id: app.primary_genre_id,
-          url: app.url,
-          icon_url: app.icon_url,
-          description: app.description,
-          countries_found: [country],
-          categories_found: [category],
-        });
-
-      if (!error) inserted++;
+      // Count inserts vs updates based on what we knew before
+      for (const row of batch) {
+        if (existingMap.has(row.app_store_id)) {
+          updated++;
+        } else {
+          inserted++;
+        }
+      }
     }
   }
 
-  return { inserted, updated };
+  // Invalidate filter cache if any new apps were inserted (new categories/countries possible)
+  if (inserted > 0) {
+    invalidateFilterCache();
+  }
+
+  return { inserted, updated, errors };
 }
 
 // Get apps with advanced filtering
@@ -366,7 +463,9 @@ export async function getAppsWithFilters(filters: AppFilters): Promise<AppsRespo
     query = query.overlaps('countries_found', countries);
   }
   if (search) {
-    query = query.or(`name.ilike.%${search}%,developer.ilike.%${search}%,bundle_id.ilike.%${search}%`);
+    // SECURITY: Escape special characters to prevent SQL injection
+    const escapedSearch = escapeSearchString(search);
+    query = query.or(`name.ilike.%${escapedSearch}%,developer.ilike.%${escapedSearch}%,bundle_id.ilike.%${escapedSearch}%`);
   }
 
   // Apply sorting
@@ -401,36 +500,109 @@ export async function getAppsWithFilters(filters: AppFilters): Promise<AppsRespo
   };
 }
 
-// Get unique categories from all apps
-export async function getUniqueCategories(): Promise<string[]> {
-  const { data, error } = await supabase
-    .from('apps')
-    .select('categories_found');
-
-  if (error || !data) return [];
-
-  const allCategories = new Set<string>();
-  data.forEach(app => {
-    (app.categories_found || []).forEach((cat: string) => allCategories.add(cat));
-  });
-
-  return Array.from(allCategories).sort();
+// Cache for filter values to prevent repeated full table scans
+// Cache expires after 5 minutes
+interface FilterCache {
+  categories: string[];
+  countries: string[];
+  timestamp: number;
 }
 
-// Get unique countries from all apps
-export async function getUniqueCountries(): Promise<string[]> {
-  const { data, error } = await supabase
-    .from('apps')
-    .select('countries_found');
+let _filterCache: FilterCache | null = null;
+const FILTER_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
-  if (error || !data) return [];
-
+// Internal function to fetch filter data efficiently - single query for both
+async function fetchFiltersFromDb(): Promise<{ categories: string[]; countries: string[] }> {
+  // Use a single query with pagination to reduce memory pressure
+  // Fetch in batches of 1000 to handle large datasets without loading everything
+  const allCategories = new Set<string>();
   const allCountries = new Set<string>();
-  data.forEach(app => {
-    (app.countries_found || []).forEach((country: string) => allCountries.add(country));
-  });
 
-  return Array.from(allCountries).sort();
+  const batchSize = 1000;
+  let offset = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const { data, error } = await supabase
+      .from('apps')
+      .select('categories_found, countries_found')
+      .range(offset, offset + batchSize - 1);
+
+    if (error) {
+      console.error('Error fetching filter values:', error);
+      break;
+    }
+
+    if (!data || data.length === 0) {
+      hasMore = false;
+      break;
+    }
+
+    // Process this batch
+    data.forEach(app => {
+      (app.categories_found || []).forEach((cat: string) => allCategories.add(cat));
+      (app.countries_found || []).forEach((country: string) => allCountries.add(country));
+    });
+
+    // Check if we got a full batch (might be more data)
+    if (data.length < batchSize) {
+      hasMore = false;
+    } else {
+      offset += batchSize;
+    }
+  }
+
+  return {
+    categories: Array.from(allCategories).sort(),
+    countries: Array.from(allCountries).sort(),
+  };
+}
+
+// Get cached filters or fetch from DB
+async function getCachedFilters(): Promise<FilterCache> {
+  const now = Date.now();
+
+  // Return cached data if still valid
+  if (_filterCache && (now - _filterCache.timestamp) < FILTER_CACHE_TTL) {
+    return _filterCache;
+  }
+
+  // Fetch fresh data
+  const { categories, countries } = await fetchFiltersFromDb();
+
+  _filterCache = {
+    categories,
+    countries,
+    timestamp: now,
+  };
+
+  return _filterCache;
+}
+
+// Invalidate filter cache (call after bulk inserts/updates)
+export function invalidateFilterCache(): void {
+  _filterCache = null;
+}
+
+// Get unique categories from all apps - OPTIMIZED with caching
+export async function getUniqueCategories(): Promise<string[]> {
+  const cache = await getCachedFilters();
+  return cache.categories;
+}
+
+// Get unique countries from all apps - OPTIMIZED with caching
+export async function getUniqueCountries(): Promise<string[]> {
+  const cache = await getCachedFilters();
+  return cache.countries;
+}
+
+// Get both filters in a single call - more efficient for dashboard
+export async function getAppsFiltersForDashboard(): Promise<{ categories: string[]; countries: string[] }> {
+  const cache = await getCachedFilters();
+  return {
+    categories: cache.categories,
+    countries: cache.countries,
+  };
 }
 
 // Get apps database stats
@@ -692,7 +864,7 @@ export interface Review {
   id: string;
   title: string;
   content: string;
-  rating: number;
+  rating: number | null;
   author: string;
   version: string;
   vote_count: number;
@@ -1552,7 +1724,9 @@ export async function getGapAppsFiltered(
   }
 
   if (filters.search) {
-    query = query.or(`app_name.ilike.%${filters.search}%,app_developer.ilike.%${filters.search}%`);
+    // SECURITY: Escape special characters to prevent SQL injection
+    const escapedSearch = escapeSearchString(filters.search);
+    query = query.or(`app_name.ilike.%${escapedSearch}%,app_developer.ilike.%${escapedSearch}%`);
   }
 
   const sortColumn = {

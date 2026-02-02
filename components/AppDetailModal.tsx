@@ -9,6 +9,8 @@ import { COUNTRY_CODES } from '@/lib/constants';
 import { useKeywordRanking } from '@/hooks/useKeywordRanking';
 import { useKeywordExtraction } from '@/hooks/useKeywordExtraction';
 import StarRating from './StarRating';
+import { useToast } from '@/components/ui/Toast';
+import { getOperationErrorMessage } from '@/lib/errors';
 
 interface Props {
   app: AppResult;
@@ -75,6 +77,7 @@ const FILTER_INFO: Record<string, { label: string; description: string }> = {
 const POPULAR_COUNTRIES = ['us', 'gb', 'ca', 'au', 'de', 'fr', 'jp', 'in', 'br', 'mx'];
 
 export default function AppDetailModal({ app, country, onClose, onProjectSaved, existingProjectId }: Props) {
+  const toast = useToast();
   const [reviews, setReviews] = useState<Review[]>([]);
   const [stats, setStats] = useState<ReviewStats | null>(null);
   const [loading, setLoading] = useState(false);
@@ -647,9 +650,10 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved, 
       setProjectSaved(true);
       setSavedProjectId(existingProjectId || data.project.id);
       onProjectSaved?.(existingProjectId || data.project.id);
+      toast.success('Project saved successfully');
     } catch (err) {
       console.error('Error saving project:', err);
-      alert('Failed to save project. Please try again.');
+      toast.error(getOperationErrorMessage('save', err));
     } finally {
       setSavingProject(false);
     }

@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import type { ProjectBlueprint } from '@/lib/supabase';
+import { useToast } from '@/components/ui/Toast';
+import { getOperationErrorMessage } from '@/lib/errors';
 
 interface BlueprintExportBarProps {
   blueprint: ProjectBlueprint;
@@ -10,6 +12,7 @@ interface BlueprintExportBarProps {
 
 export default function BlueprintExportBar({ blueprint, exportUrl }: BlueprintExportBarProps) {
   const [isExporting, setIsExporting] = useState(false);
+  const toast = useToast();
 
   const completedCount = [
     blueprint.pareto_status,
@@ -39,9 +42,10 @@ export default function BlueprintExportBar({ blueprint, exportUrl }: BlueprintEx
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
+      toast.success('Blueprint exported successfully');
     } catch (error) {
       console.error('Export failed:', error);
-      alert('Export failed. Please try again.');
+      toast.error(getOperationErrorMessage('export', error));
     } finally {
       setIsExporting(false);
     }
