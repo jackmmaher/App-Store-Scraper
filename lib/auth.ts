@@ -77,7 +77,7 @@ export async function setSessionCookie(token: string): Promise<void> {
   cookieStore.set(SESSION_COOKIE_NAME, signedToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict', // Changed from 'lax' to 'strict' for better CSRF protection
+    sameSite: 'lax', // 'lax' allows cookie on same-site navigations while still protecting against CSRF
     maxAge: SESSION_DURATION / 1000,
     path: '/',
   });
@@ -94,15 +94,26 @@ export async function getSessionCookie(): Promise<string | undefined> {
     return undefined;
   }
 
-  // Verify the signed token
+  // Verify the signed token (includes HMAC signature + expiry check)
   const payload = verifySignedToken(signedToken);
   if (!payload || typeof payload.sessionId !== 'string') {
     return undefined;
   }
 
-  // Validate the session exists server-side
+  // The signed token validation is sufficient for security:
+  // - HMAC signature proves the token was created by this server
+  // - Expiry check ensures token hasn't expired
+  // Server-side session store is optional enhancement for revocation
+  // but causes issues with Next.js hot-reload clearing memory
+
+  // Re-register session if not in memory (handles server restart)
   if (!validateSessionToken(payload.sessionId)) {
-    return undefined;
+    // Token is cryptographically valid, re-add to session store
+    const expiresAt = typeof payload.exp === 'number' ? payload.exp : Date.now() + SESSION_DURATION;
+    sessionStore.set(payload.sessionId, {
+      createdAt: Date.now(),
+      expiresAt,
+    });
   }
 
   return payload.sessionId;

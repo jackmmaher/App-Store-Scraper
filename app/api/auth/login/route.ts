@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { verifyPassword, createSessionToken, setSessionCookie } from '@/lib/auth';
-import { checkRateLimit, getClientIP, getSecurityHeaders } from '@/lib/security';
+import { verifyPassword, createSessionToken } from '@/lib/auth';
+import { checkRateLimit, getClientIP, getSecurityHeaders, createSignedToken } from '@/lib/security';
+
+const SESSION_COOKIE_NAME = 'app_store_scraper_session';
+const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 export async function POST(request: NextRequest) {
   const clientIP = getClientIP(request);
@@ -51,13 +54,26 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Create session token and signed cookie value
     const token = createSessionToken();
-    await setSessionCookie(token);
+    const signedToken = createSignedToken({ sessionId: token }, SESSION_DURATION);
 
-    return NextResponse.json(
+    // Create response with cookie set directly
+    const response = NextResponse.json(
       { success: true },
       { headers: securityHeaders }
     );
+
+    // Set cookie directly on response object
+    response.cookies.set(SESSION_COOKIE_NAME, signedToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax', // Changed from 'strict' to 'lax' for better navigation compatibility
+      maxAge: SESSION_DURATION / 1000,
+      path: '/',
+    });
+
+    return response;
   } catch {
     // Log error server-side only, don't expose details to client
     return NextResponse.json(
