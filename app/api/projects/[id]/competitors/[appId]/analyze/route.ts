@@ -53,10 +53,10 @@ export async function POST(
       }
     }
 
-    // Separate reviews by rating
-    const negativeReviews = reviews.filter(r => r.rating <= 2);
-    const neutralReviews = reviews.filter(r => r.rating === 3);
-    const positiveReviews = reviews.filter(r => r.rating >= 4);
+    // Separate reviews by rating (skip reviews with null ratings)
+    const negativeReviews = reviews.filter(r => r.rating !== null && r.rating <= 2);
+    const neutralReviews = reviews.filter(r => r.rating !== null && r.rating === 3);
+    const positiveReviews = reviews.filter(r => r.rating !== null && r.rating >= 4);
 
     // Sample reviews for analysis
     const sampledNegative = negativeReviews.slice(0, 40);

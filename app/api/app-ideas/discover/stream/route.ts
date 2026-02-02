@@ -44,9 +44,27 @@ export async function POST(request: NextRequest) {
 
   const stream = new ReadableStream({
     async start(controller) {
+      // Track if stream has been closed to prevent double-close errors
+      let streamClosed = false;
+
       const sendEvent = (data: Record<string, unknown>) => {
-        const event = `data: ${JSON.stringify(data)}\n\n`;
-        controller.enqueue(encoder.encode(event));
+        if (streamClosed) return;
+        try {
+          const event = `data: ${JSON.stringify(data)}\n\n`;
+          controller.enqueue(encoder.encode(event));
+        } catch {
+          // Controller might be closed
+        }
+      };
+
+      const closeStream = () => {
+        if (streamClosed) return;
+        streamClosed = true;
+        try {
+          closeStream();
+        } catch {
+          // Already closed
+        }
       };
 
       try {
@@ -54,7 +72,7 @@ export async function POST(request: NextRequest) {
         const session = await createAppIdeaSession(entryType, entryValue, country);
         if (!session) {
           sendEvent({ type: 'error', message: 'Failed to create session' });
-          controller.close();
+          closeStream();
           return;
         }
 
@@ -144,13 +162,13 @@ export async function POST(request: NextRequest) {
             }
             default:
               sendEvent({ type: 'error', message: 'Invalid entry type' });
-              controller.close();
+              closeStream();
               return;
           }
         } catch (err) {
           console.error('Keyword discovery failed:', err);
           sendEvent({ type: 'error', message: 'Failed to discover keywords' });
-          controller.close();
+          closeStream();
           return;
         }
 
@@ -167,7 +185,7 @@ export async function POST(request: NextRequest) {
             discovered_keywords: [],
           });
           sendEvent({ type: 'error', message: 'No keywords discovered. Try a different input.' });
-          controller.close();
+          closeStream();
           return;
         }
 
@@ -191,7 +209,7 @@ export async function POST(request: NextRequest) {
         } catch (err) {
           console.error('Clustering failed:', err);
           sendEvent({ type: 'error', message: 'Failed to cluster keywords. Please try again.' });
-          controller.close();
+          closeStream();
           return;
         }
 
@@ -216,14 +234,14 @@ export async function POST(request: NextRequest) {
           clusters,
         });
 
-        controller.close();
+        closeStream();
       } catch (error) {
         console.error('[POST /api/app-ideas/discover/stream] Error:', error);
         sendEvent({
           type: 'error',
           message: error instanceof Error ? error.message : 'Discovery failed',
         });
-        controller.close();
+        closeStream();
       }
     },
   });

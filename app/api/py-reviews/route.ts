@@ -13,6 +13,17 @@ export const maxDuration = 600; // 10 minutes for large apps
 
 const CRAWL_SERVICE_URL = process.env.CRAWL_SERVICE_URL || 'http://localhost:8000';
 
+// Generate deterministic review ID from content (avoids collisions from Date.now + Math.random)
+async function generateReviewId(author: string, content: string): Promise<string> {
+  const text = `${author}:${content.slice(0, 100)}`;
+  const encoder = new TextEncoder();
+  const data = encoder.encode(text);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  return `review-${hashHex.slice(0, 16)}`;
+}
+
 interface ReviewFilter {
   sort: string;
   target: number;
@@ -156,18 +167,21 @@ export async function POST(request: NextRequest) {
           const abortController = new AbortController();
           const timeoutId = setTimeout(() => abortController.abort(), 5 * 60 * 1000);
 
-          const response = await fetch(`${CRAWL_SERVICE_URL}/crawl/app-store/reviews`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              app_id: appId,
-              country,
-              max_reviews: totalTarget,
-            }),
-            signal: abortController.signal,
-          });
-
-          clearTimeout(timeoutId);
+          let response: Response;
+          try {
+            response = await fetch(`${CRAWL_SERVICE_URL}/crawl/app-store/reviews`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                app_id: appId,
+                country,
+                max_reviews: totalTarget,
+              }),
+              signal: abortController.signal,
+            });
+          } finally {
+            clearTimeout(timeoutId); // Always clear timeout to prevent leaks
+          }
 
           // Stop heartbeat
           isRunning = false;
@@ -189,31 +203,41 @@ export async function POST(request: NextRequest) {
           // Format all reviews to match Review interface
           // Note: rating is null when missing so it can be filtered out in analytics
           // (defaulting to 0 or 5 would bias average rating calculations)
-          const formattedReviews: Review[] = reviews.map((r: Record<string, unknown>) => {
-            // Parse rating - use null for missing/invalid values to avoid biasing analytics
-            const rawRating = r.rating;
-            let rating: number | null = null;
-            if (rawRating !== null && rawRating !== undefined) {
-              const numRating = Number(rawRating);
-              if (!isNaN(numRating) && numRating >= 1 && numRating <= 5) {
-                rating = numRating;
+          const formattedReviews: Review[] = await Promise.all(
+            reviews.map(async (r: Record<string, unknown>) => {
+              // Parse rating - use null for missing/invalid values to avoid biasing analytics
+              const rawRating = r.rating;
+              let rating: number | null = null;
+              if (rawRating !== null && rawRating !== undefined) {
+                const numRating = Number(rawRating);
+                if (!isNaN(numRating) && numRating >= 1 && numRating <= 5) {
+                  rating = numRating;
+                }
               }
-            }
 
-            return {
-              id: String(r.id || `review-${Date.now()}-${Math.random()}`),
-              author: String(r.author || 'Anonymous'),
-              rating,
-              title: String(r.title || ''),
-              content: String(r.content || r.text || ''),
-              version: String(r.version || 'Unknown'),
-              vote_count: Number(r.vote_count || r.helpful_count) || 0,
-              vote_sum: Number(r.vote_sum) || 0,
-              country: String(r.country || country),
-              sort_source: String(r.sort_source || 'mostRecent'),
-              date: String(r.date || r.dateISO || ''),
-            };
-          });
+              const author = String(r.author || 'Anonymous');
+              const content = String(r.content || r.text || '');
+
+              // Use deterministic ID generation to avoid collisions
+              const id = r.id
+                ? String(r.id)
+                : await generateReviewId(author, content);
+
+              return {
+                id,
+                author,
+                rating,
+                title: String(r.title || ''),
+                content,
+                version: String(r.version || 'Unknown'),
+                vote_count: Number(r.vote_count || r.helpful_count) || 0,
+                vote_sum: Number(r.vote_sum) || 0,
+                country: String(r.country || country),
+                sort_source: String(r.sort_source || 'mostRecent'),
+                date: String(r.date || r.dateISO || ''),
+              };
+            })
+          );
 
           // Count reviews per sort source
           const sortCounts: Record<string, number> = {};

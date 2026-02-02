@@ -315,9 +315,13 @@ class handler(BaseHTTPRequestHandler):
 
             try:
                 self.send_sse_event("error", {"message": str(e)})
-            except:
-                self.send_response(500)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.end_headers()
-                self.wfile.write(json.dumps({"error": str(e)}).encode())
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                # Client disconnected, fall back to JSON response
+                try:
+                    self.send_response(500)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": str(e)}).encode())
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    pass  # Client fully disconnected, nothing more to do

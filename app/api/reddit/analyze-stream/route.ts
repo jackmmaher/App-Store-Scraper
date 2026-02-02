@@ -66,9 +66,27 @@ export async function POST(request: NextRequest) {
 
   const stream = new ReadableStream({
     async start(controller) {
+      // Track if stream has been closed to prevent double-close errors
+      let streamClosed = false;
+
       const send = (event: string, data: Record<string, unknown>) => {
-        const sseEvent = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-        controller.enqueue(encoder.encode(sseEvent));
+        if (streamClosed) return;
+        try {
+          const sseEvent = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+          controller.enqueue(encoder.encode(sseEvent));
+        } catch {
+          // Controller might be closed
+        }
+      };
+
+      const closeStream = () => {
+        if (streamClosed) return;
+        streamClosed = true;
+        try {
+          closeStream();
+        } catch {
+          // Already closed
+        }
       };
 
       const crawlServiceUrl = process.env.CRAWL_SERVICE_URL || 'http://localhost:8000';
@@ -124,7 +142,7 @@ export async function POST(request: NextRequest) {
 
         if (validatedSubreddits.length === 0) {
           send('error', { message: 'No valid subreddits found' });
-          controller.close();
+          closeStream();
           return;
         }
 
@@ -157,7 +175,7 @@ export async function POST(request: NextRequest) {
         if (!pass1Response.ok) {
           const errorText = await pass1Response.text();
           send('error', { message: `Crawl service error: ${pass1Response.status}`, details: errorText });
-          controller.close();
+          closeStream();
           return;
         }
 
@@ -266,7 +284,7 @@ export async function POST(request: NextRequest) {
 
         if (posts.length === 0) {
           send('error', { message: 'No Reddit posts found matching the search criteria' });
-          controller.close();
+          closeStream();
           return;
         }
 
@@ -332,7 +350,7 @@ export async function POST(request: NextRequest) {
 
         if (!result) {
           send('error', { message: 'Failed to store analysis results' });
-          controller.close();
+          closeStream();
           return;
         }
 
@@ -403,7 +421,7 @@ export async function POST(request: NextRequest) {
           isTimeout,
         });
       } finally {
-        controller.close();
+        closeStream();
       }
     },
   });

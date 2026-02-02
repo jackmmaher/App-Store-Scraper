@@ -52,9 +52,27 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
+        // Track if stream has been closed to prevent double-close errors
+        let streamClosed = false;
+
         const sendEvent = (type: string, data: Record<string, unknown>) => {
-          const event = `data: ${JSON.stringify({ type, ...data })}\n\n`;
-          controller.enqueue(encoder.encode(event));
+          if (streamClosed) return;
+          try {
+            const event = `data: ${JSON.stringify({ type, ...data })}\n\n`;
+            controller.enqueue(encoder.encode(event));
+          } catch {
+            // Controller might be closed
+          }
+        };
+
+        const closeStream = () => {
+          if (streamClosed) return;
+          streamClosed = true;
+          try {
+            closeStream();
+          } catch {
+            // Already closed
+          }
         };
 
         let countriesCompleted: string[] = [];
@@ -132,7 +150,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             message: error instanceof Error ? error.message : 'Scrape failed',
           });
         } finally {
-          controller.close();
+          closeStream();
         }
       },
     });

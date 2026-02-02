@@ -2409,8 +2409,6 @@ export async function getProjectsByType(
 
 // Get linked competitors for a project
 export async function getLinkedCompetitors(projectId: string): Promise<LinkedCompetitor[]> {
-  console.log('[getLinkedCompetitors] Fetching for project:', projectId);
-
   const { data, error } = await supabase
     .from('app_projects')
     .select('linked_competitors')
@@ -2418,11 +2416,10 @@ export async function getLinkedCompetitors(projectId: string): Promise<LinkedCom
     .single();
 
   if (error) {
-    console.error('[getLinkedCompetitors] Error:', error.message, error.code, error.details);
+    console.error('[getLinkedCompetitors] Error:', error.message);
     return [];
   }
 
-  console.log('[getLinkedCompetitors] Found:', data?.linked_competitors?.length || 0, 'competitors');
   return (data?.linked_competitors as LinkedCompetitor[]) || [];
 }
 
@@ -2431,21 +2428,16 @@ export async function addLinkedCompetitor(
   projectId: string,
   competitor: LinkedCompetitor
 ): Promise<LinkedCompetitor[] | null> {
-  console.log('[addLinkedCompetitor] Adding to project:', projectId, 'competitor:', competitor.name);
-
   // First get existing competitors
   const existing = await getLinkedCompetitors(projectId);
-  console.log('[addLinkedCompetitor] Existing competitors:', existing.length);
 
   // Check if competitor already exists
   if (existing.some(c => c.app_store_id === competitor.app_store_id)) {
-    console.log('[addLinkedCompetitor] Competitor already linked:', competitor.app_store_id);
     return existing;
   }
 
   // Add new competitor
   const updated = [...existing, competitor];
-  console.log('[addLinkedCompetitor] Updating with', updated.length, 'competitors');
 
   const { data, error } = await supabase
     .from('app_projects')
@@ -2458,11 +2450,10 @@ export async function addLinkedCompetitor(
     .single();
 
   if (error) {
-    console.error('[addLinkedCompetitor] Error:', error.message, error.code, error.details, error.hint);
+    console.error('[addLinkedCompetitor] Error:', error.message);
     return null;
   }
 
-  console.log('[addLinkedCompetitor] Success, now has:', data?.linked_competitors?.length || 0, 'competitors');
   return (data?.linked_competitors as LinkedCompetitor[]) || [];
 }
 
@@ -2535,24 +2526,18 @@ export async function addLinkedCompetitors(
   projectId: string,
   competitors: LinkedCompetitor[]
 ): Promise<LinkedCompetitor[] | null> {
-  console.log('[addLinkedCompetitors] Adding', competitors.length, 'competitors to project:', projectId);
-
   // Get existing competitors
   const existing = await getLinkedCompetitors(projectId);
   const existingIds = new Set(existing.map(c => c.app_store_id));
-  console.log('[addLinkedCompetitors] Existing:', existing.length, 'IDs:', [...existingIds]);
 
   // Filter out duplicates and add new ones
   const newCompetitors = competitors.filter(c => !existingIds.has(c.app_store_id));
-  console.log('[addLinkedCompetitors] New competitors to add:', newCompetitors.length);
 
   if (newCompetitors.length === 0) {
-    console.log('[addLinkedCompetitors] All competitors already linked, returning existing');
     return existing;
   }
 
   const updated = [...existing, ...newCompetitors];
-  console.log('[addLinkedCompetitors] Updating with total:', updated.length);
 
   const { data, error } = await supabase
     .from('app_projects')
@@ -2565,11 +2550,10 @@ export async function addLinkedCompetitors(
     .single();
 
   if (error) {
-    console.error('[addLinkedCompetitors] Error:', error.message, error.code, error.details, error.hint);
+    console.error('[addLinkedCompetitors] Error:', error.message);
     return null;
   }
 
-  console.log('[addLinkedCompetitors] Success, now has:', data?.linked_competitors?.length || 0);
   return (data?.linked_competitors as LinkedCompetitor[]) || [];
 }
 
@@ -2737,23 +2721,31 @@ export async function linkRedditAnalysisToCompetitor(
   competitorId: string,
   analysisId: string
 ): Promise<boolean> {
-  // Find projects that have this competitor in their linked_competitors array
-  const { data: projects, error: findError } = await supabaseAdmin
+  // Fetch all projects with linked_competitors and filter in TypeScript
+  // This is more reliable than JSONB containment queries which can be finicky
+  const { data: allProjects, error: findError } = await supabaseAdmin
     .from('app_projects')
     .select('id, linked_competitors')
-    .filter('linked_competitors', 'cs', JSON.stringify([{ app_store_id: competitorId }]));
+    .not('linked_competitors', 'is', null);
 
   if (findError) {
-    console.error('Error finding projects with competitor:', findError);
+    console.error('Error finding projects:', findError);
     return false;
   }
 
-  if (!projects || projects.length === 0) {
+  // Filter projects that have this competitor
+  const projects = (allProjects || []).filter(project => {
+    const competitors = (project.linked_competitors as LinkedCompetitor[]) || [];
+    return competitors.some(c => c.app_store_id === competitorId);
+  });
+
+  if (projects.length === 0) {
     console.warn('No projects found with competitor:', competitorId);
     return false;
   }
 
   // Update each project's linked_competitors to add reddit_analysis_id
+  let successCount = 0;
   for (const project of projects) {
     const competitors = (project.linked_competitors as LinkedCompetitor[]) || [];
     const updated = competitors.map(c => {
@@ -2772,11 +2764,12 @@ export async function linkRedditAnalysisToCompetitor(
       .eq('id', project.id);
 
     if (updateError) {
-      console.error('Error updating linked_competitors:', updateError);
-      return false;
+      console.error('Error updating linked_competitors for project', project.id, ':', updateError);
+    } else {
+      successCount++;
     }
   }
 
-  return true;
+  return successCount > 0;
 }
 

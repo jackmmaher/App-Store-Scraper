@@ -287,7 +287,8 @@ function getSampleReviews(reviews: Review[], count: number): Review[] {
 
   const byRating: Record<number, Review[]> = { 1: [], 2: [], 3: [], 4: [], 5: [] };
   reviews.forEach((r) => {
-    if (byRating[r.rating]) {
+    // Skip reviews with null ratings when sampling by rating
+    if (r.rating !== null && byRating[r.rating]) {
       byRating[r.rating].push(r);
     }
   });

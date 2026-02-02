@@ -238,8 +238,9 @@ async function extractInsightsWithClaude(
 
 function sampleReviewsForAnalysis(reviews: Review[]): Review[] {
   // Prioritize negative reviews (1-3 stars) for pain point discovery
-  const negativeReviews = reviews.filter((r) => r.rating <= 3);
-  const positiveReviews = reviews.filter((r) => r.rating > 3);
+  // Skip reviews with null ratings
+  const negativeReviews = reviews.filter((r) => r.rating !== null && r.rating <= 3);
+  const positiveReviews = reviews.filter((r) => r.rating !== null && r.rating > 3);
 
   // Sample up to 25 negative and 10 positive reviews
   const sampledNegative = negativeReviews.slice(0, 25);

@@ -116,8 +116,8 @@ const WILLINGNESS_PATTERNS = [
  * Prioritizes negative reviews (1-3 stars) for pain point discovery
  */
 export function extractStrugglePhrases(reviews: Review[]): ExtractedPhrase[] {
-  // Filter to negative reviews (1-3 stars)
-  const negativeReviews = reviews.filter(r => r.rating <= 3);
+  // Filter to negative reviews (1-3 stars), skip reviews with null ratings
+  const negativeReviews = reviews.filter(r => r.rating !== null && r.rating <= 3);
 
   const phraseMap = new Map<string, ExtractedPhrase>();
 

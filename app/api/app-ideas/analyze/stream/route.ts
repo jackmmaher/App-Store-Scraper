@@ -55,9 +55,27 @@ export async function POST(request: NextRequest) {
 
   const stream = new ReadableStream({
     async start(controller) {
+      // Track if stream has been closed to prevent double-close errors
+      let streamClosed = false;
+
       const sendEvent = (data: Record<string, unknown>) => {
-        const event = `data: ${JSON.stringify(data)}\n\n`;
-        controller.enqueue(encoder.encode(event));
+        if (streamClosed) return;
+        try {
+          const event = `data: ${JSON.stringify(data)}\n\n`;
+          controller.enqueue(encoder.encode(event));
+        } catch {
+          // Controller might be closed
+        }
+      };
+
+      const closeStream = () => {
+        if (streamClosed) return;
+        streamClosed = true;
+        try {
+          closeStream();
+        } catch {
+          // Already closed
+        }
       };
 
       try {
@@ -227,14 +245,14 @@ export async function POST(request: NextRequest) {
           recommendations,
         });
 
-        controller.close();
+        closeStream();
       } catch (error) {
         console.error('[POST /api/app-ideas/analyze/stream] Error:', error);
         sendEvent({
           type: 'error',
           message: error instanceof Error ? error.message : 'Analysis failed',
         });
-        controller.close();
+        closeStream();
       }
     },
   });

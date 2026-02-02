@@ -129,10 +129,11 @@ class AppStoreBrowserCrawler:
         all_reviews = {}
 
         # Determine which countries to scrape - use more countries for better coverage
+        # Always include the requested country first, then add high-volume countries
         if multi_country and max_reviews > 100:
             priority_countries = ['us', 'gb', 'ca', 'au', 'de', 'fr', 'jp', 'in', 'br', 'mx', 'es', 'it', 'nl', 'kr', 'ru', 'sg']
-            countries_to_scrape = [country] if country not in priority_countries else []
-            countries_to_scrape += [c for c in priority_countries if c != country]
+            # Always start with the requested country, then add other priority countries
+            countries_to_scrape = [country] + [c for c in priority_countries if c != country]
             countries_to_scrape = countries_to_scrape[:12]  # Use 12 countries for better coverage
         else:
             countries_to_scrape = [country]

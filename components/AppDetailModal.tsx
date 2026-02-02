@@ -180,9 +180,9 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved, 
     .sort((a, b) => {
       switch (sortBy) {
         case 'rating-high':
-          return b.rating - a.rating;
+          return (b.rating ?? 0) - (a.rating ?? 0);
         case 'rating-low':
-          return a.rating - b.rating;
+          return (a.rating ?? 0) - (b.rating ?? 0);
         case 'helpful':
           return (b.vote_count || 0) - (a.vote_count || 0);
         default:
@@ -1518,7 +1518,7 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved, 
                             <div className="flex items-start justify-between mb-2">
                               <div>
                                 <div className="flex items-center gap-2">
-                                  <StarRating rating={review.rating} />
+                                  <StarRating rating={review.rating ?? 0} />
                                   <span className="font-medium text-gray-900 dark:text-white">
                                     {review.title}
                                   </span>
