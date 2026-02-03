@@ -3,30 +3,32 @@ import { isAuthenticated } from '@/lib/auth';
 import type { AppResult } from '@/lib/supabase';
 
 interface iTunesResult {
-  trackId: number;
-  trackName: string;
-  bundleId: string;
-  sellerName: string;
-  artistId: number;
-  price: number;
-  currency: string;
-  averageUserRating: number;
-  averageUserRatingForCurrentVersion: number;
-  userRatingCount: number;
-  userRatingCountForCurrentVersion: number;
-  version: string;
-  releaseDate: string;
-  currentVersionReleaseDate: string;
-  minimumOsVersion: string;
-  fileSizeBytes: string;
-  contentAdvisoryRating: string;
-  genres: string[];
-  primaryGenreName: string;
-  primaryGenreId: number;
-  trackViewUrl: string;
-  artworkUrl512: string;
-  artworkUrl100: string;
-  description: string;
+  wrapperType?: string;  // 'software' for apps, 'track' for music, etc.
+  kind?: string;         // 'software' for apps
+  trackId?: number;
+  trackName?: string;
+  bundleId?: string;
+  sellerName?: string;
+  artistId?: number;
+  price?: number;
+  currency?: string;
+  averageUserRating?: number;
+  averageUserRatingForCurrentVersion?: number;
+  userRatingCount?: number;
+  userRatingCountForCurrentVersion?: number;
+  version?: string;
+  releaseDate?: string;
+  currentVersionReleaseDate?: string;
+  minimumOsVersion?: string;
+  fileSizeBytes?: string;
+  contentAdvisoryRating?: string;
+  genres?: string[];
+  primaryGenreName?: string;
+  primaryGenreId?: number;
+  trackViewUrl?: string;
+  artworkUrl512?: string;
+  artworkUrl100?: string;
+  description?: string;
 }
 
 // Parse App Store URL to extract app ID and country code
@@ -81,14 +83,30 @@ function parseAppStoreUrl(input: string): { appId: string; country: string } | n
   }
 }
 
+// Check if iTunes result is a valid iOS app
+function isValidAppResult(item: iTunesResult): boolean {
+  // Must have trackId and be a software/app type
+  if (!item.trackId) return false;
+  // wrapperType 'software' or kind 'software' indicates an app
+  if (item.wrapperType === 'software' || item.kind === 'software') return true;
+  // If no type indicators, check for app-specific fields
+  if (item.bundleId && item.minimumOsVersion) return true;
+  return false;
+}
+
 // Convert iTunes API result to AppResult format
-function convertToAppResult(item: iTunesResult): AppResult {
+function convertToAppResult(item: iTunesResult): AppResult | null {
+  if (!item.trackId) {
+    console.error('Invalid iTunes result: missing trackId', JSON.stringify(item).slice(0, 200));
+    return null;
+  }
+
   return {
     id: item.trackId.toString(),
-    name: item.trackName,
-    bundle_id: item.bundleId,
-    developer: item.sellerName,
-    developer_id: item.artistId.toString(),
+    name: item.trackName || 'Unknown App',
+    bundle_id: item.bundleId || '',
+    developer: item.sellerName || 'Unknown Developer',
+    developer_id: item.artistId?.toString() || '',
     price: item.price || 0,
     currency: item.currency || 'USD',
     rating: item.averageUserRating || 0,
@@ -169,7 +187,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const app = convertToAppResult(data.results[0]);
+    // Find the first valid app result (filter out non-app results like music, podcasts)
+    const appResult = data.results.find((r: iTunesResult) => isValidAppResult(r));
+
+    if (!appResult) {
+      console.error('No valid app in results:', JSON.stringify(data.results.slice(0, 2)).slice(0, 500));
+      return NextResponse.json(
+        { error: 'The ID does not correspond to an iOS app. It may be a music track, podcast, or other content.' },
+        { status: 404 }
+      );
+    }
+
+    const app = convertToAppResult(appResult);
+
+    if (!app) {
+      return NextResponse.json(
+        { error: 'Failed to parse app data from iTunes API' },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({
       app,
