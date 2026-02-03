@@ -10,6 +10,14 @@ interface PaletteOption {
   source_url?: string;
 }
 
+interface PaletteApiResponse {
+  palettes: PaletteOption[];
+  totalCached: number;
+  source: 'crawl_service' | 'fallback' | 'error';
+  category?: string;
+  mood?: string;
+}
+
 type LoadingStage = 'connecting' | 'fetching' | 'processing' | 'done' | 'error';
 
 const LOADING_STAGES: { stage: LoadingStage; label: string; description: string }[] = [
@@ -17,6 +25,10 @@ const LOADING_STAGES: { stage: LoadingStage; label: string; description: string 
   { stage: 'fetching', label: 'Fetching', description: 'Fetching trending palettes from Coolors...' },
   { stage: 'processing', label: 'Processing', description: 'Processing color combinations...' },
 ];
+
+// All available moods for filtering
+const MOOD_OPTIONS = ['all', 'professional', 'calm', 'playful', 'dark', 'bold', 'warm', 'cool', 'light', 'neutral'] as const;
+type MoodFilter = typeof MOOD_OPTIONS[number];
 
 interface PalettePickerModalProps {
   isOpen: boolean;
@@ -39,11 +51,14 @@ export default function PalettePickerModal({
   completedSections,
 }: PalettePickerModalProps) {
   const [palettes, setPalettes] = useState<PaletteOption[]>([]);
+  const [totalCached, setTotalCached] = useState(0);
+  const [dataSource, setDataSource] = useState<'crawl_service' | 'fallback' | 'error'>('crawl_service');
   const [loading, setLoading] = useState(false);
   const [loadingStage, setLoadingStage] = useState<LoadingStage>('connecting');
   const [elapsedTime, setElapsedTime] = useState(0);
   const [selectedPalette, setSelectedPalette] = useState<PaletteOption | null>(null);
   const [regenerateSections, setRegeneateSections] = useState<BlueprintSection[]>([]);
+  const [moodFilter, setMoodFilter] = useState<MoodFilter>('all');
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const startTimeRef = useRef<number>(0);
 
@@ -73,7 +88,7 @@ export default function PalettePickerModal({
     }
   }, [isOpen, appCategory]);
 
-  const fetchPalettes = async () => {
+  const fetchPalettes = async (forceRefresh = false) => {
     setLoading(true);
     setLoadingStage('connecting');
     setElapsedTime(0);
@@ -88,32 +103,38 @@ export default function PalettePickerModal({
       // Simulate stage progression for UX
       setTimeout(() => setLoadingStage('fetching'), 500);
 
-      // Try to fetch from crawl service (15s timeout - includes crawl service's 10s timeout + overhead)
+      // Fetch all cached palettes (up to 50)
       const response = await fetch('/api/blueprint/palettes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           category: appCategory,
-          max_palettes: 10,
-          force_refresh: false,
+          max_palettes: 50,
+          force_refresh: forceRefresh,
         }),
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(forceRefresh ? 25000 : 15000),
       });
 
       setLoadingStage('processing');
 
       if (response.ok) {
-        const data = await response.json();
+        const data: PaletteApiResponse = await response.json();
         setPalettes(data.palettes || []);
+        setTotalCached(data.totalCached || data.palettes?.length || 0);
+        setDataSource(data.source || 'crawl_service');
         setLoadingStage('done');
       } else {
         // Use fallback palettes
         setPalettes(getFallbackPalettes());
+        setTotalCached(getFallbackPalettes().length);
+        setDataSource('fallback');
         setLoadingStage('done');
       }
     } catch (error) {
       console.error('Failed to fetch palettes:', error);
       setPalettes(getFallbackPalettes());
+      setTotalCached(getFallbackPalettes().length);
+      setDataSource('fallback');
       setLoadingStage('error');
     } finally {
       if (timerRef.current) {
@@ -123,6 +144,18 @@ export default function PalettePickerModal({
       setLoading(false);
     }
   };
+
+  const handleRefresh = () => {
+    fetchPalettes(true);
+  };
+
+  // Filter palettes by mood
+  const filteredPalettes = moodFilter === 'all'
+    ? palettes
+    : palettes.filter(p => p.mood === moodFilter);
+
+  // Get unique moods from current palettes
+  const availableMoods = ['all', ...Array.from(new Set(palettes.map(p => p.mood).filter(Boolean)))] as MoodFilter[];
 
   const handleSelectPalette = (palette: PaletteOption) => {
     setSelectedPalette(palette);
@@ -170,17 +203,42 @@ export default function PalettePickerModal({
                 Change Color Palette
               </h2>
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                Select a new palette for your app design
+                {totalCached > 0 ? (
+                  <>
+                    {totalCached} palettes available
+                    {dataSource === 'crawl_service' && (
+                      <span className="ml-1 text-green-600 dark:text-green-400">(from Coolors)</span>
+                    )}
+                    {dataSource === 'fallback' && (
+                      <span className="ml-1 text-amber-600 dark:text-amber-400">(curated)</span>
+                    )}
+                  </>
+                ) : (
+                  'Select a new palette for your app design'
+                )}
               </p>
             </div>
-            <button
-              onClick={onClose}
-              className="p-2 text-gray-400 hover:text-gray-500 dark:hover:text-gray-300"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+            <div className="flex items-center gap-2">
+              {!loading && (
+                <button
+                  onClick={handleRefresh}
+                  className="p-2 text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+                  title="Refresh palettes from Coolors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className="p-2 text-gray-400 hover:text-gray-500 dark:hover:text-gray-300"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
 
           {/* Current Palette */}
@@ -198,8 +256,30 @@ export default function PalettePickerModal({
             </div>
           )}
 
+          {/* Mood Filter */}
+          {!loading && palettes.length > 0 && (
+            <div className="px-4 pt-3 pb-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/30">
+              <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">Filter:</span>
+                {availableMoods.map(mood => (
+                  <button
+                    key={mood}
+                    onClick={() => setMoodFilter(mood)}
+                    className={`px-2.5 py-1 text-xs rounded-full transition-colors flex-shrink-0 ${
+                      moodFilter === mood
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    {mood === 'all' ? `All (${palettes.length})` : `${mood} (${palettes.filter(p => p.mood === mood).length})`}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Palette Grid */}
-          <div className="p-4 max-h-[40vh] overflow-y-auto">
+          <div className="p-4 max-h-[50vh] overflow-y-auto">
             {loading ? (
               <div className="py-8 px-4">
                 {/* Progress Header */}
@@ -287,11 +367,23 @@ export default function PalettePickerModal({
                   </p>
                 )}
               </div>
+            ) : filteredPalettes.length === 0 ? (
+              <div className="py-8 text-center text-gray-500 dark:text-gray-400">
+                <p>No palettes found{moodFilter !== 'all' ? ` with "${moodFilter}" mood` : ''}.</p>
+                {moodFilter !== 'all' && (
+                  <button
+                    onClick={() => setMoodFilter('all')}
+                    className="mt-2 text-blue-500 hover:text-blue-600 text-sm"
+                  >
+                    Show all palettes
+                  </button>
+                )}
+              </div>
             ) : (
               <div className="grid grid-cols-2 gap-3">
-                {palettes.map((palette, i) => (
+                {filteredPalettes.map((palette, i) => (
                   <PaletteCard
-                    key={i}
+                    key={`${palette.colors.join('-')}-${i}`}
                     colors={palette.colors}
                     mood={palette.mood}
                     selected={selectedPalette?.colors.join() === palette.colors.join()}

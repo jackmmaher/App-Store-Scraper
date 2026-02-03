@@ -389,6 +389,14 @@ export interface PaletteResponse {
   mood?: string;
 }
 
+export interface StructuredPaletteResponse {
+  palettes: ColorPalette[];
+  totalCached: number;
+  source: 'crawl_service' | 'fallback';
+  category?: string;
+  mood?: string;
+}
+
 /**
  * Fetch curated color palettes for Design System generation
  *
@@ -453,6 +461,155 @@ export async function getColorPalettesForDesignSystem(
     console.error('Error fetching palettes:', error);
     return getFallbackPalettes(category);
   }
+}
+
+/**
+ * Fetch structured color palettes for UI display
+ *
+ * Returns raw palette data without markdown conversion.
+ * Use this for palette picker modals and other UI components.
+ *
+ * @param category - App Store category for mood matching
+ * @param mood - Optional explicit mood filter
+ * @param maxPalettes - Max palettes to return (default 50 - all cached)
+ * @param forceRefresh - Force re-scrape from Coolors
+ * @returns Structured palette response with metadata
+ */
+export async function getStructuredColorPalettes(
+  category?: string,
+  mood?: string,
+  maxPalettes: number = 50,
+  forceRefresh: boolean = false
+): Promise<StructuredPaletteResponse> {
+  const orchestrator = getCrawlOrchestrator();
+
+  // Check if crawl service is available
+  const isAvailable = await orchestrator.isAvailable();
+  if (!isAvailable) {
+    console.log('Crawl service unavailable, using fallback palettes');
+    const fallback = getStructuredFallbackPalettes(category);
+    return {
+      palettes: fallback,
+      totalCached: fallback.length,
+      source: 'fallback',
+      category,
+      mood,
+    };
+  }
+
+  try {
+    const baseUrl = orchestrator.getBaseUrl();
+    const response = await fetch(`${baseUrl}/crawl/palettes`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        category,
+        mood,
+        max_palettes: maxPalettes,
+        force_refresh: forceRefresh,
+      }),
+      signal: AbortSignal.timeout(forceRefresh ? 20000 : 10000),
+    });
+
+    if (!response.ok) {
+      console.error('Palette fetch failed:', response.status);
+      const fallback = getStructuredFallbackPalettes(category);
+      return {
+        palettes: fallback,
+        totalCached: fallback.length,
+        source: 'fallback',
+        category,
+        mood,
+      };
+    }
+
+    const data: PaletteResponse = await response.json();
+    console.log(`Received ${data.palettes?.length || 0} palettes (total cached: ${data.total_cached || 'unknown'})`);
+
+    if (data.palettes && data.palettes.length > 0) {
+      // Shuffle for variety on each request
+      const shuffled = shuffleArray([...data.palettes]);
+      return {
+        palettes: shuffled,
+        totalCached: data.total_cached || shuffled.length,
+        source: 'crawl_service',
+        category: data.category,
+        mood: data.mood,
+      };
+    }
+
+    const fallback = getStructuredFallbackPalettes(category);
+    return {
+      palettes: fallback,
+      totalCached: fallback.length,
+      source: 'fallback',
+      category,
+      mood,
+    };
+  } catch (error) {
+    console.error('Error fetching palettes:', error);
+    const fallback = getStructuredFallbackPalettes(category);
+    return {
+      palettes: fallback,
+      totalCached: fallback.length,
+      source: 'fallback',
+      category,
+      mood,
+    };
+  }
+}
+
+/**
+ * Structured fallback palettes for direct use in UI
+ */
+function getStructuredFallbackPalettes(category?: string): ColorPalette[] {
+  const allPalettes: ColorPalette[] = [
+    // Professional
+    { colors: ['264653', '2A9D8F', 'E9C46A', 'F4A261', 'E76F51'], mood: 'professional' },
+    { colors: ['003049', 'D62828', 'F77F00', 'FCBF49', 'EAE2B7'], mood: 'professional' },
+    { colors: ['1D3557', '457B9D', 'A8DADC', 'F1FAEE', 'E63946'], mood: 'professional' },
+    { colors: ['2B2D42', '8D99AE', 'EDF2F4', 'EF233C', 'D80032'], mood: 'professional' },
+    { colors: ['000814', '001D3D', '003566', 'FFC300', 'FFD60A'], mood: 'professional' },
+    // Calm
+    { colors: ['606C38', '283618', 'FEFAE0', 'DDA15E', 'BC6C25'], mood: 'calm' },
+    { colors: ['CCD5AE', 'E9EDC9', 'FEFAE0', 'FAEDCD', 'D4A373'], mood: 'calm' },
+    { colors: ['F8F9FA', 'E9ECEF', 'DEE2E6', 'CED4DA', 'ADB5BD'], mood: 'calm' },
+    { colors: ['A7C957', '6A994E', '386641', 'BC4749', 'F2E8CF'], mood: 'calm' },
+    // Playful
+    { colors: ['FF6B6B', '4ECDC4', '45B7D1', '96CEB4', 'FFEAA7'], mood: 'playful' },
+    { colors: ['F72585', 'B5179E', '7209B7', '560BAD', '480CA8'], mood: 'playful' },
+    { colors: ['FFBE0B', 'FB5607', 'FF006E', '8338EC', '3A86FF'], mood: 'playful' },
+    { colors: ['70D6FF', 'FF70A6', 'FF9770', 'FFD670', 'E9FF70'], mood: 'playful' },
+    { colors: ['F94144', 'F3722C', 'F8961E', 'F9C74F', '90BE6D'], mood: 'playful' },
+    // Dark
+    { colors: ['0D1B2A', '1B263B', '415A77', '778DA9', 'E0E1DD'], mood: 'dark' },
+    { colors: ['14213D', 'FCA311', 'E5E5E5', '000000', 'FFFFFF'], mood: 'dark' },
+    { colors: ['212529', '343A40', '495057', '6C757D', 'ADB5BD'], mood: 'dark' },
+    { colors: ['10002B', '240046', '3C096C', '5A189A', '7B2CBF'], mood: 'dark' },
+    // Bold
+    { colors: ['03071E', '370617', '6A040F', '9D0208', 'D00000'], mood: 'bold' },
+    // Warm
+    { colors: ['D4A373', 'CCD5AE', 'E9EDC9', 'FEFAE0', 'FAEDCD'], mood: 'warm' },
+    { colors: ['BC6C25', 'DDA15E', 'FEFAE0', '283618', '606C38'], mood: 'warm' },
+    { colors: ['FFCDB2', 'FFB4A2', 'E5989B', 'B5838D', '6D6875'], mood: 'warm' },
+    { colors: ['FF9F1C', 'FFBF69', 'FFFFFF', 'CBF3F0', '2EC4B6'], mood: 'warm' },
+    // Cool
+    { colors: ['03045E', '0077B6', '00B4D8', '90E0EF', 'CAF0F8'], mood: 'cool' },
+    { colors: ['184E77', '1E6091', '1A759F', '168AAD', '34A0A4'], mood: 'cool' },
+    { colors: ['22223B', '4A4E69', '9A8C98', 'C9ADA7', 'F2E9E4'], mood: 'cool' },
+    { colors: ['006D77', '83C5BE', 'EDF6F9', 'FFDDD2', 'E29578'], mood: 'cool' },
+    // Light
+    { colors: ['FFFFFF', 'F0EFEB', 'DFE7E7', 'C9CAD0', 'AAB0BC'], mood: 'light' },
+    { colors: ['FEFCFB', 'F8F0E3', 'EDE6DB', 'E5DDD3', 'D8CFC4'], mood: 'light' },
+    // Neutral
+    { colors: ['2D3436', '636E72', 'B2BEC3', 'DFE6E9', 'FFFFFF'], mood: 'neutral' },
+    { colors: ['1A1A2E', '16213E', '0F3460', 'E94560', 'FFFFFF'], mood: 'neutral' },
+    { colors: ['2C3E50', '3498DB', 'ECF0F1', 'E74C3C', 'F39C12'], mood: 'neutral' },
+  ];
+
+  return allPalettes;
 }
 
 /**

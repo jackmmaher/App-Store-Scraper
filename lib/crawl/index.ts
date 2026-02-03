@@ -21,6 +21,7 @@ export {
   getWebsiteEnrichmentForCompetitors,
   getEnrichmentForBlueprint,
   getColorPalettesForDesignSystem,
+  getStructuredColorPalettes,
   getFontsForDesignSystem,
   getFontPairingsForDesignSystem,
   getColorSpectrumForPrimary,
@@ -38,6 +39,7 @@ export {
 export type {
   ColorPalette,
   PaletteResponse,
+  StructuredPaletteResponse,
   GoogleFontData,
   FontPairingData,
   FontsResponse,
