@@ -13,6 +13,15 @@ from .base import BaseCrawler
 logger = logging.getLogger(__name__)
 
 
+def safe_get(obj, *keys, default=""):
+    """Safely get nested dict values, returning default if any key is missing or type is wrong."""
+    for key in keys:
+        if not isinstance(obj, dict):
+            return default
+        obj = obj.get(key, default)
+    return obj if obj is not None else default
+
+
 class AppStoreCrawler(BaseCrawler):
     """Crawl App Store reviews using iTunes RSS API"""
 
@@ -83,7 +92,17 @@ class AppStoreCrawler(BaseCrawler):
                         continue
 
                     feed = data.get("feed", {})
+                    if not isinstance(feed, dict):
+                        logger.warning(f"Feed is not a dict for {sort_by} page {page}: {type(feed).__name__}")
+                        consecutive_empty += 1
+                        if consecutive_empty >= 5:
+                            break
+                        continue
+
                     entries = feed.get("entry", [])
+                    # Ensure entries is a list
+                    if not isinstance(entries, list):
+                        entries = [entries] if entries else []
 
                     if not entries:
                         consecutive_empty += 1
@@ -98,18 +117,20 @@ class AppStoreCrawler(BaseCrawler):
                     new_reviews_this_page = 0
 
                     for entry in entries:
-                        # Skip app info entry
-                        if "im:rating" not in entry:
+                        # Skip non-dict entries and app info entry
+                        if not isinstance(entry, dict) or "im:rating" not in entry:
                             continue
 
-                        review_id = entry.get("id", {}).get("label", "")
+                        # Safely extract nested values
+                        id_obj = entry.get("id", {})
+                        review_id = id_obj.get("label", "") if isinstance(id_obj, dict) else ""
                         if not review_id or review_id in all_reviews:
                             continue
 
                         # Parse rating - use None for missing/invalid to avoid biasing analytics
                         try:
-                            rating_label = entry.get("im:rating", {}).get("label")
-                            if rating_label is not None:
+                            rating_label = safe_get(entry, "im:rating", "label")
+                            if rating_label:
                                 rating = int(rating_label)
                                 if rating < 1 or rating > 5:
                                     rating = None
@@ -125,17 +146,18 @@ class AppStoreCrawler(BaseCrawler):
                             continue
 
                         try:
-                            vote_count = int(entry.get("im:voteCount", {}).get("label", "0"))
+                            vote_label = safe_get(entry, "im:voteCount", "label", default="0")
+                            vote_count = int(vote_label) if vote_label else 0
                         except (ValueError, TypeError):
                             vote_count = 0
 
                         review = {
                             "id": review_id,
-                            "title": entry.get("title", {}).get("label", ""),
-                            "content": entry.get("content", {}).get("label", ""),
+                            "title": safe_get(entry, "title", "label"),
+                            "content": safe_get(entry, "content", "label"),
                             "rating": rating,
-                            "author": entry.get("author", {}).get("name", {}).get("label", ""),
-                            "version": entry.get("im:version", {}).get("label", ""),
+                            "author": safe_get(entry, "author", "name", "label"),
+                            "version": safe_get(entry, "im:version", "label"),
                             "vote_count": vote_count,
                             "country": current_country,
                             "sort_source": sort_by,
