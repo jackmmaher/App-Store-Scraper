@@ -20,6 +20,10 @@ const LOADING_STAGES: { stage: LoadingStage; label: string; description: string 
   { stage: 'processing', label: 'Processing', description: 'Processing font combinations...' },
 ];
 
+// All available styles for filtering
+const STYLE_OPTIONS = ['all', 'modern', 'professional', 'editorial', 'friendly', 'technical', 'bold', 'classic'] as const;
+type StyleFilter = typeof STYLE_OPTIONS[number];
+
 interface FontPickerModalProps {
   isOpen: boolean;
   currentTypography: BlueprintTypography | null;
@@ -48,6 +52,7 @@ export default function FontPickerModal({
   const [regenerateSections, setRegenerateSections] = useState<BlueprintSection[]>([]);
   const [dataSource, setDataSource] = useState<'scraped' | 'fallback'>('fallback');
   const [totalAvailable, setTotalAvailable] = useState(0);
+  const [styleFilter, setStyleFilter] = useState<StyleFilter>('all');
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const startTimeRef = useRef<number>(0);
 
@@ -80,13 +85,13 @@ export default function FontPickerModal({
       // Simulate stage progression for UX
       setTimeout(() => setLoadingStage('fetching'), 500);
 
-      // Fetch structured font pairings from API
+      // Fetch all font pairings from API (up to 50)
       const response = await fetch('/api/blueprint/fonts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           category: appCategory,
-          maxPairings: 12,
+          maxPairings: 50,
           forceRefresh,
         }),
         signal: AbortSignal.timeout(forceRefresh ? 30000 : 15000),
@@ -146,6 +151,14 @@ export default function FontPickerModal({
   const handleRefresh = () => {
     fetchPairings(true);
   };
+
+  // Filter pairings by style
+  const filteredPairings = styleFilter === 'all'
+    ? pairings
+    : pairings.filter(p => p.style === styleFilter);
+
+  // Get unique styles from current pairings
+  const availableStyles = ['all', ...Array.from(new Set(pairings.map(p => p.style).filter(Boolean)))] as StyleFilter[];
 
   const handleSelectPairing = (pairing: FontPairingOption) => {
     setSelectedPairing(pairing);
@@ -264,21 +277,43 @@ export default function FontPickerModal({
                       <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                       </svg>
-                      Scraped from FontPair + Google Fonts
+                      From FontPair + Google Fonts
                     </>
                   ) : (
                     <>
                       <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
                       </svg>
-                      Using curated fallback pairings
+                      Curated pairings
                     </>
                   )}
                 </span>
               </div>
               <span className="text-xs text-gray-400">
-                {pairings.length} of {totalAvailable} pairings
+                {totalAvailable} pairings available
               </span>
+            </div>
+          )}
+
+          {/* Style Filter */}
+          {!loading && pairings.length > 0 && (
+            <div className="px-4 pt-2 pb-2 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">Style:</span>
+                {availableStyles.map(style => (
+                  <button
+                    key={style}
+                    onClick={() => setStyleFilter(style)}
+                    className={`px-2.5 py-1 text-xs rounded-full transition-colors flex-shrink-0 capitalize ${
+                      styleFilter === style
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    {style === 'all' ? `All (${pairings.length})` : `${style} (${pairings.filter(p => p.style === style).length})`}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
@@ -358,9 +393,21 @@ export default function FontPickerModal({
                   />
                 </div>
               </div>
+            ) : filteredPairings.length === 0 ? (
+              <div className="py-8 text-center text-gray-500 dark:text-gray-400">
+                <p>No pairings found{styleFilter !== 'all' ? ` with "${styleFilter}" style` : ''}.</p>
+                {styleFilter !== 'all' && (
+                  <button
+                    onClick={() => setStyleFilter('all')}
+                    className="mt-2 text-blue-500 hover:text-blue-600 text-sm"
+                  >
+                    Show all pairings
+                  </button>
+                )}
+              </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {pairings.map((pairing, i) => (
+                {filteredPairings.map((pairing, i) => (
                   <FontPairingCard
                     key={`${pairing.heading_font}-${pairing.body_font}-${i}`}
                     headingFont={pairing.heading_font}

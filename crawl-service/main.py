@@ -777,18 +777,25 @@ async def get_font_pairs(request: FontPairsRequest):
     Get curated font pairing suggestions.
 
     Returns heading + body font combinations matched to app style.
+    Pairings are accumulated over time from scraping + curated fallbacks.
     """
-    logger.info(f"Fetching font pairings (category={request.category}, style={request.style})")
+    logger.info(f"Fetching font pairings (category={request.category}, style={request.style}, max={request.max_pairings})")
 
     try:
-        all_pairings = await get_font_pairings(force_refresh=request.force_refresh)
+        # Get all accumulated pairings (up to 50)
+        all_pairings = await get_font_pairings(
+            force_refresh=request.force_refresh,
+            max_pairings=50,  # Get full collection
+        )
 
         if not all_pairings:
             return {
                 "pairings": [],
+                "total_pairings": 0,
                 "message": "No pairings available",
             }
 
+        # Select/filter based on style preference
         selected = select_pairings_for_style(
             pairings=all_pairings,
             style=request.style,
@@ -798,7 +805,8 @@ async def get_font_pairs(request: FontPairsRequest):
 
         return {
             "pairings": [p.to_dict() for p in selected],
-            "total_available": len(all_pairings),
+            "total_pairings": len(all_pairings),
+            "total_available": len(all_pairings),  # For backwards compatibility
             "category": request.category,
             "style": request.style,
         }

@@ -699,18 +699,42 @@ const FALLBACK_FONT_PAIRINGS: FontPairingData[] = [
   { heading_font: 'Space Grotesk', body_font: 'Inter', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'modern' },
   { heading_font: 'Plus Jakarta Sans', body_font: 'Inter', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'modern' },
   { heading_font: 'Manrope', body_font: 'Inter', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'modern' },
+  { heading_font: 'DM Sans', body_font: 'DM Sans', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'modern' },
+  { heading_font: 'Outfit', body_font: 'Inter', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'modern' },
   // Professional
   { heading_font: 'Poppins', body_font: 'Open Sans', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'professional' },
   { heading_font: 'Montserrat', body_font: 'Roboto', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'professional' },
+  { heading_font: 'Work Sans', body_font: 'Lato', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'professional' },
+  { heading_font: 'Nunito', body_font: 'Open Sans', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'professional' },
+  { heading_font: 'Raleway', body_font: 'Roboto', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'professional' },
   // Editorial
   { heading_font: 'Playfair Display', body_font: 'Lato', heading_category: 'serif', body_category: 'sans-serif', style: 'editorial' },
+  { heading_font: 'Playfair Display', body_font: 'Source Sans Pro', heading_category: 'serif', body_category: 'sans-serif', style: 'editorial' },
   { heading_font: 'Merriweather', body_font: 'Open Sans', heading_category: 'serif', body_category: 'sans-serif', style: 'editorial' },
+  { heading_font: 'Lora', body_font: 'Roboto', heading_category: 'serif', body_category: 'sans-serif', style: 'editorial' },
+  { heading_font: 'Crimson Pro', body_font: 'Work Sans', heading_category: 'serif', body_category: 'sans-serif', style: 'editorial' },
+  { heading_font: 'Cormorant Garamond', body_font: 'Proza Libre', heading_category: 'serif', body_category: 'sans-serif', style: 'editorial' },
   // Friendly
+  { heading_font: 'Poppins', body_font: 'Poppins', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'friendly' },
   { heading_font: 'Nunito', body_font: 'Nunito', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'friendly' },
   { heading_font: 'Quicksand', body_font: 'Open Sans', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'friendly' },
+  { heading_font: 'Comfortaa', body_font: 'Open Sans', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'friendly' },
+  { heading_font: 'Varela Round', body_font: 'Open Sans', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'friendly' },
   // Technical
   { heading_font: 'Space Grotesk', body_font: 'JetBrains Mono', heading_category: 'sans-serif', body_category: 'monospace', style: 'technical' },
   { heading_font: 'Inter', body_font: 'Fira Code', heading_category: 'sans-serif', body_category: 'monospace', style: 'technical' },
+  { heading_font: 'Roboto', body_font: 'Source Code Pro', heading_category: 'sans-serif', body_category: 'monospace', style: 'technical' },
+  { heading_font: 'IBM Plex Sans', body_font: 'IBM Plex Mono', heading_category: 'sans-serif', body_category: 'monospace', style: 'technical' },
+  // Bold/Impactful
+  { heading_font: 'Sora', body_font: 'Inter', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'bold' },
+  { heading_font: 'Outfit', body_font: 'Inter', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'bold' },
+  { heading_font: 'Lexend', body_font: 'Lexend', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'bold' },
+  { heading_font: 'Archivo Black', body_font: 'Roboto', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'bold' },
+  // Classic/Timeless
+  { heading_font: 'Source Serif Pro', body_font: 'Source Sans Pro', heading_category: 'serif', body_category: 'sans-serif', style: 'classic' },
+  { heading_font: 'Libre Baskerville', body_font: 'Source Sans Pro', heading_category: 'serif', body_category: 'sans-serif', style: 'classic' },
+  { heading_font: 'EB Garamond', body_font: 'Open Sans', heading_category: 'serif', body_category: 'sans-serif', style: 'classic' },
+  { heading_font: 'Cormorant', body_font: 'Proza Libre', heading_category: 'serif', body_category: 'sans-serif', style: 'classic' },
 ];
 
 /**
@@ -725,7 +749,7 @@ const FALLBACK_FONT_PAIRINGS: FontPairingData[] = [
 export async function getStructuredFontPairings(
   category?: string,
   style?: string,
-  maxPairings: number = 12,
+  maxPairings: number = 50,
   forceRefresh: boolean = false
 ): Promise<{ pairings: FontPairingData[]; source: 'scraped' | 'fallback'; totalAvailable: number }> {
   const orchestrator = getCrawlOrchestrator();

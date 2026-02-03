@@ -181,8 +181,14 @@ def get_fallback_pairings() -> List[FontPairing]:
     return [FontPairing.from_dict(p) for p in pairings_data]
 
 
-def load_cached_pairings() -> Optional[List[FontPairing]]:
-    """Load pairings from cache"""
+def load_cached_pairings(check_expiry: bool = True) -> Optional[List[FontPairing]]:
+    """
+    Load pairings from cache.
+
+    Args:
+        check_expiry: If True, return None if cache is expired (for triggering refresh).
+                      If False, always return cached pairings (for accumulation).
+    """
     if not FONTPAIR_CACHE_FILE.exists():
         return None
 
@@ -191,12 +197,14 @@ def load_cached_pairings() -> Optional[List[FontPairing]]:
             cache = json.load(f)
 
         cached_at = datetime.fromisoformat(cache.get('cached_at', '2000-01-01'))
-        if datetime.now() - cached_at > timedelta(hours=CACHE_MAX_AGE_HOURS):
-            logger.info("Font pairing cache expired")
+        is_expired = datetime.now() - cached_at > timedelta(hours=CACHE_MAX_AGE_HOURS)
+
+        if check_expiry and is_expired:
+            logger.info("Font pairing cache expired, will refresh and accumulate")
             return None
 
         pairings = [FontPairing.from_dict(p) for p in cache.get('pairings', [])]
-        logger.info(f"Loaded {len(pairings)} font pairings from cache")
+        logger.info(f"Loaded {len(pairings)} font pairings from cache (expired={is_expired})")
         return pairings
 
     except Exception as e:
@@ -204,14 +212,42 @@ def load_cached_pairings() -> Optional[List[FontPairing]]:
         return None
 
 
-def save_pairings_to_cache(pairings: List[FontPairing]):
-    """Save pairings to cache using atomic write"""
+def save_pairings_to_cache(pairings: List[FontPairing], accumulate: bool = True):
+    """
+    Save pairings to cache using atomic write.
+
+    Args:
+        pairings: New pairings to save
+        accumulate: If True, merge with existing cache. If False, replace entirely.
+    """
     try:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
+        all_pairings = pairings
+
+        if accumulate:
+            # Load existing pairings (ignore expiry for accumulation)
+            existing = load_cached_pairings(check_expiry=False) or []
+
+            # Deduplicate by heading+body font combination
+            existing_keys = {(p.heading_font, p.body_font) for p in existing}
+
+            # Add new pairings that don't already exist
+            added_count = 0
+            for p in pairings:
+                key = (p.heading_font, p.body_font)
+                if key not in existing_keys:
+                    existing.append(p)
+                    existing_keys.add(key)
+                    added_count += 1
+
+            all_pairings = existing
+            logger.info(f"Accumulated {added_count} new pairings, total now: {len(all_pairings)}")
+
         cache = {
             'cached_at': datetime.now().isoformat(),
-            'pairings': [p.to_dict() for p in pairings],
+            'total_accumulated': len(all_pairings),
+            'pairings': [p.to_dict() for p in all_pairings],
         }
 
         # Atomic write: write to temp file, then rename
@@ -220,34 +256,65 @@ def save_pairings_to_cache(pairings: List[FontPairing]):
             temp_path = f.name
 
         os.replace(temp_path, FONTPAIR_CACHE_FILE)  # Atomic on most systems
-        logger.info(f"Saved {len(pairings)} font pairings to cache")
+        logger.info(f"Saved {len(all_pairings)} font pairings to cache")
 
     except Exception as e:
         logger.error(f"Error saving font pairing cache: {e}")
 
 
-async def get_font_pairings(force_refresh: bool = False) -> List[FontPairing]:
+async def get_font_pairings(force_refresh: bool = False, max_pairings: int = 50) -> List[FontPairing]:
     """
-    Get font pairings with caching.
+    Get font pairings with accumulating cache.
+
+    Pairings are accumulated over time - each scrape adds new unique pairings
+    to the collection rather than replacing it.
 
     Args:
-        force_refresh: Force fetching fresh data
+        force_refresh: Force fetching fresh data from FontPair (still accumulates)
+        max_pairings: Maximum number of pairings to return
 
     Returns:
-        List of FontPairing objects
+        List of FontPairing objects from accumulated collection
     """
     import asyncio
 
-    if not force_refresh:
-        cached = await asyncio.to_thread(load_cached_pairings)  # Non-blocking
-        if cached:
-            return cached
+    # Check if we should scrape (cache expired or force refresh)
+    should_scrape = force_refresh
+    cached = await asyncio.to_thread(load_cached_pairings, True)  # check_expiry=True
 
-    pairings = await scrape_fontpair()
-    if pairings:
-        await asyncio.to_thread(save_pairings_to_cache, pairings)  # Non-blocking
+    if cached is None:
+        # Cache expired or doesn't exist - need to scrape
+        should_scrape = True
+        # But still load existing pairings for accumulation
+        cached = await asyncio.to_thread(load_cached_pairings, False) or []  # check_expiry=False
 
-    return pairings
+    if should_scrape:
+        logger.info("Scraping fresh font pairings from FontPair...")
+        try:
+            new_pairings = await scrape_fontpair()
+
+            if new_pairings and len(new_pairings) > 0:
+                # Accumulate new pairings with existing
+                await asyncio.to_thread(save_pairings_to_cache, new_pairings, True)  # accumulate=True
+                # Reload to get full accumulated set
+                cached = await asyncio.to_thread(load_cached_pairings, False) or new_pairings
+
+        except Exception as e:
+            logger.error(f"Error scraping font pairings: {e}")
+            # Return cached if available, otherwise use fallback
+            if not cached:
+                logger.info("No cached pairings, using fallback collection")
+                cached = get_fallback_pairings()
+                await asyncio.to_thread(save_pairings_to_cache, cached, False)  # accumulate=False
+
+    # If still no cached pairings (shouldn't happen, but safety check)
+    if not cached:
+        logger.info("No pairings available, using fallback collection")
+        cached = get_fallback_pairings()
+        await asyncio.to_thread(save_pairings_to_cache, cached, False)
+
+    logger.info(f"Returning {min(len(cached), max_pairings)} pairings from collection of {len(cached)}")
+    return cached[:max_pairings]
 
 
 def select_pairings_for_style(
