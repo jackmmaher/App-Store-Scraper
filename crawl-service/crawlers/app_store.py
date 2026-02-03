@@ -51,9 +51,23 @@ class AppStoreCrawler(BaseCrawler):
         # Try multiple countries for RSS to maximize coverage
         countries_to_try = [country]
         if max_reviews > 500:
-            additional_countries = ['us', 'gb', 'ca', 'au', 'de', 'fr']
-            countries_to_try += [c for c in additional_countries if c != country]
-            countries_to_try = countries_to_try[:4]  # Limit to 4 countries for RSS
+            # Tier 1: High-volume English-speaking markets
+            tier1 = ['us', 'gb', 'ca', 'au']
+            # Tier 2: Major European markets
+            tier2 = ['de', 'fr', 'es', 'it', 'nl']
+            # Tier 3: Other significant markets
+            tier3 = ['jp', 'br', 'mx', 'in', 'kr']
+
+            all_countries = tier1 + tier2 + tier3
+            countries_to_try = [country] + [c for c in all_countries if c != country]
+
+            # Scale countries based on max_reviews target
+            if max_reviews >= 3000:
+                countries_to_try = countries_to_try[:10]  # 10 countries for 3000+ target
+            elif max_reviews >= 1500:
+                countries_to_try = countries_to_try[:6]   # 6 countries for 1500+ target
+            else:
+                countries_to_try = countries_to_try[:4]   # 4 countries for smaller targets
 
         for current_country in countries_to_try:
             if len(all_reviews) >= max_reviews:
@@ -174,6 +188,10 @@ class AppStoreCrawler(BaseCrawler):
 
                 # Delay between sort types
                 await asyncio.sleep(random.uniform(0.5, 1.0))
+
+            # Extra delay between countries for large scrapes to avoid rate limiting
+            if len(countries_to_try) > 4:
+                await asyncio.sleep(random.uniform(1.0, 2.0))
 
         logger.info(f"RSS review crawl complete: {len(all_reviews)} unique reviews collected from {len(countries_to_try)} countries")
         return list(all_reviews.values())[:max_reviews]
