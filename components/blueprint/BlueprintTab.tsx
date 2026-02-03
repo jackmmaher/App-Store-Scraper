@@ -4,28 +4,31 @@ import { useState, useEffect, useCallback } from 'react';
 import type { BlueprintSection as BlueprintSectionType, BlueprintAttachment, ProjectBlueprint, BlueprintColorPalette } from '@/lib/supabase';
 import { useBlueprint } from '@/hooks/useBlueprint';
 import { useBlueprintGenerate } from '@/hooks/useBlueprintGenerate';
-import BlueprintSectionNav from './BlueprintSectionNav';
+import BlueprintSectionNav, { type BlueprintNavSection } from './BlueprintSectionNav';
 import BlueprintSectionComponent from './BlueprintSection';
 import BlueprintExportBar from './BlueprintExportBar';
 import PalettePickerModal from './PalettePickerModal';
+import BlueprintNotesSection from './BlueprintNotesSection';
 
 interface BlueprintTabProps {
   projectId: string;
 }
 
 export default function BlueprintTab({ projectId }: BlueprintTabProps) {
-  const [activeSection, setActiveSection] = useState<BlueprintSectionType>('pareto');
+  const [activeSection, setActiveSection] = useState<BlueprintNavSection>('pareto');
   const [paletteModalOpen, setPaletteModalOpen] = useState(false);
 
   const {
     blueprint,
     attachments,
+    projectNotes,
     loading,
     error,
     uploadAttachment,
     deleteAttachment,
     refreshAttachments,
     getExportUrl,
+    syncNotesSnapshot,
     setBlueprint,
   } = useBlueprint({ projectId });
 
@@ -54,14 +57,15 @@ export default function BlueprintTab({ projectId }: BlueprintTabProps) {
 
   // Handle generate
   const handleGenerate = useCallback(() => {
-    if (blueprint) {
-      generateSection(activeSection, blueprint.id);
+    if (blueprint && activeSection !== 'notes') {
+      generateSection(activeSection as BlueprintSectionType, blueprint.id);
     }
   }, [blueprint, activeSection, generateSection]);
 
   // Handle upload
   const handleUpload = useCallback(async (file: File, screenLabel?: string): Promise<BlueprintAttachment | null> => {
-    return uploadAttachment(activeSection, file, screenLabel);
+    if (activeSection === 'notes') return null;
+    return uploadAttachment(activeSection as BlueprintSectionType, file, screenLabel);
   }, [activeSection, uploadAttachment]);
 
   // Handle palette change
@@ -194,6 +198,14 @@ export default function BlueprintTab({ projectId }: BlueprintTabProps) {
     .filter(([, status]) => status === 'completed')
     .map(([section]) => section as BlueprintSectionType);
 
+  // Check if notes are out of sync
+  const hasNotes = Boolean(projectNotes?.trim());
+  const hasSnapshot = Boolean(blueprint.notes_snapshot?.trim());
+  const notesOutOfSync = hasSnapshot && projectNotes !== blueprint.notes_snapshot;
+
+  // Check if this is first generation (no sections completed yet)
+  const isFirstGeneration = Object.values(statuses).every(s => s !== 'completed');
+
   return (
     <div className="flex flex-col h-full">
       {/* Section Navigation */}
@@ -202,6 +214,8 @@ export default function BlueprintTab({ projectId }: BlueprintTabProps) {
         onSectionChange={setActiveSection}
         statuses={statuses}
         generatingSection={currentSection}
+        hasNotes={hasNotes || hasSnapshot}
+        notesOutOfSync={notesOutOfSync}
       />
 
       {/* Error Display */}
@@ -213,24 +227,34 @@ export default function BlueprintTab({ projectId }: BlueprintTabProps) {
 
       {/* Section Content */}
       <div className="flex-1 p-6 overflow-auto">
-        <BlueprintSectionComponent
-          section={activeSection}
-          blueprintId={blueprint.id}
-          content={getSectionContent(activeSection)}
-          status={statuses[activeSection]}
-          generatedAt={getSectionGeneratedAt(activeSection)}
-          isGenerating={isGenerating && currentSection === activeSection}
-          streamedContent={currentSection === activeSection ? streamedContent : ''}
-          statuses={statuses}
-          attachments={attachments}
-          colorPalette={blueprint.color_palette}
-          onGenerate={handleGenerate}
-          onCancel={cancelGeneration}
-          onUploadAttachment={handleUpload}
-          onDeleteAttachment={deleteAttachment}
-          onChangePalette={() => setPaletteModalOpen(true)}
-          onRefreshAttachments={refreshAttachments}
-        />
+        {activeSection === 'notes' ? (
+          <BlueprintNotesSection
+            projectNotes={projectNotes}
+            notesSnapshot={blueprint.notes_snapshot}
+            notesSnapshotAt={blueprint.notes_snapshot_at}
+            onSyncNotes={syncNotesSnapshot}
+            isFirstGeneration={isFirstGeneration}
+          />
+        ) : (
+          <BlueprintSectionComponent
+            section={activeSection as BlueprintSectionType}
+            blueprintId={blueprint.id}
+            content={getSectionContent(activeSection as BlueprintSectionType)}
+            status={statuses[activeSection as BlueprintSectionType]}
+            generatedAt={getSectionGeneratedAt(activeSection as BlueprintSectionType)}
+            isGenerating={isGenerating && currentSection === activeSection}
+            streamedContent={currentSection === activeSection ? streamedContent : ''}
+            statuses={statuses}
+            attachments={attachments}
+            colorPalette={blueprint.color_palette}
+            onGenerate={handleGenerate}
+            onCancel={cancelGeneration}
+            onUploadAttachment={handleUpload}
+            onDeleteAttachment={deleteAttachment}
+            onChangePalette={() => setPaletteModalOpen(true)}
+            onRefreshAttachments={refreshAttachments}
+          />
+        )}
       </div>
 
       {/* Export Bar */}

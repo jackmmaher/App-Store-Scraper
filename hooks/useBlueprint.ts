@@ -8,6 +8,7 @@ interface UseBlueprintProps {
 export function useBlueprint({ projectId }: UseBlueprintProps) {
   const [blueprint, setBlueprint] = useState<ProjectBlueprint | null>(null);
   const [attachments, setAttachments] = useState<BlueprintAttachment[]>([]);
+  const [projectNotes, setProjectNotes] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,6 +25,9 @@ export function useBlueprint({ projectId }: UseBlueprintProps) {
       }
       const data = await res.json();
       setBlueprint(data.blueprint);
+      if (data.projectNotes !== undefined) {
+        setProjectNotes(data.projectNotes);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load blueprint');
     } finally {
@@ -147,6 +151,34 @@ export function useBlueprint({ projectId }: UseBlueprintProps) {
     return `/api/blueprint/export?id=${blueprint.id}`;
   }, [blueprint]);
 
+  // Sync notes to snapshot
+  const syncNotesSnapshot = useCallback(async (): Promise<boolean> => {
+    if (!blueprint) return false;
+
+    try {
+      const res = await fetch(`/api/blueprint?id=${blueprint.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'sync_notes',
+          notes: projectNotes,
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to sync notes');
+      }
+
+      const data = await res.json();
+      setBlueprint(data.blueprint);
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to sync notes');
+      return false;
+    }
+  }, [blueprint, projectNotes]);
+
   // Refresh attachments from server
   const refreshAttachments = useCallback(async () => {
     if (!blueprint) return;
@@ -175,6 +207,7 @@ export function useBlueprint({ projectId }: UseBlueprintProps) {
     // State
     blueprint,
     attachments,
+    projectNotes,
     loading,
     error,
 
@@ -187,6 +220,7 @@ export function useBlueprint({ projectId }: UseBlueprintProps) {
     deleteAttachment,
     refreshAttachments,
     getExportUrl,
+    syncNotesSnapshot,
     clearError: () => setError(null),
     setBlueprint,
   };

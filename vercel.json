@@ -6,6 +6,12 @@
     "api/py-reviews.py": {
       "maxDuration": 300
     },
+    "app/api/chat/route.ts": {
+      "maxDuration": 120
+    },
+    "app/api/gap-analysis/[id]/chat/route.ts": {
+      "maxDuration": 120
+    },
     "app/api/keywords/discover/route.ts": {
       "maxDuration": 300
     },

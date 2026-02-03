@@ -889,6 +889,45 @@ export interface ReviewStats {
   };
 }
 
+// Review Scrape Session for incremental scraping
+export type ReviewScrapeSessionStatus = 'pending' | 'in_progress' | 'completed' | 'failed' | 'cancelled';
+
+export interface ReviewScrapeSessionFilter {
+  sort: 'mostRecent' | 'mostHelpful' | 'mostFavorable' | 'mostCritical';
+  target: number;
+}
+
+export interface ReviewScrapeSession {
+  id: string;
+  project_id: string;
+  app_store_id: string;
+  target_reviews: number;
+  filters: ReviewScrapeSessionFilter[];
+  country: string;
+  status: ReviewScrapeSessionStatus;
+  progress: {
+    current_filter?: string;
+    reviews_collected?: number;
+    current_page?: number;
+    message?: string;
+  } | null;
+  reviews_collected: number;
+  reviews: Review[];
+  stats: ReviewStats | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+}
+
+// Merge strategy for combining sessions
+export type MergeStrategy = 'keep_newest' | 'keep_oldest' | 'keep_highest_rating' | 'keep_all';
+
+export interface MergeSessionsOptions {
+  session_ids: string[];
+  strategy: MergeStrategy;
+  update_project_reviews: boolean;
+}
+
 // Forward declaration for LinkedCompetitor (full definition below)
 export interface LinkedCompetitor {
   app_store_id: string;
@@ -1060,6 +1099,19 @@ export async function updateProject(
   }
 
   return data;
+}
+
+// Update project reviews (convenience wrapper)
+export async function updateProjectReviews(
+  projectId: string,
+  reviews: Review[],
+  stats: ReviewStats
+): Promise<boolean> {
+  const result = await updateProject(projectId, {
+    reviews,
+    review_stats: stats,
+  });
+  return result !== null;
 }
 
 // Get all projects (with safety limit)
@@ -1866,6 +1918,39 @@ export interface BlueprintColorPalette {
   source_url?: string; // Coolors URL if from there
 }
 
+// Typography stored with blueprint - auto-selected or user-chosen
+export interface BlueprintTypography {
+  heading_font: string; // e.g., "Inter", "Playfair Display"
+  heading_category?: string; // serif, sans-serif, display, monospace
+  heading_weights?: string[]; // e.g., ["400", "500", "600", "700"]
+  body_font: string; // e.g., "Inter", "Open Sans"
+  body_category?: string; // serif, sans-serif, monospace
+  body_weights?: string[]; // e.g., ["400", "500", "600"]
+  font_pairing_style?: string; // modern, professional, editorial, friendly, technical
+  google_fonts_url?: string; // Generated Google Fonts embed URL
+}
+
+// Color spectrum generated from primary color
+export interface BlueprintColorSpectrum {
+  primary: {
+    hex: string;
+    shades: Record<string, string>; // e.g., { "50": "#F5F5F5", "100": "#E0E0E0", ... }
+  };
+  semantic: {
+    success: string;
+    warning: string;
+    error: string;
+    info: string;
+  };
+  complementary?: {
+    complementary: string;
+    analogous1: string;
+    analogous2: string;
+    triadic1: string;
+    triadic2: string;
+  };
+}
+
 export interface ProjectBlueprint {
   id: string;
   project_id: string;
@@ -1918,6 +2003,10 @@ export interface ProjectBlueprint {
   // Color Palette - selected for this blueprint
   color_palette: BlueprintColorPalette | null;
   color_palette_source: 'auto' | 'user_selected' | 'coolors' | null;
+
+  // Notes snapshot - captured when blueprint generation starts
+  notes_snapshot: string | null;
+  notes_snapshot_at: string | null;
 
   created_at: string;
   updated_at: string;

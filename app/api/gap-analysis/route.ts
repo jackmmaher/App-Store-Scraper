@@ -471,6 +471,7 @@ Provide a brief market gap analysis:
         max_tokens: 2000,
         messages: [{ role: 'user', content: prompt }],
       }),
+      signal: AbortSignal.timeout(90000), // 90 second timeout
     });
 
     if (!response.ok) {
@@ -532,6 +533,7 @@ async function handleChat(sessionId: string, request: NextRequest) {
         system: systemPrompt,
         messages: conversationMessages,
       }),
+      signal: AbortSignal.timeout(90000), // 90 second timeout
     });
 
     if (!response.ok) {

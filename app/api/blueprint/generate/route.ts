@@ -136,6 +136,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
 
+    // Capture notes snapshot if this is the first generation (no notes snapshot yet)
+    if (!blueprint.notes_snapshot_at && project.notes && project.notes.trim()) {
+      try {
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabaseAdmin = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.SUPABASE_SERVICE_KEY!
+        );
+
+        await supabaseAdmin
+          .from('project_blueprints')
+          .update({
+            notes_snapshot: project.notes,
+            notes_snapshot_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', blueprintId);
+
+        console.log(`[Blueprint] Captured notes snapshot for first generation`);
+      } catch (err) {
+        console.error('[Blueprint] Failed to capture notes snapshot:', err);
+        // Non-fatal, continue with generation
+      }
+    }
+
     // Check dependencies
     if (section === 'identity' && !blueprint.pareto_strategy) {
       return NextResponse.json({ error: 'Generate Strategy first' }, { status: 400 });

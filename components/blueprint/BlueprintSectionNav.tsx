@@ -2,14 +2,18 @@
 
 import type { BlueprintSection, BlueprintSectionStatus } from '@/lib/supabase';
 
+// Extended section type to include 'notes' pseudo-section
+export type BlueprintNavSection = BlueprintSection | 'notes';
+
 interface SectionInfo {
-  id: BlueprintSection;
+  id: BlueprintNavSection;
   label: string;
   shortLabel: string;
   number: number;
 }
 
 const SECTIONS: SectionInfo[] = [
+  { id: 'notes', label: 'Your Notes', shortLabel: 'Notes', number: 0 },
   { id: 'pareto', label: 'Strategy', shortLabel: 'Strategy', number: 1 },
   { id: 'identity', label: 'App Identity', shortLabel: 'Identity', number: 2 },
   { id: 'design_system', label: 'Design System', shortLabel: 'Design', number: 3 },
@@ -22,10 +26,12 @@ const SECTIONS: SectionInfo[] = [
 ];
 
 interface BlueprintSectionNavProps {
-  activeSection: BlueprintSection;
-  onSectionChange: (section: BlueprintSection) => void;
+  activeSection: BlueprintNavSection;
+  onSectionChange: (section: BlueprintNavSection) => void;
   statuses: Record<BlueprintSection, BlueprintSectionStatus>;
   generatingSection: BlueprintSection | null;
+  hasNotes?: boolean;
+  notesOutOfSync?: boolean;
 }
 
 function StatusIndicator({ status, isGenerating }: { status: BlueprintSectionStatus; isGenerating: boolean }) {
@@ -67,12 +73,28 @@ export default function BlueprintSectionNav({
   onSectionChange,
   statuses,
   generatingSection,
+  hasNotes = false,
+  notesOutOfSync = false,
 }: BlueprintSectionNavProps) {
   return (
     <div className="flex border-b border-gray-200 dark:border-gray-700 overflow-x-auto">
       {SECTIONS.map((section) => {
         const isActive = activeSection === section.id;
-        const isGenerating = generatingSection === section.id;
+        const isGenerating = section.id !== 'notes' && generatingSection === section.id;
+        const isNotesSection = section.id === 'notes';
+
+        // For notes section, show special indicator
+        const notesIndicator = isNotesSection ? (
+          hasNotes ? (
+            notesOutOfSync ? (
+              <span className="w-2 h-2 rounded-full bg-yellow-500" title="Notes changed since snapshot" />
+            ) : (
+              <span className="w-2 h-2 rounded-full bg-blue-500" title="Notes captured" />
+            )
+          ) : (
+            <span className="w-2 h-2 rounded-full bg-gray-300 dark:bg-gray-600" title="No notes" />
+          )
+        ) : null;
 
         return (
           <button
@@ -87,7 +109,9 @@ export default function BlueprintSectionNav({
             <span className="hidden sm:inline">{section.number}.</span>
             <span className="hidden sm:inline">{section.label}</span>
             <span className="sm:hidden">{section.number}. {section.shortLabel}</span>
-            <StatusIndicator status={statuses[section.id]} isGenerating={isGenerating} />
+            {isNotesSection ? notesIndicator : (
+              <StatusIndicator status={statuses[section.id as BlueprintSection]} isGenerating={isGenerating} />
+            )}
           </button>
         );
       })}

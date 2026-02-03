@@ -11,6 +11,7 @@ import { COUNTRY_CODES, CATEGORY_NAMES } from '@/lib/constants';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 120; // 2 minutes for chat
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -80,7 +81,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       { role: 'user' as const, content: message },
     ];
 
-    // Call Claude API
+    // Call Claude API with timeout to prevent hanging
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -94,6 +95,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         system: systemPrompt,
         messages: conversationMessages,
       }),
+      signal: AbortSignal.timeout(90000), // 90 second timeout
     });
 
     if (!response.ok) {

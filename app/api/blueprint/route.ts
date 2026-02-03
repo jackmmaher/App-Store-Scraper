@@ -7,6 +7,7 @@ import {
   updateBlueprintSection,
   updateBlueprintSectionStatus,
   deleteBlueprint,
+  getProject,
   type BlueprintSection,
   type BlueprintSectionStatus,
   type ProjectBlueprint,
@@ -87,7 +88,12 @@ export async function GET(request: NextRequest) {
       }
       // Auto-recover stuck 'generating' statuses
       blueprint = await recoverStuckGenerating(blueprint);
-      return NextResponse.json({ blueprint });
+
+      // Fetch project notes for the notes section
+      const project = await getProject(projectId);
+      const projectNotes = project?.notes || null;
+
+      return NextResponse.json({ blueprint, projectNotes });
     }
 
     return NextResponse.json({ error: 'projectId or id required' }, { status: 400 });
@@ -136,6 +142,56 @@ export async function PUT(request: NextRequest) {
   } catch (error) {
     console.error('[PUT /api/blueprint] Error:', error);
     return NextResponse.json({ error: 'Failed to update blueprint' }, { status: 500 });
+  }
+}
+
+// PATCH /api/blueprint?id=xxx - Update notes snapshot
+export async function PATCH(request: NextRequest) {
+  const authed = await isAuthenticated();
+  if (!authed) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const blueprintId = request.nextUrl.searchParams.get('id');
+  if (!blueprintId) {
+    return NextResponse.json({ error: 'Blueprint ID required' }, { status: 400 });
+  }
+
+  try {
+    const body = await request.json();
+    const { action, notes } = body as { action: 'sync_notes'; notes: string | null };
+
+    if (action !== 'sync_notes') {
+      return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
+    }
+
+    // Update notes snapshot using raw supabase
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_KEY!
+    );
+
+    const { data: blueprint, error } = await supabaseAdmin
+      .from('project_blueprints')
+      .update({
+        notes_snapshot: notes,
+        notes_snapshot_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', blueprintId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('[PATCH /api/blueprint] Error:', error);
+      return NextResponse.json({ error: 'Failed to sync notes' }, { status: 500 });
+    }
+
+    return NextResponse.json({ blueprint, success: true });
+  } catch (error) {
+    console.error('[PATCH /api/blueprint] Error:', error);
+    return NextResponse.json({ error: 'Failed to sync notes' }, { status: 500 });
   }
 }
 

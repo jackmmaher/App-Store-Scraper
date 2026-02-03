@@ -1,5 +1,5 @@
-import { AppProject, BlueprintAttachment, Review, BlueprintColorPalette } from './supabase';
-import { getEnrichmentForBlueprint, getColorPalettesForDesignSystem } from '@/lib/crawl';
+import { AppProject, BlueprintAttachment, Review, BlueprintColorPalette, BlueprintTypography } from './supabase';
+import { getEnrichmentForBlueprint, getColorPalettesForDesignSystem, getFontsForDesignSystem, getFontPairingsForDesignSystem, getColorSpectrumForPrimary } from '@/lib/crawl';
 import { getKeywordsBySourceApp } from '@/lib/keywords/db';
 import { RedditAnalysisResult } from './reddit/types';
 
@@ -50,6 +50,33 @@ Colors: ${colorsFormatted}
 - **Contrast**: #${palette.colors[4] || palette.colors[0]} - Use for emphasis, contrast elements
 
 Do NOT invent new colors. Derive all shades from this palette.
+`;
+}
+
+// Format stored typography for prompt injection
+function formatStoredTypography(typography: BlueprintTypography | null | undefined): string {
+  if (!typography?.heading_font) return '';
+
+  const headingWeights = typography.heading_weights?.join(', ') || '400, 500, 600, 700';
+  const bodyWeights = typography.body_weights?.join(', ') || '400, 500, 600';
+
+  return `
+## Your Selected Typography
+
+**IMPORTANT:** Use ONLY these fonts for your design. They have been specifically selected for this app.
+
+**Heading Font:** ${typography.heading_font}
+- Category: ${typography.heading_category || 'sans-serif'}
+- Weights: ${headingWeights}
+
+**Body Font:** ${typography.body_font}
+- Category: ${typography.body_category || 'sans-serif'}
+- Weights: ${bodyWeights}
+
+${typography.font_pairing_style ? `**Pairing Style:** ${typography.font_pairing_style}` : ''}
+${typography.google_fonts_url ? `**Google Fonts URL:** ${typography.google_fonts_url}` : ''}
+
+Do NOT suggest alternative fonts. Use these exact font selections throughout the design system.
 `;
 }
 
@@ -355,13 +382,26 @@ This analysis was generated from ${project.review_count} user reviews:
 ${project.ai_analysis}`);
   }
 
-  // User's personal notes
+  // User's personal notes - given highest priority
   if (project.notes && project.notes.trim()) {
-    sections.push(`## Researcher's Notes
+    sections.push(`## Researcher's Notes (IMPORTANT - User Requirements)
 
-The following notes were added by the researcher analyzing this competitor:
+**These notes contain specific requirements, preferences, and insights from the researcher that MUST be incorporated into this blueprint.**
 
-${project.notes}`);
+The following notes were added by the user analyzing this market/competitor. Pay special attention to:
+- Any specific features or approaches mentioned
+- Design preferences or constraints
+- Business requirements or monetization ideas
+- Target audience specifications
+- Competitive differentiators to focus on
+
+---
+
+${project.notes}
+
+---
+
+**Remember:** These notes represent the user's vision and should inform all decisions in this section.`);
   }
 
   // Sample raw reviews for direct user voice
@@ -715,7 +755,10 @@ export function getDesignSystemPrompt(
   paretoStrategy: string,
   appIdentity: string,
   colorPalette?: BlueprintColorPalette | null,
-  curatedPalettes?: string // Optional: Curated palettes from Coolors (fallback if no stored palette)
+  curatedPalettes?: string, // Optional: Curated palettes from Coolors (fallback if no stored palette)
+  typography?: BlueprintTypography | null,
+  curatedFontPairings?: string, // Optional: Curated font pairings (fallback if no stored typography)
+  colorSpectrum?: string // Optional: Generated color spectrum from primary color
 ): string {
   const notesSection = project.notes && project.notes.trim()
     ? `\n## Researcher's Notes\n${project.notes}\n`
@@ -725,8 +768,20 @@ export function getDesignSystemPrompt(
   let paletteSection = '';
   if (colorPalette?.colors?.length) {
     paletteSection = formatStoredPalette(colorPalette);
+    // If we have a stored palette AND a color spectrum, include both
+    if (colorSpectrum) {
+      paletteSection += `\n${colorSpectrum}\n`;
+    }
   } else if (curatedPalettes) {
     paletteSection = `\n${curatedPalettes}\n\n**IMPORTANT:** You MUST select colors from the curated palettes above. Do NOT invent generic colors. These palettes are professionally curated and matched to this app's category.\n`;
+  }
+
+  // Use stored typography if available, otherwise use curated font pairings
+  let typographySection = '';
+  if (typography?.heading_font) {
+    typographySection = formatStoredTypography(typography);
+  } else if (curatedFontPairings) {
+    typographySection = `\n${curatedFontPairings}\n\n**IMPORTANT:** You MUST select fonts from the curated pairings above. These are professionally curated combinations that work well together.\n`;
   }
 
   // Extract the chosen app name from identity (this is OUR app, not the competitor)
@@ -737,7 +792,7 @@ export function getDesignSystemPrompt(
 ${DESIGN_PHILOSOPHY}
 
 ${DESIGN_SYSTEM_ANTI_SLOP}
-${paletteSection}
+${paletteSection}${typographySection}
 ---
 
 **IMPORTANT: Native iOS Design**
@@ -2090,39 +2145,64 @@ export async function getBlueprintPromptWithEnrichment(
   },
   attachments: BlueprintAttachment[] = [],
   colorPalette?: BlueprintColorPalette | null,
-  redditAnalysis?: RedditAnalysisResult | null
+  redditAnalysis?: RedditAnalysisResult | null,
+  typography?: BlueprintTypography | null
 ): Promise<string> {
   // Pareto needs review/reddit enrichment
   if (section === 'pareto') {
     return getParetoStrategyPromptWithEnrichment(project, redditAnalysis);
   }
 
-  // Design System needs curated color palettes (if no stored palette)
+  // Design System needs curated color palettes and font pairings (if no stored selections)
   if (section === 'design_system') {
     if (!previousSections.paretoStrategy || !previousSections.appIdentity) {
       throw new Error('Pareto Strategy and App Identity are required before generating Design System');
     }
 
-    // Only fetch curated palettes if no stored palette
-    let curatedPalettes = '';
-    if (!colorPalette?.colors?.length) {
-      try {
-        curatedPalettes = await getColorPalettesForDesignSystem(
-          project.app_primary_genre || undefined,
-          undefined, // Let the system choose mood based on category
-          5
-        );
-      } catch (error) {
-        console.error('Error fetching palettes for design system:', error);
-      }
-    }
+    // Fetch curated data in parallel
+    const [curatedPalettes, curatedFontPairings, colorSpectrum] = await Promise.all([
+      // Only fetch curated palettes if no stored palette
+      !colorPalette?.colors?.length
+        ? getColorPalettesForDesignSystem(
+            project.app_primary_genre || undefined,
+            undefined,
+            5
+          ).catch(error => {
+            console.error('Error fetching palettes for design system:', error);
+            return '';
+          })
+        : Promise.resolve(''),
+
+      // Only fetch font pairings if no stored typography
+      !typography?.heading_font
+        ? getFontPairingsForDesignSystem(
+            project.app_primary_genre || undefined,
+            undefined,
+            8
+          ).catch(error => {
+            console.error('Error fetching font pairings for design system:', error);
+            return '';
+          })
+        : Promise.resolve(''),
+
+      // Generate color spectrum if we have a stored primary color
+      colorPalette?.colors?.[0]
+        ? getColorSpectrumForPrimary(colorPalette.colors[0], true).catch(error => {
+            console.error('Error generating color spectrum:', error);
+            return '';
+          })
+        : Promise.resolve(''),
+    ]);
 
     return getDesignSystemPrompt(
       project,
       previousSections.paretoStrategy,
       previousSections.appIdentity,
       colorPalette,
-      curatedPalettes
+      curatedPalettes,
+      typography,
+      curatedFontPairings,
+      colorSpectrum
     );
   }
 

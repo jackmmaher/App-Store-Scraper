@@ -42,6 +42,20 @@ from crawlers.coolors import (
     select_palette_for_app,
     format_palettes_for_prompt,
 )
+from crawlers.google_fonts import (
+    get_google_fonts,
+    select_fonts_for_category,
+    generate_google_fonts_url,
+)
+from crawlers.fontpair import (
+    get_font_pairings,
+    select_pairings_for_style,
+)
+from crawlers.uicolors import (
+    generate_color_system,
+    generate_complementary_colors,
+    format_color_system_for_prompt,
+)
 
 # Configure logging
 logging.basicConfig(
@@ -236,6 +250,24 @@ class ColorPaletteRequest(BaseModel):
     mood: Optional[str] = None  # Explicit mood: professional, playful, calm, bold, warm, cool
     max_palettes: int = 5
     force_refresh: bool = False  # Force fresh crawl from Coolors
+
+
+class FontsRequest(BaseModel):
+    category: Optional[str] = None  # App Store category for font selection
+    max_fonts: int = 20
+    force_refresh: bool = False
+
+
+class FontPairsRequest(BaseModel):
+    category: Optional[str] = None  # App Store category
+    style: Optional[str] = None  # modern, professional, editorial, friendly, technical, bold
+    max_pairings: int = 10
+    force_refresh: bool = False
+
+
+class ColorSpectrumRequest(BaseModel):
+    primary_hex: str  # Primary color hex (with or without #)
+    include_complementary: bool = False
 
 
 class RedditDeepDiveRequest(BaseModel):
@@ -694,6 +726,123 @@ async def refresh_color_palettes():
 
 
 # ============================================================================
+# Font Endpoints
+# ============================================================================
+
+@app.post("/crawl/fonts")
+async def get_fonts(request: FontsRequest):
+    """
+    Get curated Google Fonts for app design.
+
+    Returns fonts filtered by app category with Google Fonts embed URL.
+    """
+    logger.info(f"Fetching fonts (category={request.category})")
+
+    try:
+        all_fonts = await get_google_fonts(force_refresh=request.force_refresh)
+
+        if not all_fonts:
+            return {
+                "fonts": [],
+                "google_fonts_url": "",
+                "message": "No fonts available",
+            }
+
+        selected = select_fonts_for_category(
+            fonts=all_fonts,
+            category=request.category,
+            max_fonts=request.max_fonts,
+        )
+
+        # Generate Google Fonts URL for top fonts
+        top_fonts = [f.family for f in selected[:6]]
+        fonts_url = generate_google_fonts_url(top_fonts)
+
+        return {
+            "fonts": [f.to_dict() for f in selected],
+            "google_fonts_url": fonts_url,
+            "total_available": len(all_fonts),
+            "category": request.category,
+        }
+
+    except Exception as e:
+        logger.exception("Error fetching fonts")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch fonts: {str(e)}")
+
+
+@app.post("/crawl/font-pairs")
+async def get_font_pairs(request: FontPairsRequest):
+    """
+    Get curated font pairing suggestions.
+
+    Returns heading + body font combinations matched to app style.
+    """
+    logger.info(f"Fetching font pairings (category={request.category}, style={request.style})")
+
+    try:
+        all_pairings = await get_font_pairings(force_refresh=request.force_refresh)
+
+        if not all_pairings:
+            return {
+                "pairings": [],
+                "message": "No pairings available",
+            }
+
+        selected = select_pairings_for_style(
+            pairings=all_pairings,
+            style=request.style,
+            category=request.category,
+            max_pairings=request.max_pairings,
+        )
+
+        return {
+            "pairings": [p.to_dict() for p in selected],
+            "total_available": len(all_pairings),
+            "category": request.category,
+            "style": request.style,
+        }
+
+    except Exception as e:
+        logger.exception("Error fetching font pairings")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch font pairings: {str(e)}")
+
+
+@app.post("/crawl/color-spectrum")
+async def generate_spectrum(request: ColorSpectrumRequest):
+    """
+    Generate a color shade spectrum from a primary color.
+
+    Returns Tailwind-style shades (50-950) plus semantic colors.
+    """
+    logger.info(f"Generating color spectrum for {request.primary_hex}")
+
+    try:
+        # Validate hex color
+        hex_color = request.primary_hex.lstrip('#')
+        if len(hex_color) != 6:
+            raise HTTPException(status_code=400, detail="Invalid hex color. Use 6 characters (e.g., 'FF5733' or '#FF5733')")
+
+        color_system = generate_color_system(hex_color)
+
+        if request.include_complementary:
+            color_system["complementary"] = generate_complementary_colors(hex_color)
+
+        prompt_text = format_color_system_for_prompt(color_system)
+
+        return {
+            "color_system": color_system,
+            "prompt_text": prompt_text,
+            "primary_hex": f"#{hex_color.upper()}",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error generating color spectrum")
+        raise HTTPException(status_code=500, detail=f"Failed to generate spectrum: {str(e)}")
+
+
+# ============================================================================
 # Root
 # ============================================================================
 
@@ -719,5 +868,8 @@ async def root():
             "/crawl/website",
             "/crawl/palettes",
             "/crawl/palettes/refresh",
+            "/crawl/fonts",
+            "/crawl/font-pairs",
+            "/crawl/color-spectrum",
         ],
     }

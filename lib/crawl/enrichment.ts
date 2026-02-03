@@ -498,6 +498,526 @@ function formatPalettesForPrompt(palettes: ColorPalette[], max: number, totalCac
   return lines.join('\n');
 }
 
+// ============================================================================
+// Font Enrichment
+// ============================================================================
+
+export interface GoogleFontData {
+  family: string;
+  category: string; // serif, sans-serif, display, handwriting, monospace
+  variants: string[];
+  subsets: string[];
+  version: string;
+  popularity: number;
+}
+
+export interface FontPairingData {
+  heading_font: string;
+  body_font: string;
+  heading_category: string;
+  body_category: string;
+  style?: string; // modern, professional, editorial, friendly, technical
+  source_url?: string;
+}
+
+export interface FontsResponse {
+  fonts: GoogleFontData[];
+  prompt_text: string;
+  total_fonts?: number;
+  category?: string;
+}
+
+export interface FontPairsResponse {
+  pairings: FontPairingData[];
+  prompt_text: string;
+  total_pairings?: number;
+  style?: string;
+  category?: string;
+}
+
+/**
+ * Fetch curated Google Fonts for Design System generation
+ *
+ * @param category - App Store category (e.g., "Health & Fitness")
+ * @param maxFonts - Number of fonts to return (default 20)
+ * @returns Formatted markdown string with font options
+ */
+export async function getFontsForDesignSystem(
+  category?: string,
+  maxFonts: number = 20
+): Promise<string> {
+  const orchestrator = getCrawlOrchestrator();
+
+  const isAvailable = await orchestrator.isAvailable();
+  if (!isAvailable) {
+    console.log('Crawl service unavailable, using fallback fonts');
+    return getFallbackFonts(category);
+  }
+
+  try {
+    const baseUrl = orchestrator.getBaseUrl();
+    const response = await fetch(`${baseUrl}/crawl/fonts`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        category,
+        max_fonts: maxFonts,
+        force_refresh: false,
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) {
+      console.error('Fonts fetch failed:', response.status);
+      return getFallbackFonts(category);
+    }
+
+    const data: FontsResponse = await response.json();
+    console.log(`Received ${data.fonts?.length || 0} fonts`);
+
+    if (data.fonts && data.fonts.length > 0) {
+      return formatFontsForPrompt(data.fonts, maxFonts);
+    }
+
+    if (data.prompt_text) {
+      return data.prompt_text;
+    }
+
+    return getFallbackFonts(category);
+  } catch (error) {
+    console.error('Error fetching fonts:', error);
+    return getFallbackFonts(category);
+  }
+}
+
+/**
+ * Fetch font pairing suggestions for Design System generation
+ *
+ * @param category - App Store category (e.g., "Health & Fitness")
+ * @param style - Optional style preference (modern, professional, editorial, etc.)
+ * @param maxPairings - Number of pairings to return (default 10)
+ * @returns Formatted markdown string with pairing options
+ */
+export async function getFontPairingsForDesignSystem(
+  category?: string,
+  style?: string,
+  maxPairings: number = 10
+): Promise<string> {
+  const orchestrator = getCrawlOrchestrator();
+
+  const isAvailable = await orchestrator.isAvailable();
+  if (!isAvailable) {
+    console.log('Crawl service unavailable, using fallback font pairings');
+    return getFallbackFontPairings(category, style);
+  }
+
+  try {
+    const baseUrl = orchestrator.getBaseUrl();
+    const response = await fetch(`${baseUrl}/crawl/font-pairs`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        category,
+        style,
+        max_pairings: maxPairings,
+        force_refresh: false,
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) {
+      console.error('Font pairings fetch failed:', response.status);
+      return getFallbackFontPairings(category, style);
+    }
+
+    const data: FontPairsResponse = await response.json();
+    console.log(`Received ${data.pairings?.length || 0} font pairings`);
+
+    if (data.pairings && data.pairings.length > 0) {
+      return formatFontPairingsForPrompt(data.pairings, maxPairings);
+    }
+
+    if (data.prompt_text) {
+      return data.prompt_text;
+    }
+
+    return getFallbackFontPairings(category, style);
+  } catch (error) {
+    console.error('Error fetching font pairings:', error);
+    return getFallbackFontPairings(category, style);
+  }
+}
+
+/**
+ * Format fonts for prompt inclusion
+ */
+function formatFontsForPrompt(fonts: GoogleFontData[], max: number): string {
+  if (!fonts || fonts.length === 0) {
+    return '';
+  }
+
+  const lines = ['## Curated Google Fonts', ''];
+  lines.push('Select fonts from this list for the design system typography.');
+  lines.push('');
+
+  // Group by category
+  const byCategory: Record<string, GoogleFontData[]> = {};
+  for (const font of fonts.slice(0, max)) {
+    const cat = font.category || 'sans-serif';
+    if (!byCategory[cat]) {
+      byCategory[cat] = [];
+    }
+    byCategory[cat].push(font);
+  }
+
+  for (const [category, categoryFonts] of Object.entries(byCategory)) {
+    lines.push(`### ${category.charAt(0).toUpperCase() + category.slice(1)}`);
+    for (const font of categoryFonts) {
+      const weights = font.variants
+        .filter(v => /^\d+$/.test(v) || v === 'regular')
+        .map(v => v === 'regular' ? '400' : v)
+        .slice(0, 5)
+        .join(', ');
+      lines.push(`- **${font.family}** (weights: ${weights})`);
+    }
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Format font pairings for prompt inclusion
+ */
+function formatFontPairingsForPrompt(pairings: FontPairingData[], max: number): string {
+  if (!pairings || pairings.length === 0) {
+    return '';
+  }
+
+  const lines = ['## Font Pairing Suggestions', ''];
+  lines.push('Recommended heading + body font combinations:');
+  lines.push('');
+
+  for (let i = 0; i < Math.min(pairings.length, max); i++) {
+    const p = pairings[i];
+    const styleStr = p.style ? ` [${p.style}]` : '';
+    lines.push(`**Pairing ${i + 1}**${styleStr}:`);
+    lines.push(`  - Heading: **${p.heading_font}** (${p.heading_category})`);
+    lines.push(`  - Body: **${p.body_font}** (${p.body_category})`);
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Fallback fonts when crawl service is unavailable
+ */
+function getFallbackFonts(category?: string): string {
+  const fonts: GoogleFontData[] = [
+    // Sans-serif (UI-focused)
+    { family: 'Inter', category: 'sans-serif', variants: ['300', '400', '500', '600', '700'], subsets: ['latin'], version: '', popularity: 100 },
+    { family: 'Roboto', category: 'sans-serif', variants: ['300', '400', '500', '700'], subsets: ['latin'], version: '', popularity: 99 },
+    { family: 'Open Sans', category: 'sans-serif', variants: ['300', '400', '600', '700'], subsets: ['latin'], version: '', popularity: 98 },
+    { family: 'Poppins', category: 'sans-serif', variants: ['300', '400', '500', '600', '700'], subsets: ['latin'], version: '', popularity: 97 },
+    { family: 'Montserrat', category: 'sans-serif', variants: ['300', '400', '500', '600', '700'], subsets: ['latin'], version: '', popularity: 96 },
+    { family: 'DM Sans', category: 'sans-serif', variants: ['400', '500', '700'], subsets: ['latin'], version: '', popularity: 92 },
+    { family: 'Space Grotesk', category: 'sans-serif', variants: ['300', '400', '500', '600', '700'], subsets: ['latin'], version: '', popularity: 89 },
+    // Serif
+    { family: 'Playfair Display', category: 'serif', variants: ['400', '500', '600', '700'], subsets: ['latin'], version: '', popularity: 85 },
+    { family: 'Merriweather', category: 'serif', variants: ['300', '400', '700'], subsets: ['latin'], version: '', popularity: 84 },
+    { family: 'Lora', category: 'serif', variants: ['400', '500', '600', '700'], subsets: ['latin'], version: '', popularity: 83 },
+    // Monospace
+    { family: 'JetBrains Mono', category: 'monospace', variants: ['300', '400', '500', '700'], subsets: ['latin'], version: '', popularity: 75 },
+    { family: 'Fira Code', category: 'monospace', variants: ['300', '400', '500', '700'], subsets: ['latin'], version: '', popularity: 74 },
+  ];
+
+  return formatFontsForPrompt(fonts, 12);
+}
+
+/**
+ * Fallback font pairings when crawl service is unavailable
+ */
+function getFallbackFontPairings(category?: string, style?: string): string {
+  const pairings: FontPairingData[] = [
+    { heading_font: 'Inter', body_font: 'Inter', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'modern' },
+    { heading_font: 'Space Grotesk', body_font: 'Inter', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'modern' },
+    { heading_font: 'Poppins', body_font: 'Open Sans', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'professional' },
+    { heading_font: 'Montserrat', body_font: 'Roboto', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'professional' },
+    { heading_font: 'Playfair Display', body_font: 'Lato', heading_category: 'serif', body_category: 'sans-serif', style: 'editorial' },
+    { heading_font: 'Merriweather', body_font: 'Open Sans', heading_category: 'serif', body_category: 'sans-serif', style: 'editorial' },
+    { heading_font: 'DM Sans', body_font: 'DM Sans', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'modern' },
+    { heading_font: 'Space Grotesk', body_font: 'JetBrains Mono', heading_category: 'sans-serif', body_category: 'monospace', style: 'technical' },
+  ];
+
+  // Filter by style if provided
+  let filtered = pairings;
+  if (style) {
+    filtered = pairings.filter(p => p.style === style);
+    if (filtered.length === 0) {
+      filtered = pairings;
+    }
+  }
+
+  return formatFontPairingsForPrompt(filtered, 8);
+}
+
+// ============================================================================
+// Color Spectrum Enrichment
+// ============================================================================
+
+export interface ColorShades {
+  [shade: string]: string; // e.g., "50": "#F5F5F5", "100": "#E0E0E0", etc.
+}
+
+export interface ColorSpectrumData {
+  primary: {
+    hex: string;
+    shades: ColorShades;
+  };
+  semantic: {
+    success: string;
+    warning: string;
+    error: string;
+    info: string;
+  };
+  complementary?: {
+    complementary: string;
+    analogous1: string;
+    analogous2: string;
+    triadic1: string;
+    triadic2: string;
+  };
+}
+
+export interface ColorSpectrumResponse {
+  spectrum: ColorSpectrumData;
+  prompt_text: string;
+}
+
+/**
+ * Generate a color spectrum from a primary hex color
+ *
+ * @param primaryHex - Primary color in hex format (with or without #)
+ * @param includeComplementary - Whether to include complementary colors
+ * @returns Formatted markdown string with color spectrum
+ */
+export async function getColorSpectrumForPrimary(
+  primaryHex: string,
+  includeComplementary: boolean = true
+): Promise<string> {
+  const orchestrator = getCrawlOrchestrator();
+
+  // Normalize hex
+  const normalizedHex = primaryHex.replace('#', '').toUpperCase();
+
+  const isAvailable = await orchestrator.isAvailable();
+  if (!isAvailable) {
+    console.log('Crawl service unavailable, using local spectrum generation');
+    return generateLocalColorSpectrum(normalizedHex, includeComplementary);
+  }
+
+  try {
+    const baseUrl = orchestrator.getBaseUrl();
+    const response = await fetch(`${baseUrl}/crawl/color-spectrum`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        primary_hex: normalizedHex,
+        include_complementary: includeComplementary,
+      }),
+      signal: AbortSignal.timeout(5000), // Fast - local generation
+    });
+
+    if (!response.ok) {
+      console.error('Color spectrum fetch failed:', response.status);
+      return generateLocalColorSpectrum(normalizedHex, includeComplementary);
+    }
+
+    const data: ColorSpectrumResponse = await response.json();
+
+    if (data.spectrum) {
+      return formatColorSpectrumForPrompt(data.spectrum);
+    }
+
+    if (data.prompt_text) {
+      return data.prompt_text;
+    }
+
+    return generateLocalColorSpectrum(normalizedHex, includeComplementary);
+  } catch (error) {
+    console.error('Error fetching color spectrum:', error);
+    return generateLocalColorSpectrum(normalizedHex, includeComplementary);
+  }
+}
+
+/**
+ * Format color spectrum for prompt inclusion
+ */
+function formatColorSpectrumForPrompt(spectrum: ColorSpectrumData): string {
+  const lines = ['## Generated Color Spectrum', ''];
+
+  lines.push(`### Primary Color: \`${spectrum.primary.hex}\``);
+  lines.push('');
+
+  // Shades
+  lines.push('**Shade Spectrum:**');
+  const sortedShades = Object.entries(spectrum.primary.shades)
+    .sort((a, b) => parseInt(a[0]) - parseInt(b[0]));
+
+  for (const [shade, hex] of sortedShades) {
+    lines.push(`- ${shade}: \`${hex}\``);
+  }
+  lines.push('');
+
+  // Semantic colors
+  lines.push('**Semantic Colors:**');
+  lines.push(`- Success: \`${spectrum.semantic.success}\``);
+  lines.push(`- Warning: \`${spectrum.semantic.warning}\``);
+  lines.push(`- Error: \`${spectrum.semantic.error}\``);
+  lines.push(`- Info: \`${spectrum.semantic.info}\``);
+  lines.push('');
+
+  // Complementary colors if available
+  if (spectrum.complementary) {
+    lines.push('**Color Relationships:**');
+    lines.push(`- Complementary: \`${spectrum.complementary.complementary}\``);
+    lines.push(`- Analogous: \`${spectrum.complementary.analogous1}\`, \`${spectrum.complementary.analogous2}\``);
+    lines.push(`- Triadic: \`${spectrum.complementary.triadic1}\`, \`${spectrum.complementary.triadic2}\``);
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Local color spectrum generation (fallback)
+ * Uses HSL color space for shade calculation
+ */
+function generateLocalColorSpectrum(hexColor: string, includeComplementary: boolean): string {
+  // Convert hex to HSL
+  const hex = hexColor.replace('#', '');
+  const r = parseInt(hex.slice(0, 2), 16) / 255;
+  const g = parseInt(hex.slice(2, 4), 16) / 255;
+  const b = parseInt(hex.slice(4, 6), 16) / 255;
+
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0;
+  let s = 0;
+  const l = (max + min) / 2;
+
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+
+    if (max === r) {
+      h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+    } else if (max === g) {
+      h = ((b - r) / d + 2) / 6;
+    } else {
+      h = ((r - g) / d + 4) / 6;
+    }
+  }
+
+  h *= 360;
+  s *= 100;
+  const lPercent = l * 100;
+
+  // Generate shades
+  const shades: ColorShades = {};
+  const shadeLevels = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
+
+  for (const shade of shadeLevels) {
+    let newL: number;
+    if (shade < 500) {
+      const ratio = (500 - shade) / 500;
+      newL = lPercent + (95 - lPercent) * ratio;
+    } else if (shade > 500) {
+      const ratio = (shade - 500) / 450;
+      newL = lPercent - (lPercent - 5) * ratio;
+    } else {
+      newL = lPercent;
+    }
+
+    // Adjust saturation at extremes
+    let newS = s;
+    if (shade <= 100) newS = s * 0.7;
+    else if (shade >= 800) newS = s * 0.8;
+
+    shades[String(shade)] = hslToHex(h, newS, newL);
+  }
+
+  const spectrum: ColorSpectrumData = {
+    primary: {
+      hex: `#${hex.toUpperCase()}`,
+      shades,
+    },
+    semantic: {
+      success: hslToHex(142, 70, 45),
+      warning: hslToHex(38, 90, 50),
+      error: hslToHex(0, 75, 55),
+      info: hslToHex(217, 80, 50),
+    },
+  };
+
+  if (includeComplementary) {
+    spectrum.complementary = {
+      complementary: hslToHex((h + 180) % 360, s, lPercent),
+      analogous1: hslToHex((h + 30) % 360, s, lPercent),
+      analogous2: hslToHex((h - 30 + 360) % 360, s, lPercent),
+      triadic1: hslToHex((h + 120) % 360, s, lPercent),
+      triadic2: hslToHex((h + 240) % 360, s, lPercent),
+    };
+  }
+
+  return formatColorSpectrumForPrompt(spectrum);
+}
+
+/**
+ * Convert HSL to hex color
+ */
+function hslToHex(h: number, s: number, l: number): string {
+  h = h / 360;
+  s = s / 100;
+  l = l / 100;
+
+  let r: number, g: number, b: number;
+
+  if (s === 0) {
+    r = g = b = l;
+  } else {
+    const hueToRgb = (p: number, q: number, t: number) => {
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
+      if (t < 1/6) return p + (q - p) * 6 * t;
+      if (t < 1/2) return q;
+      if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+      return p;
+    };
+
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+
+    r = hueToRgb(p, q, h + 1/3);
+    g = hueToRgb(p, q, h);
+    b = hueToRgb(p, q, h - 1/3);
+  }
+
+  const toHex = (x: number) => {
+    const hex = Math.round(x * 255).toString(16);
+    return hex.length === 1 ? '0' + hex : hex;
+  };
+
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`.toUpperCase();
+}
+
 /**
  * Fallback palettes when crawl service is unavailable
  * Curated high-quality palettes with category matching

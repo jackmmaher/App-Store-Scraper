@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { ChatMessage } from '@/lib/supabase';
 import { getOperationErrorMessage } from '@/lib/errors';
 
@@ -9,11 +9,28 @@ interface UseChatProps {
   onInfo?: (message: string) => void;
 }
 
+// Client-side timeout matching server (2 minutes)
+const CLIENT_TIMEOUT_MS = 120000;
+
 export function useChat({ projectId, aiAnalysis, onError, onInfo }: UseChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Track active request for cancellation
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const timeoutIdRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+      if (timeoutIdRef.current) {
+        clearTimeout(timeoutIdRef.current);
+      }
+    };
+  }, []);
 
   // Load messages on mount
   const loadMessages = useCallback(async () => {
@@ -36,12 +53,32 @@ export function useChat({ projectId, aiAnalysis, onError, onInfo }: UseChatProps
     loadMessages();
   }, [loadMessages]);
 
+  // Cancel any ongoing request
+  const cancelRequest = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    if (timeoutIdRef.current) {
+      clearTimeout(timeoutIdRef.current);
+      timeoutIdRef.current = null;
+    }
+    setIsLoading(false);
+  }, []);
+
   // Send a message and get Claude's response
   const sendMessage = useCallback(async (content: string) => {
     if (!content.trim() || !projectId) return;
 
+    // Cancel any existing request
+    cancelRequest();
+
     setIsLoading(true);
     setError(null);
+
+    // Create new abort controller for this request
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
 
     // Optimistically add user message
     const tempUserMessage: ChatMessage = {
@@ -53,6 +90,16 @@ export function useChat({ projectId, aiAnalysis, onError, onInfo }: UseChatProps
     };
     setMessages((prev) => [...prev, tempUserMessage]);
 
+    // Set up client-side timeout
+    timeoutIdRef.current = setTimeout(() => {
+      abortController.abort();
+      setMessages((prev) => prev.filter((m) => m.id !== tempUserMessage.id));
+      const message = 'Request timed out. Please try again.';
+      setError(message);
+      onError?.(message);
+      setIsLoading(false);
+    }, CLIENT_TIMEOUT_MS);
+
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -61,13 +108,26 @@ export function useChat({ projectId, aiAnalysis, onError, onInfo }: UseChatProps
           projectId,
           message: content.trim(),
         }),
+        signal: abortController.signal,
       });
+
+      // Clear timeout on response
+      if (timeoutIdRef.current) {
+        clearTimeout(timeoutIdRef.current);
+        timeoutIdRef.current = null;
+      }
 
       if (!res.ok) {
         throw new Error('Failed to send message');
       }
 
-      const data = await res.json();
+      // Safe JSON parsing to prevent stuck state
+      let data;
+      try {
+        data = await res.json();
+      } catch (parseError) {
+        throw new Error('Failed to parse response');
+      }
 
       // Replace temp message with real ones
       setMessages((prev) => {
@@ -75,6 +135,18 @@ export function useChat({ projectId, aiAnalysis, onError, onInfo }: UseChatProps
         return [...filtered, data.userMessage, data.assistantMessage];
       });
     } catch (err) {
+      // Clear timeout if not already cleared
+      if (timeoutIdRef.current) {
+        clearTimeout(timeoutIdRef.current);
+        timeoutIdRef.current = null;
+      }
+
+      // Don't show error for intentional cancellation
+      if (err instanceof Error && err.name === 'AbortError') {
+        setMessages((prev) => prev.filter((m) => m.id !== tempUserMessage.id));
+        return;
+      }
+
       console.error('Error sending message:', err);
       // Remove optimistic message on error
       setMessages((prev) => prev.filter((m) => m.id !== tempUserMessage.id));
@@ -82,9 +154,10 @@ export function useChat({ projectId, aiAnalysis, onError, onInfo }: UseChatProps
       setError(message);
       onError?.(message);
     } finally {
+      abortControllerRef.current = null;
       setIsLoading(false);
     }
-  }, [projectId, onError]);
+  }, [projectId, onError, cancelRequest]);
 
   // Clear the conversation
   const clearConversation = useCallback(async (confirmed?: boolean) => {
@@ -130,6 +203,7 @@ export function useChat({ projectId, aiAnalysis, onError, onInfo }: UseChatProps
     loadMessages,
     clearConversation,
     insertAnalysis,
+    cancelRequest,
     error,
   };
 }

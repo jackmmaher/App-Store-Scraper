@@ -9,6 +9,9 @@ import {
 } from '@/lib/supabase';
 import { getEnrichmentForPrompt } from '@/lib/crawl';
 
+// Vercel serverless function timeout (2 minutes for chat)
+export const maxDuration = 120;
+
 // GET /api/chat?projectId=xxx - Fetch all messages for a project
 export async function GET(request: NextRequest) {
   const authed = await isAuthenticated();
@@ -97,7 +100,7 @@ export async function POST(request: NextRequest) {
       { role: 'user' as const, content: message },
     ];
 
-    // Call Claude API
+    // Call Claude API with timeout to prevent hanging
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -111,6 +114,7 @@ export async function POST(request: NextRequest) {
         system: systemPrompt,
         messages: conversationMessages,
       }),
+      signal: AbortSignal.timeout(90000), // 90 second timeout
     });
 
     if (!response.ok) {

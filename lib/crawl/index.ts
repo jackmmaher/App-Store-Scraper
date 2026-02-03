@@ -21,6 +21,9 @@ export {
   getWebsiteEnrichmentForCompetitors,
   getEnrichmentForBlueprint,
   getColorPalettesForDesignSystem,
+  getFontsForDesignSystem,
+  getFontPairingsForDesignSystem,
+  getColorSpectrumForPrimary,
   extractKeyComplaints,
   extractFeatureRequests,
   extractRedditThemes,
@@ -31,8 +34,18 @@ export {
   createEnrichmentHeader,
 } from './enrichment';
 
-// Re-export palette types
-export type { ColorPalette, PaletteResponse } from './enrichment';
+// Re-export palette and font types
+export type {
+  ColorPalette,
+  PaletteResponse,
+  GoogleFontData,
+  FontPairingData,
+  FontsResponse,
+  FontPairsResponse,
+  ColorShades,
+  ColorSpectrumData,
+  ColorSpectrumResponse,
+} from './enrichment';
 
 // Re-export cache utilities
 export {
