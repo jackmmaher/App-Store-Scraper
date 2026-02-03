@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
             return;
           }
           heartbeatCount++;
-          const elapsedSeconds = heartbeatCount * 2;
+          const elapsedSeconds = Math.round(heartbeatCount * 1.5);
 
           // Estimate which filter we're on based on elapsed time
           const estimatedFilterIndex = Math.min(
@@ -174,8 +174,10 @@ export async function POST(request: NextRequest) {
             message: `Crawling ${enabledFilters[estimatedFilterIndex]?.sort || 'reviews'}...`,
             // Phase indicator: RSS (~first 30s) or Browser (after)
             phase: elapsedSeconds < 30 ? 'rss' : 'browser',
+            // Add timeout awareness
+            timeRemaining: Math.max(0, 660 - elapsedSeconds),
           });
-        }, 2000);
+        }, 1500);
 
         try {
           // Send start event
@@ -186,10 +188,10 @@ export async function POST(request: NextRequest) {
           });
 
           // Call the Python crawler - it handles all sort types internally
-          // 9 minute timeout for the crawl request (browser scraping can be slow)
-          // Must be > Python timeout (8 min browser + 2 min RSS = 10 min max)
+          // 11 minute timeout for the crawl request
+          // Must be > Python timeout (8 min browser + 2 min RSS = 10 min max) + buffer
           const abortController = new AbortController();
-          const timeoutId = setTimeout(() => abortController.abort(), 9 * 60 * 1000);
+          const timeoutId = setTimeout(() => abortController.abort(), 11 * 60 * 1000);
 
           let response: Response;
           try {
@@ -344,10 +346,14 @@ export async function POST(request: NextRequest) {
           let errorMessage = 'Unknown error';
           if (error instanceof Error) {
             if (error.name === 'AbortError') {
-              errorMessage = 'Review scraping timed out after 9 minutes. The crawl service may be slow or unresponsive. Try reducing the number of reviews or check crawl-service logs.';
+              errorMessage = 'Review scraping timed out after 11 minutes. Try reducing the number of reviews (under 1000) or contact support if this persists.';
             } else if (error.message === 'fetch failed' || (error.cause && typeof error.cause === 'object')) {
               // Connection dropped - service likely crashed
-              errorMessage = 'Connection to crawler service lost. The service may have crashed - check Python logs for errors. Common causes: Playwright not installed (run: playwright install chromium), out of memory, or service not running.';
+              const elapsedSecondsApprox = Math.round(heartbeatCount * 1.5);
+              errorMessage = `Connection to crawler service lost after ${elapsedSecondsApprox} seconds. ` +
+                'Possible causes: (1) Crawler timed out - try fewer reviews, ' +
+                '(2) Out of memory - check Python logs, ' +
+                '(3) Playwright browser crashed. Check crawl-service logs for details.';
             } else {
               errorMessage = error.message;
             }
