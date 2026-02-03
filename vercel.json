@@ -4,7 +4,7 @@
       "maxDuration": 60
     },
     "api/py-reviews.py": {
-      "maxDuration": 300
+      "maxDuration": 60
     },
     "app/api/chat/route.ts": {
       "maxDuration": 120
