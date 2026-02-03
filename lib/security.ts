@@ -208,7 +208,10 @@ export function generateSecureToken(): string {
  * @returns Signed token string
  */
 export function createSignedToken(payload: Record<string, unknown>, expiryMs: number): string {
-  const secret = process.env.SESSION_SECRET || process.env.APP_PASSWORD || 'default-secret';
+  const secret = process.env.SESSION_SECRET || process.env.APP_PASSWORD;
+  if (!secret) {
+    throw new Error('SECURITY: SESSION_SECRET or APP_PASSWORD must be configured');
+  }
   const expiry = Date.now() + expiryMs;
   const data = JSON.stringify({ ...payload, exp: expiry });
   const signature = crypto.createHmac('sha256', secret).update(data).digest('hex');
@@ -225,7 +228,10 @@ export function verifySignedToken(token: string): Record<string, unknown> | null
     const [dataB64, signature] = token.split('.');
     if (!dataB64 || !signature) return null;
 
-    const secret = process.env.SESSION_SECRET || process.env.APP_PASSWORD || 'default-secret';
+    const secret = process.env.SESSION_SECRET || process.env.APP_PASSWORD;
+    if (!secret) {
+      throw new Error('SECURITY: SESSION_SECRET or APP_PASSWORD must be configured');
+    }
     const data = Buffer.from(dataB64, 'base64').toString('utf8');
     const expectedSignature = crypto.createHmac('sha256', secret).update(data).digest('hex');
 

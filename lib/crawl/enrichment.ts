@@ -535,6 +535,105 @@ export interface FontPairsResponse {
   category?: string;
 }
 
+// Fallback font pairings for when crawl service is unavailable
+const FALLBACK_FONT_PAIRINGS: FontPairingData[] = [
+  // Modern/Clean
+  { heading_font: 'Inter', body_font: 'Inter', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'modern' },
+  { heading_font: 'Space Grotesk', body_font: 'Inter', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'modern' },
+  { heading_font: 'Plus Jakarta Sans', body_font: 'Inter', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'modern' },
+  { heading_font: 'Manrope', body_font: 'Inter', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'modern' },
+  // Professional
+  { heading_font: 'Poppins', body_font: 'Open Sans', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'professional' },
+  { heading_font: 'Montserrat', body_font: 'Roboto', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'professional' },
+  // Editorial
+  { heading_font: 'Playfair Display', body_font: 'Lato', heading_category: 'serif', body_category: 'sans-serif', style: 'editorial' },
+  { heading_font: 'Merriweather', body_font: 'Open Sans', heading_category: 'serif', body_category: 'sans-serif', style: 'editorial' },
+  // Friendly
+  { heading_font: 'Nunito', body_font: 'Nunito', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'friendly' },
+  { heading_font: 'Quicksand', body_font: 'Open Sans', heading_category: 'sans-serif', body_category: 'sans-serif', style: 'friendly' },
+  // Technical
+  { heading_font: 'Space Grotesk', body_font: 'JetBrains Mono', heading_category: 'sans-serif', body_category: 'monospace', style: 'technical' },
+  { heading_font: 'Inter', body_font: 'Fira Code', heading_category: 'sans-serif', body_category: 'monospace', style: 'technical' },
+];
+
+/**
+ * Fetch structured font pairings (JSON, not markdown) for the FontPickerModal
+ *
+ * @param category - App Store category
+ * @param style - Desired style (modern, professional, etc.)
+ * @param maxPairings - Maximum pairings to return
+ * @param forceRefresh - Force re-scrape from sources
+ * @returns Structured font pairing data
+ */
+export async function getStructuredFontPairings(
+  category?: string,
+  style?: string,
+  maxPairings: number = 12,
+  forceRefresh: boolean = false
+): Promise<{ pairings: FontPairingData[]; source: 'scraped' | 'fallback'; totalAvailable: number }> {
+  const orchestrator = getCrawlOrchestrator();
+
+  const isAvailable = await orchestrator.isAvailable();
+  if (!isAvailable) {
+    console.log('Crawl service unavailable, using fallback font pairings');
+    return {
+      pairings: FALLBACK_FONT_PAIRINGS.slice(0, maxPairings),
+      source: 'fallback',
+      totalAvailable: FALLBACK_FONT_PAIRINGS.length,
+    };
+  }
+
+  try {
+    const baseUrl = orchestrator.getBaseUrl();
+    const response = await fetch(`${baseUrl}/crawl/font-pairs`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        category,
+        style,
+        max_pairings: maxPairings,
+        force_refresh: forceRefresh,
+      }),
+      signal: AbortSignal.timeout(forceRefresh ? 30000 : 10000), // Longer timeout for refresh
+    });
+
+    if (!response.ok) {
+      console.error('Font pairings fetch failed:', response.status);
+      return {
+        pairings: FALLBACK_FONT_PAIRINGS.slice(0, maxPairings),
+        source: 'fallback',
+        totalAvailable: FALLBACK_FONT_PAIRINGS.length,
+      };
+    }
+
+    const data: FontPairsResponse = await response.json();
+    console.log(`Received ${data.pairings?.length || 0} font pairings from crawl service`);
+
+    if (data.pairings && data.pairings.length > 0) {
+      return {
+        pairings: data.pairings.slice(0, maxPairings),
+        source: 'scraped',
+        totalAvailable: data.total_pairings || data.pairings.length,
+      };
+    }
+
+    return {
+      pairings: FALLBACK_FONT_PAIRINGS.slice(0, maxPairings),
+      source: 'fallback',
+      totalAvailable: FALLBACK_FONT_PAIRINGS.length,
+    };
+  } catch (error) {
+    console.error('Error fetching structured font pairings:', error);
+    return {
+      pairings: FALLBACK_FONT_PAIRINGS.slice(0, maxPairings),
+      source: 'fallback',
+      totalAvailable: FALLBACK_FONT_PAIRINGS.length,
+    };
+  }
+}
+
 /**
  * Fetch curated Google Fonts for Design System generation
  *

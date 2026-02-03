@@ -1,0 +1,391 @@
+{
+  "cached_at": "2026-02-03T10:35:50.595091",
+  "total_accumulated": 35,
+  "palettes": [
+    {
+      "colors": [
+        "264653",
+        "2A9D8F",
+        "E9C46A",
+        "F4A261",
+        "E76F51"
+      ],
+      "mood": "professional",
+      "source_url": "https://coolors.co/palette/264653-2a9d8f-e9c46a-f4a261-e76f51"
+    },
+    {
+      "colors": [
+        "003049",
+        "D62828",
+        "F77F00",
+        "FCBF49",
+        "EAE2B7"
+      ],
+      "mood": "professional",
+      "source_url": "https://coolors.co/palette/003049-d62828-f77f00-fcbf49-eae2b7"
+    },
+    {
+      "colors": [
+        "1D3557",
+        "457B9D",
+        "A8DADC",
+        "F1FAEE",
+        "E63946"
+      ],
+      "mood": "professional",
+      "source_url": "https://coolors.co/palette/1d3557-457b9d-a8dadc-f1faee-e63946"
+    },
+    {
+      "colors": [
+        "2B2D42",
+        "8D99AE",
+        "EDF2F4",
+        "EF233C",
+        "D80032"
+      ],
+      "mood": "professional",
+      "source_url": "https://coolors.co/palette/2b2d42-8d99ae-edf2f4-ef233c-d80032"
+    },
+    {
+      "colors": [
+        "000814",
+        "001D3D",
+        "003566",
+        "FFC300",
+        "FFD60A"
+      ],
+      "mood": "professional",
+      "source_url": "https://coolors.co/palette/000814-001d3d-003566-ffc300-ffd60a"
+    },
+    {
+      "colors": [
+        "606C38",
+        "283618",
+        "FEFAE0",
+        "DDA15E",
+        "BC6C25"
+      ],
+      "mood": "calm",
+      "source_url": "https://coolors.co/palette/606c38-283618-fefae0-dda15e-bc6c25"
+    },
+    {
+      "colors": [
+        "CCD5AE",
+        "E9EDC9",
+        "FEFAE0",
+        "FAEDCD",
+        "D4A373"
+      ],
+      "mood": "calm",
+      "source_url": "https://coolors.co/palette/ccd5ae-e9edc9-fefae0-faedcd-d4a373"
+    },
+    {
+      "colors": [
+        "F8F9FA",
+        "E9ECEF",
+        "DEE2E6",
+        "CED4DA",
+        "ADB5BD"
+      ],
+      "mood": "calm",
+      "source_url": "https://coolors.co/palette/f8f9fa-e9ecef-dee2e6-ced4da-adb5bd"
+    },
+    {
+      "colors": [
+        "A7C957",
+        "6A994E",
+        "386641",
+        "BC4749",
+        "F2E8CF"
+      ],
+      "mood": "calm",
+      "source_url": "https://coolors.co/palette/a7c957-6a994e-386641-bc4749-f2e8cf"
+    },
+    {
+      "colors": [
+        "E8E8E4",
+        "D8D8D4",
+        "C8C8C4",
+        "B8B8B4",
+        "A8A8A4"
+      ],
+      "mood": "calm",
+      "source_url": "https://coolors.co/palette/e8e8e4-d8d8d4-c8c8c4-b8b8b4-a8a8a4"
+    },
+    {
+      "colors": [
+        "FF6B6B",
+        "4ECDC4",
+        "45B7D1",
+        "96CEB4",
+        "FFEAA7"
+      ],
+      "mood": "playful",
+      "source_url": "https://coolors.co/palette/ff6b6b-4ecdc4-45b7d1-96ceb4-ffeaa7"
+    },
+    {
+      "colors": [
+        "F72585",
+        "B5179E",
+        "7209B7",
+        "560BAD",
+        "480CA8"
+      ],
+      "mood": "playful",
+      "source_url": "https://coolors.co/palette/f72585-b5179e-7209b7-560bad-480ca8"
+    },
+    {
+      "colors": [
+        "FFBE0B",
+        "FB5607",
+        "FF006E",
+        "8338EC",
+        "3A86FF"
+      ],
+      "mood": "playful",
+      "source_url": "https://coolors.co/palette/ffbe0b-fb5607-ff006e-8338ec-3a86ff"
+    },
+    {
+      "colors": [
+        "70D6FF",
+        "FF70A6",
+        "FF9770",
+        "FFD670",
+        "E9FF70"
+      ],
+      "mood": "playful",
+      "source_url": "https://coolors.co/palette/70d6ff-ff70a6-ff9770-ffd670-e9ff70"
+    },
+    {
+      "colors": [
+        "F94144",
+        "F3722C",
+        "F8961E",
+        "F9C74F",
+        "90BE6D"
+      ],
+      "mood": "playful",
+      "source_url": "https://coolors.co/palette/f94144-f3722c-f8961e-f9c74f-90be6d"
+    },
+    {
+      "colors": [
+        "0D1B2A",
+        "1B263B",
+        "415A77",
+        "778DA9",
+        "E0E1DD"
+      ],
+      "mood": "dark",
+      "source_url": "https://coolors.co/palette/0d1b2a-1b263b-415a77-778da9-e0e1dd"
+    },
+    {
+      "colors": [
+        "14213D",
+        "FCA311",
+        "E5E5E5",
+        "000000",
+        "FFFFFF"
+      ],
+      "mood": "dark",
+      "source_url": "https://coolors.co/palette/14213d-fca311-e5e5e5-000000-ffffff"
+    },
+    {
+      "colors": [
+        "212529",
+        "343A40",
+        "495057",
+        "6C757D",
+        "ADB5BD"
+      ],
+      "mood": "dark",
+      "source_url": "https://coolors.co/palette/212529-343a40-495057-6c757d-adb5bd"
+    },
+    {
+      "colors": [
+        "10002B",
+        "240046",
+        "3C096C",
+        "5A189A",
+        "7B2CBF"
+      ],
+      "mood": "dark",
+      "source_url": "https://coolors.co/palette/10002b-240046-3c096c-5a189a-7b2cbf"
+    },
+    {
+      "colors": [
+        "03071E",
+        "370617",
+        "6A040F",
+        "9D0208",
+        "D00000"
+      ],
+      "mood": "bold",
+      "source_url": "https://coolors.co/palette/03071e-370617-6a040f-9d0208-d00000"
+    },
+    {
+      "colors": [
+        "D4A373",
+        "CCD5AE",
+        "E9EDC9",
+        "FEFAE0",
+        "FAEDCD"
+      ],
+      "mood": "warm",
+      "source_url": "https://coolors.co/palette/d4a373-ccd5ae-e9edc9-fefae0-faedcd"
+    },
+    {
+      "colors": [
+        "BC6C25",
+        "DDA15E",
+        "FEFAE0",
+        "283618",
+        "606C38"
+      ],
+      "mood": "warm",
+      "source_url": "https://coolors.co/palette/bc6c25-dda15e-fefae0-283618-606c38"
+    },
+    {
+      "colors": [
+        "FFCDB2",
+        "FFB4A2",
+        "E5989B",
+        "B5838D",
+        "6D6875"
+      ],
+      "mood": "warm",
+      "source_url": "https://coolors.co/palette/ffcdb2-ffb4a2-e5989b-b5838d-6d6875"
+    },
+    {
+      "colors": [
+        "FF9F1C",
+        "FFBF69",
+        "FFFFFF",
+        "CBF3F0",
+        "2EC4B6"
+      ],
+      "mood": "warm",
+      "source_url": "https://coolors.co/palette/ff9f1c-ffbf69-ffffff-cbf3f0-2ec4b6"
+    },
+    {
+      "colors": [
+        "9B2335",
+        "D72638",
+        "EF3E36",
+        "F2EFEA",
+        "140F2D"
+      ],
+      "mood": "warm",
+      "source_url": "https://coolors.co/palette/9b2335-d72638-ef3e36-f2efea-140f2d"
+    },
+    {
+      "colors": [
+        "03045E",
+        "0077B6",
+        "00B4D8",
+        "90E0EF",
+        "CAF0F8"
+      ],
+      "mood": "cool",
+      "source_url": "https://coolors.co/palette/03045e-0077b6-00b4d8-90e0ef-caf0f8"
+    },
+    {
+      "colors": [
+        "184E77",
+        "1E6091",
+        "1A759F",
+        "168AAD",
+        "34A0A4"
+      ],
+      "mood": "cool",
+      "source_url": "https://coolors.co/palette/184e77-1e6091-1a759f-168aad-34a0a4"
+    },
+    {
+      "colors": [
+        "22223B",
+        "4A4E69",
+        "9A8C98",
+        "C9ADA7",
+        "F2E9E4"
+      ],
+      "mood": "cool",
+      "source_url": "https://coolors.co/palette/22223b-4a4e69-9a8c98-c9ada7-f2e9e4"
+    },
+    {
+      "colors": [
+        "5F0F40",
+        "9A031E",
+        "FB8B24",
+        "E36414",
+        "0F4C5C"
+      ],
+      "mood": "cool",
+      "source_url": "https://coolors.co/palette/5f0f40-9a031e-fb8b24-e36414-0f4c5c"
+    },
+    {
+      "colors": [
+        "006D77",
+        "83C5BE",
+        "EDF6F9",
+        "FFDDD2",
+        "E29578"
+      ],
+      "mood": "cool",
+      "source_url": "https://coolors.co/palette/006d77-83c5be-edf6f9-ffddd2-e29578"
+    },
+    {
+      "colors": [
+        "FFFFFF",
+        "F0EFEB",
+        "DFE7E7",
+        "C9CAD0",
+        "AAB0BC"
+      ],
+      "mood": "light",
+      "source_url": "https://coolors.co/palette/ffffff-f0efeb-dfe7e7-c9cad0-aab0bc"
+    },
+    {
+      "colors": [
+        "FEFCFB",
+        "F8F0E3",
+        "EDE6DB",
+        "E5DDD3",
+        "D8CFC4"
+      ],
+      "mood": "light",
+      "source_url": "https://coolors.co/palette/fefcfb-f8f0e3-ede6db-e5ddd3-d8cfc4"
+    },
+    {
+      "colors": [
+        "2D3436",
+        "636E72",
+        "B2BEC3",
+        "DFE6E9",
+        "FFFFFF"
+      ],
+      "mood": "neutral",
+      "source_url": "https://coolors.co/palette/2d3436-636e72-b2bec3-dfe6e9-ffffff"
+    },
+    {
+      "colors": [
+        "1A1A2E",
+        "16213E",
+        "0F3460",
+        "E94560",
+        "FFFFFF"
+      ],
+      "mood": "neutral",
+      "source_url": "https://coolors.co/palette/1a1a2e-16213e-0f3460-e94560-ffffff"
+    },
+    {
+      "colors": [
+        "2C3E50",
+        "3498DB",
+        "ECF0F1",
+        "E74C3C",
+        "F39C12"
+      ],
+      "mood": "neutral",
+      "source_url": "https://coolors.co/palette/2c3e50-3498db-ecf0f1-e74c3c-f39c12"
+    }
+  ]
+}

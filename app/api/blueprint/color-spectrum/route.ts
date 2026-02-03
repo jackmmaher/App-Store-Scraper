@@ -5,11 +5,17 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { isAuthenticated } from '@/lib/auth';
 import { getColorSpectrumForPrimary } from '@/lib/crawl/enrichment';
 
 export const maxDuration = 15;
 
 export async function POST(request: NextRequest) {
+  const authed = await isAuthenticated();
+  if (!authed) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const body = await request.json();
     const { primaryHex, includeComplementary = true } = body;
@@ -46,6 +52,11 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
+  const authed = await isAuthenticated();
+  if (!authed) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const { searchParams } = new URL(request.url);
   const primaryHex = searchParams.get('hex');
 

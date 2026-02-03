@@ -1,0 +1,381 @@
+{
+  "cached_at": "2026-02-03T10:32:19.273229",
+  "fonts": [
+    {
+      "family": "Inter",
+      "category": "sans-serif",
+      "variants": [
+        "300",
+        "400",
+        "500",
+        "600",
+        "700"
+      ],
+      "subsets": [
+        "latin",
+        "latin-ext"
+      ],
+      "version": "",
+      "popularity": 100
+    },
+    {
+      "family": "Roboto",
+      "category": "sans-serif",
+      "variants": [
+        "300",
+        "400",
+        "500",
+        "700"
+      ],
+      "subsets": [
+        "latin",
+        "latin-ext"
+      ],
+      "version": "",
+      "popularity": 99
+    },
+    {
+      "family": "Open Sans",
+      "category": "sans-serif",
+      "variants": [
+        "300",
+        "400",
+        "600",
+        "700"
+      ],
+      "subsets": [
+        "latin",
+        "latin-ext"
+      ],
+      "version": "",
+      "popularity": 98
+    },
+    {
+      "family": "Poppins",
+      "category": "sans-serif",
+      "variants": [
+        "300",
+        "400",
+        "500",
+        "600",
+        "700"
+      ],
+      "subsets": [
+        "latin",
+        "latin-ext"
+      ],
+      "version": "",
+      "popularity": 97
+    },
+    {
+      "family": "Montserrat",
+      "category": "sans-serif",
+      "variants": [
+        "300",
+        "400",
+        "500",
+        "600",
+        "700"
+      ],
+      "subsets": [
+        "latin",
+        "latin-ext"
+      ],
+      "version": "",
+      "popularity": 96
+    },
+    {
+      "family": "Lato",
+      "category": "sans-serif",
+      "variants": [
+        "300",
+        "400",
+        "700"
+      ],
+      "subsets": [
+        "latin",
+        "latin-ext"
+      ],
+      "version": "",
+      "popularity": 95
+    },
+    {
+      "family": "Nunito",
+      "category": "sans-serif",
+      "variants": [
+        "300",
+        "400",
+        "600",
+        "700"
+      ],
+      "subsets": [
+        "latin",
+        "latin-ext"
+      ],
+      "version": "",
+      "popularity": 94
+    },
+    {
+      "family": "Work Sans",
+      "category": "sans-serif",
+      "variants": [
+        "300",
+        "400",
+        "500",
+        "600",
+        "700"
+      ],
+      "subsets": [
+        "latin",
+        "latin-ext"
+      ],
+      "version": "",
+      "popularity": 93
+    },
+    {
+      "family": "DM Sans",
+      "category": "sans-serif",
+      "variants": [
+        "400",
+        "500",
+        "700"
+      ],
+      "subsets": [
+        "latin",
+        "latin-ext"
+      ],
+      "version": "",
+      "popularity": 92
+    },
+    {
+      "family": "Plus Jakarta Sans",
+      "category": "sans-serif",
+      "variants": [
+        "300",
+        "400",
+        "500",
+        "600",
+        "700"
+      ],
+      "subsets": [
+        "latin",
+        "latin-ext"
+      ],
+      "version": "",
+      "popularity": 91
+    },
+    {
+      "family": "Manrope",
+      "category": "sans-serif",
+      "variants": [
+        "300",
+        "400",
+        "500",
+        "600",
+        "700"
+      ],
+      "subsets": [
+        "latin",
+        "latin-ext"
+      ],
+      "version": "",
+      "popularity": 90
+    },
+    {
+      "family": "Space Grotesk",
+      "category": "sans-serif",
+      "variants": [
+        "300",
+        "400",
+        "500",
+        "600",
+        "700"
+      ],
+      "subsets": [
+        "latin",
+        "latin-ext"
+      ],
+      "version": "",
+      "popularity": 89
+    },
+    {
+      "family": "Playfair Display",
+      "category": "serif",
+      "variants": [
+        "400",
+        "500",
+        "600",
+        "700"
+      ],
+      "subsets": [
+        "latin",
+        "latin-ext"
+      ],
+      "version": "",
+      "popularity": 85
+    },
+    {
+      "family": "Merriweather",
+      "category": "serif",
+      "variants": [
+        "300",
+        "400",
+        "700"
+      ],
+      "subsets": [
+        "latin",
+        "latin-ext"
+      ],
+      "version": "",
+      "popularity": 84
+    },
+    {
+      "family": "Lora",
+      "category": "serif",
+      "variants": [
+        "400",
+        "500",
+        "600",
+        "700"
+      ],
+      "subsets": [
+        "latin",
+        "latin-ext"
+      ],
+      "version": "",
+      "popularity": 83
+    },
+    {
+      "family": "Crimson Pro",
+      "category": "serif",
+      "variants": [
+        "300",
+        "400",
+        "500",
+        "600",
+        "700"
+      ],
+      "subsets": [
+        "latin",
+        "latin-ext"
+      ],
+      "version": "",
+      "popularity": 82
+    },
+    {
+      "family": "Source Serif Pro",
+      "category": "serif",
+      "variants": [
+        "300",
+        "400",
+        "600",
+        "700"
+      ],
+      "subsets": [
+        "latin",
+        "latin-ext"
+      ],
+      "version": "",
+      "popularity": 81
+    },
+    {
+      "family": "Sora",
+      "category": "sans-serif",
+      "variants": [
+        "300",
+        "400",
+        "500",
+        "600",
+        "700"
+      ],
+      "subsets": [
+        "latin",
+        "latin-ext"
+      ],
+      "version": "",
+      "popularity": 80
+    },
+    {
+      "family": "Outfit",
+      "category": "sans-serif",
+      "variants": [
+        "300",
+        "400",
+        "500",
+        "600",
+        "700"
+      ],
+      "subsets": [
+        "latin",
+        "latin-ext"
+      ],
+      "version": "",
+      "popularity": 79
+    },
+    {
+      "family": "Lexend",
+      "category": "sans-serif",
+      "variants": [
+        "300",
+        "400",
+        "500",
+        "600",
+        "700"
+      ],
+      "subsets": [
+        "latin",
+        "latin-ext"
+      ],
+      "version": "",
+      "popularity": 78
+    },
+    {
+      "family": "JetBrains Mono",
+      "category": "monospace",
+      "variants": [
+        "300",
+        "400",
+        "500",
+        "700"
+      ],
+      "subsets": [
+        "latin",
+        "latin-ext"
+      ],
+      "version": "",
+      "popularity": 75
+    },
+    {
+      "family": "Fira Code",
+      "category": "monospace",
+      "variants": [
+        "300",
+        "400",
+        "500",
+        "700"
+      ],
+      "subsets": [
+        "latin",
+        "latin-ext"
+      ],
+      "version": "",
+      "popularity": 74
+    },
+    {
+      "family": "Source Code Pro",
+      "category": "monospace",
+      "variants": [
+        "300",
+        "400",
+        "500",
+        "700"
+      ],
+      "subsets": [
+        "latin",
+        "latin-ext"
+      ],
+      "version": "",
+      "popularity": 73
+    }
+  ]
+}

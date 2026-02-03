@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import type { BlueprintSection as BlueprintSectionType, BlueprintAttachment, ProjectBlueprint, BlueprintColorPalette } from '@/lib/supabase';
+import type { BlueprintSection as BlueprintSectionType, BlueprintAttachment, ProjectBlueprint, BlueprintColorPalette, BlueprintTypography } from '@/lib/supabase';
 import { useBlueprint } from '@/hooks/useBlueprint';
 import { useBlueprintGenerate } from '@/hooks/useBlueprintGenerate';
 import BlueprintSectionNav, { type BlueprintNavSection } from './BlueprintSectionNav';
 import BlueprintSectionComponent from './BlueprintSection';
 import BlueprintExportBar from './BlueprintExportBar';
 import PalettePickerModal from './PalettePickerModal';
+import FontPickerModal from './FontPickerModal';
 import BlueprintNotesSection from './BlueprintNotesSection';
 
 interface BlueprintTabProps {
@@ -17,6 +18,7 @@ interface BlueprintTabProps {
 export default function BlueprintTab({ projectId }: BlueprintTabProps) {
   const [activeSection, setActiveSection] = useState<BlueprintNavSection>('pareto');
   const [paletteModalOpen, setPaletteModalOpen] = useState(false);
+  const [typographyModalOpen, setTypographyModalOpen] = useState(false);
 
   const {
     blueprint,
@@ -104,6 +106,45 @@ export default function BlueprintTab({ projectId }: BlueprintTabProps) {
       }
     } catch (error) {
       console.error('Error updating palette:', error);
+    }
+  }, [blueprint, setBlueprint, generateSection]);
+
+  // Handle typography change
+  const handleTypographyChange = useCallback(async (
+    typography: BlueprintTypography,
+    sectionsToRegenerate: BlueprintSectionType[]
+  ) => {
+    if (!blueprint) return;
+
+    // Update typography via API route
+    try {
+      const response = await fetch('/api/blueprint/typography', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          blueprintId: blueprint.id,
+          typography,
+          source: 'user_selected',
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        console.error('Failed to update typography:', data.error);
+        return;
+      }
+
+      const { blueprint: updated } = await response.json();
+      setBlueprint(updated);
+
+      // Regenerate selected sections
+      for (const section of sectionsToRegenerate) {
+        // Small delay between regenerations
+        await new Promise(resolve => setTimeout(resolve, 500));
+        generateSection(section, blueprint.id);
+      }
+    } catch (error) {
+      console.error('Error updating typography:', error);
     }
   }, [blueprint, setBlueprint, generateSection]);
 
@@ -247,11 +288,13 @@ export default function BlueprintTab({ projectId }: BlueprintTabProps) {
             statuses={statuses}
             attachments={attachments}
             colorPalette={blueprint.color_palette}
+            typography={blueprint.typography}
             onGenerate={handleGenerate}
             onCancel={cancelGeneration}
             onUploadAttachment={handleUpload}
             onDeleteAttachment={deleteAttachment}
             onChangePalette={() => setPaletteModalOpen(true)}
+            onChangeTypography={() => setTypographyModalOpen(true)}
             onRefreshAttachments={refreshAttachments}
           />
         )}
@@ -266,6 +309,15 @@ export default function BlueprintTab({ projectId }: BlueprintTabProps) {
         currentPalette={blueprint.color_palette}
         onClose={() => setPaletteModalOpen(false)}
         onSelect={handlePaletteChange}
+        completedSections={completedSections}
+      />
+
+      {/* Font Picker Modal */}
+      <FontPickerModal
+        isOpen={typographyModalOpen}
+        currentTypography={blueprint.typography}
+        onClose={() => setTypographyModalOpen(false)}
+        onSelect={handleTypographyChange}
         completedSections={completedSections}
       />
     </div>

@@ -19,6 +19,7 @@ export default function BlueprintNotesSection({
   isFirstGeneration,
 }: BlueprintNotesSectionProps) {
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const hasNotes = Boolean(projectNotes?.trim());
   const hasSnapshot = Boolean(notesSnapshot?.trim());
@@ -26,8 +27,12 @@ export default function BlueprintNotesSection({
 
   const handleSync = useCallback(async () => {
     setIsSyncing(true);
+    setSyncError(null);
     try {
       await onSyncNotes();
+    } catch (err) {
+      console.error('Error syncing notes:', err);
+      setSyncError(err instanceof Error ? err.message : 'Failed to sync notes');
     } finally {
       setIsSyncing(false);
     }
@@ -101,6 +106,9 @@ export default function BlueprintNotesSection({
                   </>
                 )}
               </button>
+              {syncError && (
+                <p className="mt-2 text-sm text-red-600 dark:text-red-400">{syncError}</p>
+              )}
             </div>
           </div>
         </div>

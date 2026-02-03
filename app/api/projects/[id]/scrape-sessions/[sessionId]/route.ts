@@ -34,13 +34,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { sessionId } = await params;
+  const { id: projectId, sessionId } = await params;
 
   try {
     const { data: session, error } = await supabase
       .from('review_scrape_sessions')
       .select('*')
       .eq('id', sessionId)
+      .eq('project_id', projectId)
       .single();
 
     if (error) {
@@ -65,17 +66,18 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { sessionId } = await params;
+  const { id: projectId, sessionId } = await params;
 
   try {
     const body = await request.json();
     const { action } = body as { action: 'start' | 'cancel' };
 
-    // Get current session
+    // Get current session with project ownership check
     const { data: session, error: fetchError } = await supabase
       .from('review_scrape_sessions')
       .select('*')
       .eq('id', sessionId)
+      .eq('project_id', projectId)
       .single();
 
     if (fetchError || !session) {
@@ -122,13 +124,14 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { sessionId } = await params;
+  const { id: projectId, sessionId } = await params;
 
   try {
     const { error } = await supabase
       .from('review_scrape_sessions')
       .delete()
-      .eq('id', sessionId);
+      .eq('id', sessionId)
+      .eq('project_id', projectId);
 
     if (error) {
       console.error('[DELETE session] Error:', error);

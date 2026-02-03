@@ -2004,6 +2004,10 @@ export interface ProjectBlueprint {
   color_palette: BlueprintColorPalette | null;
   color_palette_source: 'auto' | 'user_selected' | 'coolors' | null;
 
+  // Typography - stored typography settings
+  typography: BlueprintTypography | null;
+  typography_source: 'auto' | 'user_selected' | null;
+
   // Notes snapshot - captured when blueprint generation starts
   notes_snapshot: string | null;
   notes_snapshot_at: string | null;
@@ -2195,6 +2199,29 @@ export async function deleteBlueprint(id: string): Promise<boolean> {
   }
 
   return true;
+}
+
+// Update blueprint notes snapshot
+export async function updateBlueprintNotesSnapshot(
+  blueprintId: string,
+  notes: string | null
+): Promise<ProjectBlueprint | null> {
+  const { data, error } = await supabase
+    .from('project_blueprints')
+    .update({
+      notes_snapshot: notes,
+      notes_snapshot_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', blueprintId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error updating notes snapshot:', error);
+    return null;
+  }
+  return data;
 }
 
 // Get attachments for a blueprint

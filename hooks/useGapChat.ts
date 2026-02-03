@@ -127,6 +127,11 @@ export function useGapChat({ sessionId, onError }: UseGapChatProps) {
       // Replace temp message with real ones
       setMessages((prev) => {
         const filtered = prev.filter((m) => m.id !== tempUserMessage.id);
+        // Guard against undefined messages from malformed response
+        if (!data.userMessage || !data.assistantMessage) {
+          console.error('Malformed response: missing message data');
+          return filtered;
+        }
         return [...filtered, data.userMessage, data.assistantMessage];
       });
     } catch (err) {

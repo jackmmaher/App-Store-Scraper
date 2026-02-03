@@ -6,6 +6,7 @@ Inspired by uicolors.app but implemented locally for speed and reliability.
 """
 
 import logging
+import re
 from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -14,6 +15,8 @@ logger = logging.getLogger(__name__)
 def hex_to_hsl(hex_color: str) -> Tuple[float, float, float]:
     """Convert hex color to HSL (Hue, Saturation, Lightness)"""
     hex_color = hex_color.lstrip('#')
+    if not re.match(r'^[0-9A-Fa-f]{6}$', hex_color):
+        raise ValueError(f"Invalid hex color: {hex_color}")
     r, g, b = tuple(int(hex_color[i:i+2], 16) / 255 for i in (0, 2, 4))
 
     max_c = max(r, g, b)

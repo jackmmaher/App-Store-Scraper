@@ -8,7 +8,9 @@ for heading + body font combinations.
 import httpx
 import json
 import logging
+import os
 import re
+import tempfile
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -203,7 +205,7 @@ def load_cached_pairings() -> Optional[List[FontPairing]]:
 
 
 def save_pairings_to_cache(pairings: List[FontPairing]):
-    """Save pairings to cache"""
+    """Save pairings to cache using atomic write"""
     try:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -212,9 +214,12 @@ def save_pairings_to_cache(pairings: List[FontPairing]):
             'pairings': [p.to_dict() for p in pairings],
         }
 
-        with open(FONTPAIR_CACHE_FILE, 'w') as f:
+        # Atomic write: write to temp file, then rename
+        with tempfile.NamedTemporaryFile('w', dir=CACHE_DIR, delete=False, suffix='.tmp') as f:
             json.dump(cache, f, indent=2)
+            temp_path = f.name
 
+        os.replace(temp_path, FONTPAIR_CACHE_FILE)  # Atomic on most systems
         logger.info(f"Saved {len(pairings)} font pairings to cache")
 
     except Exception as e:
@@ -231,14 +236,16 @@ async def get_font_pairings(force_refresh: bool = False) -> List[FontPairing]:
     Returns:
         List of FontPairing objects
     """
+    import asyncio
+
     if not force_refresh:
-        cached = load_cached_pairings()
+        cached = await asyncio.to_thread(load_cached_pairings)  # Non-blocking
         if cached:
             return cached
 
     pairings = await scrape_fontpair()
     if pairings:
-        save_pairings_to_cache(pairings)
+        await asyncio.to_thread(save_pairings_to_cache, pairings)  # Non-blocking
 
     return pairings
 

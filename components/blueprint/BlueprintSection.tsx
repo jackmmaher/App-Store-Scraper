@@ -1,12 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import type { BlueprintSection as BlueprintSectionType, BlueprintSectionStatus, BlueprintAttachment, BlueprintColorPalette } from '@/lib/supabase';
+import type { BlueprintSection as BlueprintSectionType, BlueprintSectionStatus, BlueprintAttachment, BlueprintColorPalette, BlueprintTypography } from '@/lib/supabase';
 import BlueprintGenerateButton from './BlueprintGenerateButton';
 import BlueprintImageUpload from './BlueprintImageUpload';
 import BlueprintProgressTracker from './BlueprintProgressTracker';
 import { BlueprintMarkdown } from './BlueprintMarkdown';
 import { PaletteSwatches } from './ColorSwatch';
+import { FontPairingSwatch } from './FontPreview';
 
 interface SectionMeta {
   title: string;
@@ -65,6 +66,9 @@ const SECTION_META: Record<BlueprintSectionType, SectionMeta> = {
 // Sections that use color palette
 const COLOR_SECTIONS: BlueprintSectionType[] = ['identity', 'design_system', 'wireframes', 'aso'];
 
+// Sections that use typography
+const TYPOGRAPHY_SECTIONS: BlueprintSectionType[] = ['design_system', 'wireframes', 'aso'];
+
 interface BlueprintSectionProps {
   section: BlueprintSectionType;
   blueprintId: string;
@@ -76,11 +80,13 @@ interface BlueprintSectionProps {
   statuses: Record<BlueprintSectionType, BlueprintSectionStatus>;
   attachments: BlueprintAttachment[];
   colorPalette?: BlueprintColorPalette | null;
+  typography?: BlueprintTypography | null;
   onGenerate: () => void;
   onCancel: () => void;
   onUploadAttachment: (file: File, screenLabel?: string) => Promise<BlueprintAttachment | null>;
   onDeleteAttachment: (attachmentId: string) => Promise<boolean>;
   onChangePalette?: () => void;
+  onChangeTypography?: () => void;
   onRefreshAttachments?: () => void;
 }
 
@@ -95,11 +101,13 @@ export default function BlueprintSection({
   statuses,
   attachments,
   colorPalette,
+  typography,
   onGenerate,
   onCancel,
   onUploadAttachment,
   onDeleteAttachment,
   onChangePalette,
+  onChangeTypography,
   onRefreshAttachments,
 }: BlueprintSectionProps) {
   const [isGeneratingIcon, setIsGeneratingIcon] = useState(false);
@@ -110,6 +118,12 @@ export default function BlueprintSection({
   const showPalette = COLOR_SECTIONS.includes(section) && hasPalette;
   // Show "Choose Palette" button on identity section before generation if no palette yet
   const showChoosePalette = section === 'identity' && !hasPalette && statuses.pareto === 'completed';
+
+  // Typography display
+  const hasTypography = typography?.heading_font && typography?.body_font;
+  const showTypography = TYPOGRAPHY_SECTIONS.includes(section) && hasTypography;
+  // Show "Choose Typography" button on design_system section before generation if no typography yet
+  const showChooseTypography = section === 'design_system' && !hasTypography && statuses.identity === 'completed';
 
   // Check if icon already generated (for identity section)
   const iconAttachment = section === 'identity'
@@ -196,6 +210,34 @@ export default function BlueprintSection({
               title="Change color palette"
             >
               <PaletteSwatches colors={colorPalette.colors} size="sm" />
+              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+              </svg>
+            </button>
+          )}
+          {/* Choose Typography Button (before generation) */}
+          {showChooseTypography && (
+            <button
+              type="button"
+              onClick={onChangeTypography}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-purple-200 dark:border-purple-700 bg-purple-50 dark:bg-purple-900/30 hover:bg-purple-100 dark:hover:bg-purple-900/50 text-purple-600 dark:text-purple-400 transition-colors"
+              title="Choose typography before generating"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" />
+              </svg>
+              <span className="text-sm font-medium">Choose Fonts</span>
+            </button>
+          )}
+          {/* Typography Display (after typography is set) */}
+          {showTypography && typography && (
+            <button
+              type="button"
+              onClick={onChangeTypography}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+              title="Change typography"
+            >
+              <FontPairingSwatch headingFont={typography.heading_font} bodyFont={typography.body_font} size="sm" />
               <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
               </svg>

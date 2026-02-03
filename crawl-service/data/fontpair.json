@@ -1,0 +1,205 @@
+{
+  "cached_at": "2026-02-03T10:17:18.222238",
+  "pairings": [
+    {
+      "heading_font": "Inter",
+      "body_font": "Inter",
+      "heading_category": "sans-serif",
+      "body_category": "sans-serif",
+      "style": "modern",
+      "source_url": null
+    },
+    {
+      "heading_font": "Space Grotesk",
+      "body_font": "Inter",
+      "heading_category": "sans-serif",
+      "body_category": "sans-serif",
+      "style": "modern",
+      "source_url": null
+    },
+    {
+      "heading_font": "Plus Jakarta Sans",
+      "body_font": "Inter",
+      "heading_category": "sans-serif",
+      "body_category": "sans-serif",
+      "style": "modern",
+      "source_url": null
+    },
+    {
+      "heading_font": "Manrope",
+      "body_font": "Inter",
+      "heading_category": "sans-serif",
+      "body_category": "sans-serif",
+      "style": "modern",
+      "source_url": null
+    },
+    {
+      "heading_font": "DM Sans",
+      "body_font": "DM Sans",
+      "heading_category": "sans-serif",
+      "body_category": "sans-serif",
+      "style": "modern",
+      "source_url": null
+    },
+    {
+      "heading_font": "Poppins",
+      "body_font": "Open Sans",
+      "heading_category": "sans-serif",
+      "body_category": "sans-serif",
+      "style": "professional",
+      "source_url": null
+    },
+    {
+      "heading_font": "Montserrat",
+      "body_font": "Roboto",
+      "heading_category": "sans-serif",
+      "body_category": "sans-serif",
+      "style": "professional",
+      "source_url": null
+    },
+    {
+      "heading_font": "Work Sans",
+      "body_font": "Lato",
+      "heading_category": "sans-serif",
+      "body_category": "sans-serif",
+      "style": "professional",
+      "source_url": null
+    },
+    {
+      "heading_font": "Nunito",
+      "body_font": "Open Sans",
+      "heading_category": "sans-serif",
+      "body_category": "sans-serif",
+      "style": "professional",
+      "source_url": null
+    },
+    {
+      "heading_font": "Playfair Display",
+      "body_font": "Lato",
+      "heading_category": "serif",
+      "body_category": "sans-serif",
+      "style": "editorial",
+      "source_url": null
+    },
+    {
+      "heading_font": "Playfair Display",
+      "body_font": "Source Sans Pro",
+      "heading_category": "serif",
+      "body_category": "sans-serif",
+      "style": "editorial",
+      "source_url": null
+    },
+    {
+      "heading_font": "Merriweather",
+      "body_font": "Open Sans",
+      "heading_category": "serif",
+      "body_category": "sans-serif",
+      "style": "editorial",
+      "source_url": null
+    },
+    {
+      "heading_font": "Lora",
+      "body_font": "Roboto",
+      "heading_category": "serif",
+      "body_category": "sans-serif",
+      "style": "editorial",
+      "source_url": null
+    },
+    {
+      "heading_font": "Crimson Pro",
+      "body_font": "Work Sans",
+      "heading_category": "serif",
+      "body_category": "sans-serif",
+      "style": "editorial",
+      "source_url": null
+    },
+    {
+      "heading_font": "Poppins",
+      "body_font": "Poppins",
+      "heading_category": "sans-serif",
+      "body_category": "sans-serif",
+      "style": "friendly",
+      "source_url": null
+    },
+    {
+      "heading_font": "Nunito",
+      "body_font": "Nunito",
+      "heading_category": "sans-serif",
+      "body_category": "sans-serif",
+      "style": "friendly",
+      "source_url": null
+    },
+    {
+      "heading_font": "Quicksand",
+      "body_font": "Open Sans",
+      "heading_category": "sans-serif",
+      "body_category": "sans-serif",
+      "style": "friendly",
+      "source_url": null
+    },
+    {
+      "heading_font": "Space Grotesk",
+      "body_font": "JetBrains Mono",
+      "heading_category": "sans-serif",
+      "body_category": "monospace",
+      "style": "technical",
+      "source_url": null
+    },
+    {
+      "heading_font": "Inter",
+      "body_font": "Fira Code",
+      "heading_category": "sans-serif",
+      "body_category": "monospace",
+      "style": "technical",
+      "source_url": null
+    },
+    {
+      "heading_font": "Roboto",
+      "body_font": "Source Code Pro",
+      "heading_category": "sans-serif",
+      "body_category": "monospace",
+      "style": "technical",
+      "source_url": null
+    },
+    {
+      "heading_font": "Sora",
+      "body_font": "Inter",
+      "heading_category": "sans-serif",
+      "body_category": "sans-serif",
+      "style": "bold",
+      "source_url": null
+    },
+    {
+      "heading_font": "Outfit",
+      "body_font": "Inter",
+      "heading_category": "sans-serif",
+      "body_category": "sans-serif",
+      "style": "bold",
+      "source_url": null
+    },
+    {
+      "heading_font": "Lexend",
+      "body_font": "Lexend",
+      "heading_category": "sans-serif",
+      "body_category": "sans-serif",
+      "style": "bold",
+      "source_url": null
+    },
+    {
+      "heading_font": "Source Serif Pro",
+      "body_font": "Source Sans Pro",
+      "heading_category": "serif",
+      "body_category": "sans-serif",
+      "style": "classic",
+      "source_url": null
+    },
+    {
+      "heading_font": "Libre Baskerville",
+      "body_font": "Source Sans Pro",
+      "heading_category": "serif",
+      "body_category": "sans-serif",
+      "style": "classic",
+      "source_url": null
+    }
+  ]
+}

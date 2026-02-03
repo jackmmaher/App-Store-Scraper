@@ -6,6 +6,7 @@ import {
   getBlueprintAttachments,
   updateBlueprintSection,
   updateBlueprintSectionStatus,
+  updateBlueprintNotesSnapshot,
   deleteBlueprint,
   getProject,
   type BlueprintSection,
@@ -165,26 +166,21 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
     }
 
-    // Update notes snapshot using raw supabase
-    const { createClient } = await import('@supabase/supabase-js');
-    const supabaseAdmin = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_KEY!
-    );
+    // Verify blueprint exists and get project_id for ownership check
+    const existingBlueprint = await getBlueprint(blueprintId);
+    if (!existingBlueprint) {
+      return NextResponse.json({ error: 'Blueprint not found' }, { status: 404 });
+    }
 
-    const { data: blueprint, error } = await supabaseAdmin
-      .from('project_blueprints')
-      .update({
-        notes_snapshot: notes,
-        notes_snapshot_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', blueprintId)
-      .select()
-      .single();
+    // Verify the project exists (ownership check for single-user app)
+    const project = await getProject(existingBlueprint.project_id);
+    if (!project) {
+      return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+    }
 
-    if (error) {
-      console.error('[PATCH /api/blueprint] Error:', error);
+    // Update notes snapshot using helper function
+    const blueprint = await updateBlueprintNotesSnapshot(blueprintId, notes);
+    if (!blueprint) {
       return NextResponse.json({ error: 'Failed to sync notes' }, { status: 500 });
     }
 

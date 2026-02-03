@@ -9,6 +9,7 @@ import httpx
 import json
 import logging
 import os
+import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -178,7 +179,7 @@ def load_cached_fonts() -> Optional[List[GoogleFont]]:
 
 
 def save_fonts_to_cache(fonts: List[GoogleFont]):
-    """Save fonts to cache"""
+    """Save fonts to cache using atomic write"""
     try:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -187,9 +188,12 @@ def save_fonts_to_cache(fonts: List[GoogleFont]):
             'fonts': [f.to_dict() for f in fonts],
         }
 
-        with open(FONTS_CACHE_FILE, 'w') as f:
+        # Atomic write: write to temp file, then rename
+        with tempfile.NamedTemporaryFile('w', dir=CACHE_DIR, delete=False, suffix='.tmp') as f:
             json.dump(cache, f, indent=2)
+            temp_path = f.name
 
+        os.replace(temp_path, FONTS_CACHE_FILE)  # Atomic on most systems
         logger.info(f"Saved {len(fonts)} fonts to cache")
 
     except Exception as e:
@@ -206,14 +210,16 @@ async def get_google_fonts(force_refresh: bool = False) -> List[GoogleFont]:
     Returns:
         List of GoogleFont objects
     """
+    import asyncio
+
     if not force_refresh:
-        cached = load_cached_fonts()
+        cached = await asyncio.to_thread(load_cached_fonts)  # Non-blocking
         if cached:
             return cached
 
     fonts = await fetch_google_fonts()
     if fonts:
-        save_fonts_to_cache(fonts)
+        await asyncio.to_thread(save_fonts_to_cache, fonts)  # Non-blocking
 
     return fonts
 

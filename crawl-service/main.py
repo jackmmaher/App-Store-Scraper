@@ -12,6 +12,7 @@ import asyncio
 import hashlib
 import logging
 import os
+import re
 import time
 import uuid
 from collections import defaultdict
@@ -817,10 +818,10 @@ async def generate_spectrum(request: ColorSpectrumRequest):
     logger.info(f"Generating color spectrum for {request.primary_hex}")
 
     try:
-        # Validate hex color
+        # Validate hex color format (must be 6 valid hex characters)
         hex_color = request.primary_hex.lstrip('#')
-        if len(hex_color) != 6:
-            raise HTTPException(status_code=400, detail="Invalid hex color. Use 6 characters (e.g., 'FF5733' or '#FF5733')")
+        if not re.match(r'^[0-9A-Fa-f]{6}$', hex_color):
+            raise HTTPException(status_code=400, detail="Invalid hex color. Must be 6 hex characters (0-9, A-F)")
 
         color_system = generate_color_system(hex_color)
 
