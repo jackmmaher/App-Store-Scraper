@@ -70,15 +70,16 @@ async def scrape_fontpair() -> List[FontPairing]:
     Scrape font pairings from FontPair.co
 
     Returns curated font pairings for heading and body text.
+    Now returns BOTH scraped pairings AND fallback for accumulation.
     """
-    pairings = []
+    scraped_pairings = []
 
     try:
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 "https://www.fontpair.co/all",
                 headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                 },
                 timeout=15.0,
                 follow_redirects=True,
@@ -87,29 +88,37 @@ async def scrape_fontpair() -> List[FontPairing]:
 
             soup = BeautifulSoup(response.text, 'html.parser')
 
-            # FontPair displays pairings in cards/sections
-            # The structure varies, so we try multiple selectors
-            pairing_elements = soup.select('.pairing, .font-pairing, [data-pairing], article')
+            # FontPair displays pairings in cards/sections - try multiple selectors
+            # Updated selectors to match common patterns on font pairing sites
+            pairing_elements = soup.select(
+                '.pairing, .font-pairing, [data-pairing], article, '
+                '.pair-card, .font-pair, .pairing-card, .combo, '
+                '[class*="pairing"], [class*="pair"], [class*="combo"]'
+            )
 
             for element in pairing_elements:
                 try:
                     # Try to extract heading and body fonts
                     text = element.get_text(separator=' ')
 
-                    # Look for patterns like "Font1 + Font2" or "Font1 & Font2"
-                    pair_match = re.search(r'([A-Z][a-zA-Z\s]+?)\s*[+&/]\s*([A-Z][a-zA-Z\s]+)', text)
+                    # Look for patterns like "Font1 + Font2", "Font1 & Font2", "Font1 / Font2"
+                    # Also try "Font1 with Font2" pattern
+                    pair_match = re.search(
+                        r'([A-Z][a-zA-Z\s]+?)\s*(?:[+&/]|with|and|\|)\s*([A-Z][a-zA-Z\s]+)',
+                        text, re.IGNORECASE
+                    )
 
                     if pair_match:
                         heading = pair_match.group(1).strip()
                         body = pair_match.group(2).strip()
 
                         # Filter out non-font strings
-                        if len(heading) < 30 and len(body) < 30:
+                        if 3 < len(heading) < 30 and 3 < len(body) < 30:
                             # Determine category based on common patterns
-                            heading_cat = 'serif' if any(s in heading.lower() for s in ['serif', 'georgia', 'times', 'playfair', 'merri']) else 'sans-serif'
-                            body_cat = 'serif' if any(s in body.lower() for s in ['serif', 'georgia', 'times']) else 'sans-serif'
+                            heading_cat = detect_font_category(heading)
+                            body_cat = detect_font_category(body)
 
-                            pairings.append(FontPairing(
+                            scraped_pairings.append(FontPairing(
                                 heading_font=heading,
                                 body_font=body,
                                 heading_category=heading_cat,
@@ -121,61 +130,166 @@ async def scrape_fontpair() -> List[FontPairing]:
                     logger.debug(f"Failed to parse pairing element: {e}")
                     continue
 
+            logger.info(f"Scraped {len(scraped_pairings)} pairings from FontPair.co")
+
     except Exception as e:
         logger.warning(f"Failed to scrape FontPair.co: {e}")
 
-    # If scraping failed or returned few results, use fallback
-    if len(pairings) < 10:
-        logger.info("Using fallback font pairings")
-        pairings = get_fallback_pairings()
+    # ALWAYS return fallback pairings for accumulation
+    # Scraped pairings will be ADDED to the accumulated collection
+    # This ensures the library grows even when scraping partially fails
+    fallback = get_fallback_pairings()
 
-    logger.info(f"Got {len(pairings)} font pairings")
-    return pairings
+    # Combine scraped + fallback, deduplicating
+    all_pairings = scraped_pairings.copy()
+    seen_keys = {(p.heading_font, p.body_font) for p in all_pairings}
+
+    for p in fallback:
+        key = (p.heading_font, p.body_font)
+        if key not in seen_keys:
+            all_pairings.append(p)
+            seen_keys.add(key)
+
+    logger.info(f"Returning {len(all_pairings)} total pairings ({len(scraped_pairings)} scraped + {len(all_pairings) - len(scraped_pairings)} from fallback)")
+    return all_pairings
+
+
+def detect_font_category(font_name: str) -> str:
+    """Detect font category from font name."""
+    name_lower = font_name.lower()
+
+    serif_indicators = ['serif', 'georgia', 'times', 'playfair', 'merri', 'lora',
+                        'garamond', 'baskerville', 'bodoni', 'caslon', 'didot',
+                        'crimson', 'libre', 'cormorant', 'spectral', 'source serif']
+    mono_indicators = ['mono', 'code', 'console', 'jetbrains', 'fira code',
+                       'source code', 'courier', 'inconsolata', 'menlo']
+    display_indicators = ['display', 'black', 'poster', 'decorative', 'script',
+                          'handwriting', 'cursive', 'brush', 'calligraphy']
+
+    if any(ind in name_lower for ind in mono_indicators):
+        return 'monospace'
+    if any(ind in name_lower for ind in serif_indicators):
+        return 'serif'
+    if any(ind in name_lower for ind in display_indicators):
+        return 'display'
+    return 'sans-serif'
 
 
 def get_fallback_pairings() -> List[FontPairing]:
-    """Return curated font pairings as fallback"""
+    """Return curated font pairings as fallback.
 
-    # Professionally curated pairings for app design
+    This is a large collection of professionally curated pairings.
+    The accumulation system will add these to the cache over time,
+    ensuring variety even when scraping fails.
+    """
+
+    # Professionally curated pairings for app design - expanded collection
     pairings_data = [
-        # Modern/Clean
+        # === Modern/Clean (15 pairings) ===
         {"heading_font": "Inter", "body_font": "Inter", "style": "modern", "heading_category": "sans-serif", "body_category": "sans-serif"},
         {"heading_font": "Space Grotesk", "body_font": "Inter", "style": "modern", "heading_category": "sans-serif", "body_category": "sans-serif"},
         {"heading_font": "Plus Jakarta Sans", "body_font": "Inter", "style": "modern", "heading_category": "sans-serif", "body_category": "sans-serif"},
         {"heading_font": "Manrope", "body_font": "Inter", "style": "modern", "heading_category": "sans-serif", "body_category": "sans-serif"},
         {"heading_font": "DM Sans", "body_font": "DM Sans", "style": "modern", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Outfit", "body_font": "Inter", "style": "modern", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Satoshi", "body_font": "Inter", "style": "modern", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "General Sans", "body_font": "Inter", "style": "modern", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Cabinet Grotesk", "body_font": "Inter", "style": "modern", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Clash Display", "body_font": "DM Sans", "style": "modern", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Switzer", "body_font": "Inter", "style": "modern", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Geist", "body_font": "Geist", "style": "modern", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Figtree", "body_font": "Inter", "style": "modern", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Be Vietnam Pro", "body_font": "Inter", "style": "modern", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Albert Sans", "body_font": "Inter", "style": "modern", "heading_category": "sans-serif", "body_category": "sans-serif"},
 
-        # Professional/Corporate
+        # === Professional/Corporate (12 pairings) ===
         {"heading_font": "Poppins", "body_font": "Open Sans", "style": "professional", "heading_category": "sans-serif", "body_category": "sans-serif"},
         {"heading_font": "Montserrat", "body_font": "Roboto", "style": "professional", "heading_category": "sans-serif", "body_category": "sans-serif"},
         {"heading_font": "Work Sans", "body_font": "Lato", "style": "professional", "heading_category": "sans-serif", "body_category": "sans-serif"},
         {"heading_font": "Nunito", "body_font": "Open Sans", "style": "professional", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Raleway", "body_font": "Roboto", "style": "professional", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Rubik", "body_font": "Roboto", "style": "professional", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Barlow", "body_font": "Roboto", "style": "professional", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Mulish", "body_font": "Open Sans", "style": "professional", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Hind", "body_font": "Open Sans", "style": "professional", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Karla", "body_font": "Lato", "style": "professional", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Titillium Web", "body_font": "Roboto", "style": "professional", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Exo 2", "body_font": "Open Sans", "style": "professional", "heading_category": "sans-serif", "body_category": "sans-serif"},
 
-        # Editorial/Premium
+        # === Editorial/Premium (15 pairings) ===
         {"heading_font": "Playfair Display", "body_font": "Lato", "style": "editorial", "heading_category": "serif", "body_category": "sans-serif"},
         {"heading_font": "Playfair Display", "body_font": "Source Sans Pro", "style": "editorial", "heading_category": "serif", "body_category": "sans-serif"},
         {"heading_font": "Merriweather", "body_font": "Open Sans", "style": "editorial", "heading_category": "serif", "body_category": "sans-serif"},
         {"heading_font": "Lora", "body_font": "Roboto", "style": "editorial", "heading_category": "serif", "body_category": "sans-serif"},
         {"heading_font": "Crimson Pro", "body_font": "Work Sans", "style": "editorial", "heading_category": "serif", "body_category": "sans-serif"},
+        {"heading_font": "Cormorant Garamond", "body_font": "Proza Libre", "style": "editorial", "heading_category": "serif", "body_category": "sans-serif"},
+        {"heading_font": "Spectral", "body_font": "Open Sans", "style": "editorial", "heading_category": "serif", "body_category": "sans-serif"},
+        {"heading_font": "Fraunces", "body_font": "Inter", "style": "editorial", "heading_category": "serif", "body_category": "sans-serif"},
+        {"heading_font": "DM Serif Display", "body_font": "DM Sans", "style": "editorial", "heading_category": "serif", "body_category": "sans-serif"},
+        {"heading_font": "Noto Serif", "body_font": "Noto Sans", "style": "editorial", "heading_category": "serif", "body_category": "sans-serif"},
+        {"heading_font": "Vollkorn", "body_font": "Lato", "style": "editorial", "heading_category": "serif", "body_category": "sans-serif"},
+        {"heading_font": "Bitter", "body_font": "Raleway", "style": "editorial", "heading_category": "serif", "body_category": "sans-serif"},
+        {"heading_font": "Cardo", "body_font": "Open Sans", "style": "editorial", "heading_category": "serif", "body_category": "sans-serif"},
+        {"heading_font": "Alegreya", "body_font": "Open Sans", "style": "editorial", "heading_category": "serif", "body_category": "sans-serif"},
+        {"heading_font": "Newsreader", "body_font": "Inter", "style": "editorial", "heading_category": "serif", "body_category": "sans-serif"},
 
-        # Friendly/Approachable
+        # === Friendly/Approachable (10 pairings) ===
         {"heading_font": "Poppins", "body_font": "Poppins", "style": "friendly", "heading_category": "sans-serif", "body_category": "sans-serif"},
         {"heading_font": "Nunito", "body_font": "Nunito", "style": "friendly", "heading_category": "sans-serif", "body_category": "sans-serif"},
         {"heading_font": "Quicksand", "body_font": "Open Sans", "style": "friendly", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Comfortaa", "body_font": "Open Sans", "style": "friendly", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Varela Round", "body_font": "Open Sans", "style": "friendly", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Baloo 2", "body_font": "Open Sans", "style": "friendly", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Fredoka", "body_font": "Inter", "style": "friendly", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Lexend", "body_font": "Open Sans", "style": "friendly", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Maven Pro", "body_font": "Open Sans", "style": "friendly", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Catamaran", "body_font": "Open Sans", "style": "friendly", "heading_category": "sans-serif", "body_category": "sans-serif"},
 
-        # Technical/Developer
+        # === Technical/Developer (10 pairings) ===
         {"heading_font": "Space Grotesk", "body_font": "JetBrains Mono", "style": "technical", "heading_category": "sans-serif", "body_category": "monospace"},
         {"heading_font": "Inter", "body_font": "Fira Code", "style": "technical", "heading_category": "sans-serif", "body_category": "monospace"},
         {"heading_font": "Roboto", "body_font": "Source Code Pro", "style": "technical", "heading_category": "sans-serif", "body_category": "monospace"},
+        {"heading_font": "IBM Plex Sans", "body_font": "IBM Plex Mono", "style": "technical", "heading_category": "sans-serif", "body_category": "monospace"},
+        {"heading_font": "Space Mono", "body_font": "Space Mono", "style": "technical", "heading_category": "monospace", "body_category": "monospace"},
+        {"heading_font": "Inter", "body_font": "Inconsolata", "style": "technical", "heading_category": "sans-serif", "body_category": "monospace"},
+        {"heading_font": "DM Sans", "body_font": "DM Mono", "style": "technical", "heading_category": "sans-serif", "body_category": "monospace"},
+        {"heading_font": "Geist", "body_font": "Geist Mono", "style": "technical", "heading_category": "sans-serif", "body_category": "monospace"},
+        {"heading_font": "Roboto Mono", "body_font": "Roboto Mono", "style": "technical", "heading_category": "monospace", "body_category": "monospace"},
+        {"heading_font": "Ubuntu", "body_font": "Ubuntu Mono", "style": "technical", "heading_category": "sans-serif", "body_category": "monospace"},
 
-        # Bold/Impactful
+        # === Bold/Impactful (10 pairings) ===
         {"heading_font": "Sora", "body_font": "Inter", "style": "bold", "heading_category": "sans-serif", "body_category": "sans-serif"},
         {"heading_font": "Outfit", "body_font": "Inter", "style": "bold", "heading_category": "sans-serif", "body_category": "sans-serif"},
         {"heading_font": "Lexend", "body_font": "Lexend", "style": "bold", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Archivo Black", "body_font": "Roboto", "style": "bold", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Oswald", "body_font": "Open Sans", "style": "bold", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Anton", "body_font": "Roboto", "style": "bold", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Bebas Neue", "body_font": "Open Sans", "style": "bold", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "League Spartan", "body_font": "Inter", "style": "bold", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Red Hat Display", "body_font": "Red Hat Text", "style": "bold", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Epilogue", "body_font": "Inter", "style": "bold", "heading_category": "sans-serif", "body_category": "sans-serif"},
 
-        # Classic/Timeless
+        # === Classic/Timeless (10 pairings) ===
         {"heading_font": "Source Serif Pro", "body_font": "Source Sans Pro", "style": "classic", "heading_category": "serif", "body_category": "sans-serif"},
         {"heading_font": "Libre Baskerville", "body_font": "Source Sans Pro", "style": "classic", "heading_category": "serif", "body_category": "sans-serif"},
+        {"heading_font": "EB Garamond", "body_font": "Open Sans", "style": "classic", "heading_category": "serif", "body_category": "sans-serif"},
+        {"heading_font": "Cormorant", "body_font": "Proza Libre", "style": "classic", "heading_category": "serif", "body_category": "sans-serif"},
+        {"heading_font": "Old Standard TT", "body_font": "Open Sans", "style": "classic", "heading_category": "serif", "body_category": "sans-serif"},
+        {"heading_font": "Libre Caslon Text", "body_font": "Source Sans Pro", "style": "classic", "heading_category": "serif", "body_category": "sans-serif"},
+        {"heading_font": "PT Serif", "body_font": "PT Sans", "style": "classic", "heading_category": "serif", "body_category": "sans-serif"},
+        {"heading_font": "Literata", "body_font": "Open Sans", "style": "classic", "heading_category": "serif", "body_category": "sans-serif"},
+        {"heading_font": "Crimson Text", "body_font": "Lato", "style": "classic", "heading_category": "serif", "body_category": "sans-serif"},
+        {"heading_font": "Zilla Slab", "body_font": "Open Sans", "style": "classic", "heading_category": "serif", "body_category": "sans-serif"},
+
+        # === Elegant/Luxury (8 pairings) ===
+        {"heading_font": "Bodoni Moda", "body_font": "Work Sans", "style": "elegant", "heading_category": "serif", "body_category": "sans-serif"},
+        {"heading_font": "Cinzel", "body_font": "Fauna One", "style": "elegant", "heading_category": "serif", "body_category": "serif"},
+        {"heading_font": "Tenor Sans", "body_font": "Open Sans", "style": "elegant", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Josefin Sans", "body_font": "Lato", "style": "elegant", "heading_category": "sans-serif", "body_category": "sans-serif"},
+        {"heading_font": "Libre Franklin", "body_font": "Libre Baskerville", "style": "elegant", "heading_category": "sans-serif", "body_category": "serif"},
+        {"heading_font": "Marcellus", "body_font": "Open Sans", "style": "elegant", "heading_category": "serif", "body_category": "sans-serif"},
+        {"heading_font": "Gilda Display", "body_font": "Lato", "style": "elegant", "heading_category": "serif", "body_category": "sans-serif"},
+        {"heading_font": "Forum", "body_font": "Work Sans", "style": "elegant", "heading_category": "serif", "body_category": "sans-serif"},
     ]
 
     return [FontPairing.from_dict(p) for p in pairings_data]

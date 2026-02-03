@@ -408,60 +408,137 @@ def get_fallback_palettes() -> List[ColorPalette]:
     """
     Return curated high-quality palettes as fallback when scraping fails.
     These are real Coolors.co trending palettes, manually curated for quality.
+
+    This is a large collection - the accumulation system will add these to the
+    cache over time, ensuring variety even when scraping fails.
     """
-    # Curated palettes from Coolors.co trending - provides variety when scraping fails
+    # Large curated collection from Coolors.co trending - provides variety
     palettes_data = [
-        # Professional / Corporate
-        {"colors": ["264653", "2A9D8F", "E9C46A", "F4A261", "E76F51"], "mood": "professional", "source_url": "https://coolors.co/palette/264653-2a9d8f-e9c46a-f4a261-e76f51"},
-        {"colors": ["003049", "D62828", "F77F00", "FCBF49", "EAE2B7"], "mood": "professional", "source_url": "https://coolors.co/palette/003049-d62828-f77f00-fcbf49-eae2b7"},
-        {"colors": ["1D3557", "457B9D", "A8DADC", "F1FAEE", "E63946"], "mood": "professional", "source_url": "https://coolors.co/palette/1d3557-457b9d-a8dadc-f1faee-e63946"},
-        {"colors": ["2B2D42", "8D99AE", "EDF2F4", "EF233C", "D80032"], "mood": "professional", "source_url": "https://coolors.co/palette/2b2d42-8d99ae-edf2f4-ef233c-d80032"},
-        {"colors": ["000814", "001D3D", "003566", "FFC300", "FFD60A"], "mood": "professional", "source_url": "https://coolors.co/palette/000814-001d3d-003566-ffc300-ffd60a"},
+        # === Professional / Corporate (15 palettes) ===
+        {"colors": ["264653", "2A9D8F", "E9C46A", "F4A261", "E76F51"], "mood": "professional"},
+        {"colors": ["003049", "D62828", "F77F00", "FCBF49", "EAE2B7"], "mood": "professional"},
+        {"colors": ["1D3557", "457B9D", "A8DADC", "F1FAEE", "E63946"], "mood": "professional"},
+        {"colors": ["2B2D42", "8D99AE", "EDF2F4", "EF233C", "D80032"], "mood": "professional"},
+        {"colors": ["000814", "001D3D", "003566", "FFC300", "FFD60A"], "mood": "professional"},
+        {"colors": ["0B132B", "1C2541", "3A506B", "5BC0BE", "6FFFE9"], "mood": "professional"},
+        {"colors": ["2D3142", "4F5D75", "BFC0C0", "FFFFFF", "EF8354"], "mood": "professional"},
+        {"colors": ["222831", "393E46", "00ADB5", "EEEEEE", "FFD369"], "mood": "professional"},
+        {"colors": ["16213E", "1F4068", "4DA8DA", "E8F1F5", "F0E5CF"], "mood": "professional"},
+        {"colors": ["2C3531", "116466", "D9B08C", "FFCB9A", "D1E8E2"], "mood": "professional"},
+        {"colors": ["1B262C", "0F4C75", "3282B8", "BBE1FA", "FFFFFF"], "mood": "professional"},
+        {"colors": ["2D4059", "EA5455", "F07B3F", "FFD460", "FAFAFA"], "mood": "professional"},
+        {"colors": ["252525", "414141", "707070", "9F9F9F", "CFCFCF"], "mood": "professional"},
+        {"colors": ["1A1A2E", "16213E", "0F3460", "533483", "E94560"], "mood": "professional"},
+        {"colors": ["0A1128", "001F54", "034078", "1282A2", "FEFCFB"], "mood": "professional"},
 
-        # Calm / Wellness
-        {"colors": ["606C38", "283618", "FEFAE0", "DDA15E", "BC6C25"], "mood": "calm", "source_url": "https://coolors.co/palette/606c38-283618-fefae0-dda15e-bc6c25"},
-        {"colors": ["CCD5AE", "E9EDC9", "FEFAE0", "FAEDCD", "D4A373"], "mood": "calm", "source_url": "https://coolors.co/palette/ccd5ae-e9edc9-fefae0-faedcd-d4a373"},
-        {"colors": ["F8F9FA", "E9ECEF", "DEE2E6", "CED4DA", "ADB5BD"], "mood": "calm", "source_url": "https://coolors.co/palette/f8f9fa-e9ecef-dee2e6-ced4da-adb5bd"},
-        {"colors": ["A7C957", "6A994E", "386641", "BC4749", "F2E8CF"], "mood": "calm", "source_url": "https://coolors.co/palette/a7c957-6a994e-386641-bc4749-f2e8cf"},
-        {"colors": ["E8E8E4", "D8D8D4", "C8C8C4", "B8B8B4", "A8A8A4"], "mood": "calm", "source_url": "https://coolors.co/palette/e8e8e4-d8d8d4-c8c8c4-b8b8b4-a8a8a4"},
+        # === Calm / Wellness (15 palettes) ===
+        {"colors": ["606C38", "283618", "FEFAE0", "DDA15E", "BC6C25"], "mood": "calm"},
+        {"colors": ["CCD5AE", "E9EDC9", "FEFAE0", "FAEDCD", "D4A373"], "mood": "calm"},
+        {"colors": ["F8F9FA", "E9ECEF", "DEE2E6", "CED4DA", "ADB5BD"], "mood": "calm"},
+        {"colors": ["A7C957", "6A994E", "386641", "BC4749", "F2E8CF"], "mood": "calm"},
+        {"colors": ["E8E8E4", "D8D8D4", "C8C8C4", "B8B8B4", "A8A8A4"], "mood": "calm"},
+        {"colors": ["D8E2DC", "FFE5D9", "FFCAD4", "F4ACB7", "9D8189"], "mood": "calm"},
+        {"colors": ["95D5B2", "74C69D", "52B788", "40916C", "2D6A4F"], "mood": "calm"},
+        {"colors": ["E9F5DB", "CFE1B9", "B5C99A", "97A97C", "87986A"], "mood": "calm"},
+        {"colors": ["F0EAD6", "DFE6C2", "C9D5B5", "A3B18A", "588157"], "mood": "calm"},
+        {"colors": ["FAF3DD", "C8D5B9", "8FC0A9", "68B0AB", "4A7C59"], "mood": "calm"},
+        {"colors": ["EDEEC9", "DDE5B6", "ADC178", "A98467", "6C584C"], "mood": "calm"},
+        {"colors": ["D6CCC2", "F5EBE0", "E3D5CA", "D5BDAF", "EDEDE9"], "mood": "calm"},
+        {"colors": ["F1FAEE", "A8DADC", "457B9D", "1D3557", "E63946"], "mood": "calm"},
+        {"colors": ["EAE4E9", "FFF1E6", "FDE2E4", "FAD2E1", "E2ECE9"], "mood": "calm"},
+        {"colors": ["B7B7A4", "A5A58D", "6B705C", "FFE8D6", "DDBEA9"], "mood": "calm"},
 
-        # Playful / Vibrant
-        {"colors": ["FF6B6B", "4ECDC4", "45B7D1", "96CEB4", "FFEAA7"], "mood": "playful", "source_url": "https://coolors.co/palette/ff6b6b-4ecdc4-45b7d1-96ceb4-ffeaa7"},
-        {"colors": ["F72585", "B5179E", "7209B7", "560BAD", "480CA8"], "mood": "playful", "source_url": "https://coolors.co/palette/f72585-b5179e-7209b7-560bad-480ca8"},
-        {"colors": ["FFBE0B", "FB5607", "FF006E", "8338EC", "3A86FF"], "mood": "playful", "source_url": "https://coolors.co/palette/ffbe0b-fb5607-ff006e-8338ec-3a86ff"},
-        {"colors": ["70D6FF", "FF70A6", "FF9770", "FFD670", "E9FF70"], "mood": "playful", "source_url": "https://coolors.co/palette/70d6ff-ff70a6-ff9770-ffd670-e9ff70"},
-        {"colors": ["F94144", "F3722C", "F8961E", "F9C74F", "90BE6D"], "mood": "playful", "source_url": "https://coolors.co/palette/f94144-f3722c-f8961e-f9c74f-90be6d"},
+        # === Playful / Vibrant (15 palettes) ===
+        {"colors": ["FF6B6B", "4ECDC4", "45B7D1", "96CEB4", "FFEAA7"], "mood": "playful"},
+        {"colors": ["F72585", "B5179E", "7209B7", "560BAD", "480CA8"], "mood": "playful"},
+        {"colors": ["FFBE0B", "FB5607", "FF006E", "8338EC", "3A86FF"], "mood": "playful"},
+        {"colors": ["70D6FF", "FF70A6", "FF9770", "FFD670", "E9FF70"], "mood": "playful"},
+        {"colors": ["F94144", "F3722C", "F8961E", "F9C74F", "90BE6D"], "mood": "playful"},
+        {"colors": ["FF595E", "FFCA3A", "8AC926", "1982C4", "6A4C93"], "mood": "playful"},
+        {"colors": ["9B5DE5", "F15BB5", "FEE440", "00BBF9", "00F5D4"], "mood": "playful"},
+        {"colors": ["FF99C8", "FCF6BD", "D0F4DE", "A9DEF9", "E4C1F9"], "mood": "playful"},
+        {"colors": ["EF476F", "FFD166", "06D6A0", "118AB2", "073B4C"], "mood": "playful"},
+        {"colors": ["FDFFB6", "CAFFBF", "9BF6FF", "A0C4FF", "BDB2FF"], "mood": "playful"},
+        {"colors": ["FF4D6D", "FF758F", "FF8FA3", "FFB3C1", "FFCCD5"], "mood": "playful"},
+        {"colors": ["C9184A", "FF4D6D", "FF758F", "FF8FA3", "FFB3C1"], "mood": "playful"},
+        {"colors": ["7400B8", "6930C3", "5E60CE", "5390D9", "4EA8DE"], "mood": "playful"},
+        {"colors": ["D8F3DC", "B7E4C7", "95D5B2", "74C69D", "52B788"], "mood": "playful"},
+        {"colors": ["FFADAD", "FFD6A5", "FDFFB6", "CAFFBF", "9BF6FF"], "mood": "playful"},
 
-        # Bold / Dark
-        {"colors": ["0D1B2A", "1B263B", "415A77", "778DA9", "E0E1DD"], "mood": "dark", "source_url": "https://coolors.co/palette/0d1b2a-1b263b-415a77-778da9-e0e1dd"},
-        {"colors": ["14213D", "FCA311", "E5E5E5", "000000", "FFFFFF"], "mood": "dark", "source_url": "https://coolors.co/palette/14213d-fca311-e5e5e5-000000-ffffff"},
-        {"colors": ["212529", "343A40", "495057", "6C757D", "ADB5BD"], "mood": "dark", "source_url": "https://coolors.co/palette/212529-343a40-495057-6c757d-adb5bd"},
-        {"colors": ["10002B", "240046", "3C096C", "5A189A", "7B2CBF"], "mood": "dark", "source_url": "https://coolors.co/palette/10002b-240046-3c096c-5a189a-7b2cbf"},
-        {"colors": ["03071E", "370617", "6A040F", "9D0208", "D00000"], "mood": "bold", "source_url": "https://coolors.co/palette/03071e-370617-6a040f-9d0208-d00000"},
+        # === Bold / Dark (15 palettes) ===
+        {"colors": ["0D1B2A", "1B263B", "415A77", "778DA9", "E0E1DD"], "mood": "dark"},
+        {"colors": ["14213D", "FCA311", "E5E5E5", "000000", "FFFFFF"], "mood": "dark"},
+        {"colors": ["212529", "343A40", "495057", "6C757D", "ADB5BD"], "mood": "dark"},
+        {"colors": ["10002B", "240046", "3C096C", "5A189A", "7B2CBF"], "mood": "dark"},
+        {"colors": ["03071E", "370617", "6A040F", "9D0208", "D00000"], "mood": "bold"},
+        {"colors": ["012A4A", "013A63", "01497C", "014F86", "2A6F97"], "mood": "dark"},
+        {"colors": ["231942", "5E548E", "9F86C0", "BE95C4", "E0B1CB"], "mood": "dark"},
+        {"colors": ["2D00F7", "6A00F4", "8900F2", "A100F2", "B100E8"], "mood": "bold"},
+        {"colors": ["240046", "3C096C", "5A189A", "7B2CBF", "9D4EDD"], "mood": "dark"},
+        {"colors": ["000000", "14213D", "FCA311", "E5E5E5", "FFFFFF"], "mood": "dark"},
+        {"colors": ["2B2D42", "8D99AE", "EDF2F4", "EF233C", "D90429"], "mood": "bold"},
+        {"colors": ["0B090A", "161A1D", "660708", "A4161A", "BA181B"], "mood": "bold"},
+        {"colors": ["001219", "005F73", "0A9396", "94D2BD", "E9D8A6"], "mood": "dark"},
+        {"colors": ["03071E", "370617", "6A040F", "9D0208", "DC2F02"], "mood": "bold"},
+        {"colors": ["1A1423", "372549", "774C60", "B75D69", "EACDC2"], "mood": "dark"},
 
-        # Warm
-        {"colors": ["D4A373", "CCD5AE", "E9EDC9", "FEFAE0", "FAEDCD"], "mood": "warm", "source_url": "https://coolors.co/palette/d4a373-ccd5ae-e9edc9-fefae0-faedcd"},
-        {"colors": ["BC6C25", "DDA15E", "FEFAE0", "283618", "606C38"], "mood": "warm", "source_url": "https://coolors.co/palette/bc6c25-dda15e-fefae0-283618-606c38"},
-        {"colors": ["FFCDB2", "FFB4A2", "E5989B", "B5838D", "6D6875"], "mood": "warm", "source_url": "https://coolors.co/palette/ffcdb2-ffb4a2-e5989b-b5838d-6d6875"},
-        {"colors": ["FF9F1C", "FFBF69", "FFFFFF", "CBF3F0", "2EC4B6"], "mood": "warm", "source_url": "https://coolors.co/palette/ff9f1c-ffbf69-ffffff-cbf3f0-2ec4b6"},
-        {"colors": ["9B2335", "D72638", "EF3E36", "F2EFEA", "140F2D"], "mood": "warm", "source_url": "https://coolors.co/palette/9b2335-d72638-ef3e36-f2efea-140f2d"},
+        # === Warm (15 palettes) ===
+        {"colors": ["D4A373", "CCD5AE", "E9EDC9", "FEFAE0", "FAEDCD"], "mood": "warm"},
+        {"colors": ["BC6C25", "DDA15E", "FEFAE0", "283618", "606C38"], "mood": "warm"},
+        {"colors": ["FFCDB2", "FFB4A2", "E5989B", "B5838D", "6D6875"], "mood": "warm"},
+        {"colors": ["FF9F1C", "FFBF69", "FFFFFF", "CBF3F0", "2EC4B6"], "mood": "warm"},
+        {"colors": ["9B2335", "D72638", "EF3E36", "F2EFEA", "140F2D"], "mood": "warm"},
+        {"colors": ["F4A261", "E9C46A", "2A9D8F", "264653", "E76F51"], "mood": "warm"},
+        {"colors": ["FFBA08", "FAA307", "F48C06", "E85D04", "DC2F02"], "mood": "warm"},
+        {"colors": ["CC5803", "E2711D", "FF9505", "FFB627", "FFC971"], "mood": "warm"},
+        {"colors": ["EDEDE9", "D6CCC2", "F5EBE0", "E3D5CA", "D5BDAF"], "mood": "warm"},
+        {"colors": ["F7B267", "F79D65", "F4845F", "F27059", "F25C54"], "mood": "warm"},
+        {"colors": ["FF6D00", "FF7900", "FF8500", "FF9100", "FF9E00"], "mood": "warm"},
+        {"colors": ["FFEDD8", "F3D5B5", "E7BC91", "D4A276", "BC8A5F"], "mood": "warm"},
+        {"colors": ["FFE169", "FAD643", "EDC531", "DBB42C", "C9A227"], "mood": "warm"},
+        {"colors": ["582F0E", "7F4F24", "936639", "A68A64", "B6AD90"], "mood": "warm"},
+        {"colors": ["D00000", "DC2F02", "E85D04", "F48C06", "FAA307"], "mood": "warm"},
 
-        # Cool
-        {"colors": ["03045E", "0077B6", "00B4D8", "90E0EF", "CAF0F8"], "mood": "cool", "source_url": "https://coolors.co/palette/03045e-0077b6-00b4d8-90e0ef-caf0f8"},
-        {"colors": ["184E77", "1E6091", "1A759F", "168AAD", "34A0A4"], "mood": "cool", "source_url": "https://coolors.co/palette/184e77-1e6091-1a759f-168aad-34a0a4"},
-        {"colors": ["22223B", "4A4E69", "9A8C98", "C9ADA7", "F2E9E4"], "mood": "cool", "source_url": "https://coolors.co/palette/22223b-4a4e69-9a8c98-c9ada7-f2e9e4"},
-        {"colors": ["5F0F40", "9A031E", "FB8B24", "E36414", "0F4C5C"], "mood": "cool", "source_url": "https://coolors.co/palette/5f0f40-9a031e-fb8b24-e36414-0f4c5c"},
-        {"colors": ["006D77", "83C5BE", "EDF6F9", "FFDDD2", "E29578"], "mood": "cool", "source_url": "https://coolors.co/palette/006d77-83c5be-edf6f9-ffddd2-e29578"},
+        # === Cool (15 palettes) ===
+        {"colors": ["03045E", "0077B6", "00B4D8", "90E0EF", "CAF0F8"], "mood": "cool"},
+        {"colors": ["184E77", "1E6091", "1A759F", "168AAD", "34A0A4"], "mood": "cool"},
+        {"colors": ["22223B", "4A4E69", "9A8C98", "C9ADA7", "F2E9E4"], "mood": "cool"},
+        {"colors": ["5F0F40", "9A031E", "FB8B24", "E36414", "0F4C5C"], "mood": "cool"},
+        {"colors": ["006D77", "83C5BE", "EDF6F9", "FFDDD2", "E29578"], "mood": "cool"},
+        {"colors": ["48CAE4", "00B4D8", "0096C7", "0077B6", "023E8A"], "mood": "cool"},
+        {"colors": ["5E60CE", "5390D9", "4EA8DE", "48BFE3", "56CFE1"], "mood": "cool"},
+        {"colors": ["64DFDF", "72EFDD", "80FFDB", "6FFFE9", "5FFBF1"], "mood": "cool"},
+        {"colors": ["3D5A80", "98C1D9", "E0FBFC", "EE6C4D", "293241"], "mood": "cool"},
+        {"colors": ["001F3F", "003366", "004080", "0059B3", "0073E6"], "mood": "cool"},
+        {"colors": ["05668D", "028090", "00A896", "02C39A", "F0F3BD"], "mood": "cool"},
+        {"colors": ["247BA0", "70C1B3", "B2DBBF", "F3FFBD", "FF1654"], "mood": "cool"},
+        {"colors": ["0D3B66", "FAF0CA", "F4D35E", "EE964B", "F95738"], "mood": "cool"},
+        {"colors": ["335C67", "FFF3B0", "E09F3E", "9E2A2B", "540B0E"], "mood": "cool"},
+        {"colors": ["0081A7", "00AFB9", "FDFCDC", "FED9B7", "F07167"], "mood": "cool"},
 
-        # Light / Airy
-        {"colors": ["F8F9FA", "E9ECEF", "DEE2E6", "CED4DA", "ADB5BD"], "mood": "light", "source_url": "https://coolors.co/palette/f8f9fa-e9ecef-dee2e6-ced4da-adb5bd"},
-        {"colors": ["FFFFFF", "F0EFEB", "DFE7E7", "C9CAD0", "AAB0BC"], "mood": "light", "source_url": "https://coolors.co/palette/ffffff-f0efeb-dfe7e7-c9cad0-aab0bc"},
-        {"colors": ["FEFCFB", "F8F0E3", "EDE6DB", "E5DDD3", "D8CFC4"], "mood": "light", "source_url": "https://coolors.co/palette/fefcfb-f8f0e3-ede6db-e5ddd3-d8cfc4"},
+        # === Light / Airy (10 palettes) ===
+        {"colors": ["F8F9FA", "E9ECEF", "DEE2E6", "CED4DA", "ADB5BD"], "mood": "light"},
+        {"colors": ["FFFFFF", "F0EFEB", "DFE7E7", "C9CAD0", "AAB0BC"], "mood": "light"},
+        {"colors": ["FEFCFB", "F8F0E3", "EDE6DB", "E5DDD3", "D8CFC4"], "mood": "light"},
+        {"colors": ["F8EDEB", "FEC89A", "FFD7BA", "FEC5BB", "FCD5CE"], "mood": "light"},
+        {"colors": ["FEF9EF", "FDF6E3", "FAF3E0", "F5EBE0", "E3D5CA"], "mood": "light"},
+        {"colors": ["FBFEFB", "F8FCF8", "F0F7F4", "E8F3EC", "DFF0E5"], "mood": "light"},
+        {"colors": ["FEFAE0", "FAEDCD", "E9EDC9", "CCD5AE", "D4A373"], "mood": "light"},
+        {"colors": ["FFF1E6", "FDE2E4", "FAD2E1", "E2ECE9", "BEE1E6"], "mood": "light"},
+        {"colors": ["FFFCF2", "CCC5B9", "403D39", "252422", "EB5E28"], "mood": "light"},
+        {"colors": ["F7F7F7", "EFEFEF", "E7E7E7", "DFDFDF", "D7D7D7"], "mood": "light"},
 
-        # Neutral / Versatile
-        {"colors": ["2D3436", "636E72", "B2BEC3", "DFE6E9", "FFFFFF"], "mood": "neutral", "source_url": "https://coolors.co/palette/2d3436-636e72-b2bec3-dfe6e9-ffffff"},
-        {"colors": ["1A1A2E", "16213E", "0F3460", "E94560", "FFFFFF"], "mood": "neutral", "source_url": "https://coolors.co/palette/1a1a2e-16213e-0f3460-e94560-ffffff"},
-        {"colors": ["2C3E50", "3498DB", "ECF0F1", "E74C3C", "F39C12"], "mood": "neutral", "source_url": "https://coolors.co/palette/2c3e50-3498db-ecf0f1-e74c3c-f39c12"},
+        # === Neutral / Versatile (10 palettes) ===
+        {"colors": ["2D3436", "636E72", "B2BEC3", "DFE6E9", "FFFFFF"], "mood": "neutral"},
+        {"colors": ["1A1A2E", "16213E", "0F3460", "E94560", "FFFFFF"], "mood": "neutral"},
+        {"colors": ["2C3E50", "3498DB", "ECF0F1", "E74C3C", "F39C12"], "mood": "neutral"},
+        {"colors": ["2F3E46", "354F52", "52796F", "84A98C", "CAD2C5"], "mood": "neutral"},
+        {"colors": ["3D5A80", "98C1D9", "E0FBFC", "EE6C4D", "293241"], "mood": "neutral"},
+        {"colors": ["463F3A", "8A817C", "BCB8B1", "F4F3EE", "E0AFA0"], "mood": "neutral"},
+        {"colors": ["6B705C", "A5A58D", "B7B7A4", "FFE8D6", "DDBEA9"], "mood": "neutral"},
+        {"colors": ["353535", "3C6E71", "FFFFFF", "D9D9D9", "284B63"], "mood": "neutral"},
+        {"colors": ["5F7367", "8AA29E", "A0B9BF", "B6CFD0", "D9E4DD"], "mood": "neutral"},
+        {"colors": ["4A5759", "F4EAE0", "2C514C", "9CAF88", "E1E3D8"], "mood": "neutral"},
     ]
 
     return [ColorPalette.from_dict(p) for p in palettes_data]
@@ -476,7 +553,8 @@ async def get_trending_palettes(
     Get trending palettes, using accumulated cache.
 
     Palettes are accumulated over time - each scrape adds new unique palettes
-    to the collection rather than replacing it.
+    to the collection rather than replacing it. Fallback palettes are ALWAYS
+    added to ensure variety, even when scraping fails.
 
     Args:
         force_refresh: Force fetching fresh data from Coolors (still accumulates)
@@ -496,6 +574,7 @@ async def get_trending_palettes(
         # But still load existing palettes for accumulation
         cached = load_cached_palettes(check_expiry=False) or []
 
+    scraped_count = 0
     if should_scrape:
         logger.info("Scraping fresh palettes from Coolors...")
         try:
@@ -504,6 +583,7 @@ async def get_trending_palettes(
                     new_palettes = await crawler.crawl_trending_palettes(max_palettes=50)
 
             if new_palettes:
+                scraped_count = len(new_palettes)
                 # Accumulate new palettes with existing
                 save_palettes_to_cache(new_palettes, accumulate=True)
                 # Reload to get full accumulated set
@@ -511,26 +591,34 @@ async def get_trending_palettes(
 
         except asyncio.TimeoutError:
             logger.warning(f"Palette crawl timed out after {timeout_seconds}s")
-            # Return cached if available, otherwise use fallback
-            if not cached:
-                logger.info("No cached palettes, using fallback collection")
-                cached = get_fallback_palettes()
-                save_palettes_to_cache(cached, accumulate=False)
         except Exception as e:
             logger.error(f"Error crawling palettes: {e}")
-            # Return cached if available, otherwise use fallback
-            if not cached:
-                logger.info("No cached palettes, using fallback collection")
-                cached = get_fallback_palettes()
-                save_palettes_to_cache(cached, accumulate=False)
 
-    # If still no cached palettes (shouldn't happen, but safety check)
+    # ALWAYS ensure fallback palettes are in the collection
+    # This guarantees variety even when scraping consistently fails
+    fallback = get_fallback_palettes()
+
     if not cached:
-        logger.info("No palettes available, using fallback collection")
-        cached = get_fallback_palettes()
+        # No cache at all - start with fallback
+        logger.info("No cached palettes, initializing with fallback collection")
+        cached = fallback
         save_palettes_to_cache(cached, accumulate=False)
+    else:
+        # Merge fallback into cached (deduplicates automatically)
+        existing_colors = {tuple(p.colors) for p in cached}
+        added_from_fallback = 0
+        for p in fallback:
+            if tuple(p.colors) not in existing_colors:
+                cached.append(p)
+                existing_colors.add(tuple(p.colors))
+                added_from_fallback += 1
 
-    logger.info(f"Returning {min(len(cached), max_palettes)} palettes from collection of {len(cached)}")
+        if added_from_fallback > 0:
+            logger.info(f"Added {added_from_fallback} fallback palettes to collection")
+            save_palettes_to_cache(cached, accumulate=False)  # Save the merged result
+
+    total = len(cached)
+    logger.info(f"Returning {min(total, max_palettes)} palettes from collection of {total} (scraped: {scraped_count})")
     return cached[:max_palettes]
 
 
