@@ -279,8 +279,10 @@ class AppStoreBrowserCrawler:
                 )
                 data = response.json()
 
-                if data.get('results'):
-                    return data['results'][0].get('trackViewUrl')
+                if isinstance(data, dict) and data.get('results'):
+                    result = data['results'][0]
+                    if isinstance(result, dict):
+                        return result.get('trackViewUrl')
         except Exception as e:
             logger.error(f"Error getting app URL: {e}")
 

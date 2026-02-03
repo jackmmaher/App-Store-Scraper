@@ -6,7 +6,7 @@ Works with Python 3.14 without compilation issues
 import asyncio
 import logging
 import random
-from typing import Optional
+from typing import Any, Optional
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -86,7 +86,7 @@ class BaseCrawler:
 
         return await self._retry_with_backoff(do_fetch, url)
 
-    async def fetch_json(self, url: str, extra_headers: Optional[dict] = None) -> Optional[dict]:
+    async def fetch_json(self, url: str, extra_headers: Optional[dict] = None) -> Optional[Any]:
         """Fetch a URL and return JSON with retry logic"""
         if not self.client:
             raise RuntimeError("Crawler not initialized. Use 'async with' context.")

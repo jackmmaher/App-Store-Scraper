@@ -74,9 +74,9 @@ class AppStoreCrawler(BaseCrawler):
                             break
                         continue
 
-                    # Check for XML error response (Apple sometimes returns XML errors)
-                    if isinstance(data, str) and data.strip().startswith('<?xml'):
-                        logger.warning(f"Received XML error response for {sort_by} page {page}")
+                    # Check for non-dict responses (Apple sometimes returns XML errors or strings)
+                    if not isinstance(data, dict):
+                        logger.warning(f"Received non-dict response for {sort_by} page {page}: {type(data).__name__}")
                         consecutive_empty += 1
                         if consecutive_empty >= 5:
                             break
@@ -169,10 +169,12 @@ class AppStoreCrawler(BaseCrawler):
         url = f"https://itunes.apple.com/lookup?id={app_id}&country={country}"
         data = await self.fetch_json(url)
 
-        if not data or not data.get("results"):
+        if not data or not isinstance(data, dict) or not data.get("results"):
             return []
 
         app_info = data["results"][0]
+        if not isinstance(app_info, dict):
+            return []
 
         return [{
             "version": app_info.get("version", ""),
@@ -193,10 +195,12 @@ class AppStoreCrawler(BaseCrawler):
         url = f"https://itunes.apple.com/lookup?id={app_id}&country={country}"
         data = await self.fetch_json(url)
 
-        if not data or not data.get("results"):
+        if not data or not isinstance(data, dict) or not data.get("results"):
             return []
 
         app_info = data["results"][0]
+        if not isinstance(app_info, dict):
+            return []
 
         # Basic privacy info from API
         return [{
