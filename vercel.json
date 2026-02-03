@@ -17,6 +17,18 @@
     },
     "app/api/pipeline/jobs/process/route.ts": {
       "maxDuration": 300
+    },
+    "app/api/reddit/analyze/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/reddit/analyze-stream/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/reddit/generate-config/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/reddit/validate-subreddits/route.ts": {
+      "maxDuration": 60
     }
   }
 }
