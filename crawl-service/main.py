@@ -418,6 +418,9 @@ async def crawl_app_store_reviews(request: AppStoreReviewRequest):
 
         # Add RSS reviews to collection using deterministic hash (not Python's randomized hash())
         for review in rss_reviews:
+            if not isinstance(review, dict):
+                logger.warning(f"Skipping non-dict review from RSS: {type(review).__name__}")
+                continue
             content_key = f"{review.get('author', '')}:{review.get('content', '')[:100]}"
             review_id = hashlib.sha256(content_key.encode()).hexdigest()[:16]
             review['source'] = 'rss_api'
@@ -455,6 +458,9 @@ async def crawl_app_store_reviews(request: AppStoreReviewRequest):
             # Add browser reviews, deduplicating by content using deterministic hash
             new_from_browser = 0
             for review in browser_reviews:
+                if not isinstance(review, dict):
+                    logger.warning(f"Skipping non-dict review from browser: {type(review).__name__}")
+                    continue
                 content_key = f"{review.get('author', '')}:{review.get('content', '')[:100]}"
                 review_id = hashlib.sha256(content_key.encode()).hexdigest()[:16]
                 if review_id not in all_reviews:
@@ -468,7 +474,8 @@ async def crawl_app_store_reviews(request: AppStoreReviewRequest):
 
         reviews = list(all_reviews.values())[:request.max_reviews]
 
-        # Calculate stats
+        # Calculate stats (filter to dicts only for safety)
+        reviews = [r for r in reviews if isinstance(r, dict)]
         rss_count = len([r for r in reviews if r.get('source') == 'rss_api'])
         browser_count = len([r for r in reviews if r.get('source') == 'browser'])
 
