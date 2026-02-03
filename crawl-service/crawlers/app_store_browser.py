@@ -140,13 +140,17 @@ class AppStoreBrowserCrawler:
 
         logger.info(f"Starting browser crawl for app {app_id}, target: {max_reviews} reviews, countries: {len(countries_to_scrape)}")
 
-        async with self._managed_page() as browser_page:
-            page = browser_page.page
+        # Process each country with a fresh browser page to avoid stale state
+        for country_index, current_country in enumerate(countries_to_scrape):
+            if len(all_reviews) >= max_reviews:
+                logger.info(f"Reached target of {max_reviews} reviews, stopping early")
+                break
+
+            logger.info(f"Starting country {country_index + 1}/{len(countries_to_scrape)}: {current_country}")
 
             try:
-                for current_country in countries_to_scrape:
-                    if len(all_reviews) >= max_reviews:
-                        break
+                async with self._managed_page() as browser_page:
+                    page = browser_page.page
 
                     # Try multiple URL patterns - Apple changes these
                     url_patterns = [
@@ -198,10 +202,9 @@ class AppStoreBrowserCrawler:
 
                     # Extract reviews with multiple scroll attempts
                     total_new_this_country = 0
-                    previous_count = 0
                     no_new_reviews_count = 0
 
-                    for scroll_attempt in range(10):  # More scroll attempts
+                    for scroll_attempt in range(25):  # Increased from 10 to 25 for better coverage
                         if len(all_reviews) >= max_reviews:
                             break
 
@@ -229,25 +232,28 @@ class AppStoreBrowserCrawler:
 
                         if new_count == 0:
                             no_new_reviews_count += 1
-                            if no_new_reviews_count >= 3:
+                            if no_new_reviews_count >= 5:  # Increased from 3 to 5 for lazy-loading tolerance
                                 logger.info(f"No new reviews after {scroll_attempt + 1} scrolls, moving to next country")
                                 break
                         else:
                             no_new_reviews_count = 0
 
-                        if scroll_attempt < 9:
+                        if scroll_attempt < 24:
                             await self._scroll_page(page)
-                            await asyncio.sleep(1.5)
+                            # Longer wait for early scrolls when page is still loading
+                            wait_time = 2.5 if scroll_attempt < 5 else 1.5
+                            await asyncio.sleep(wait_time)
 
                     logger.info(f"Country {current_country}: got {total_new_this_country} new reviews (total: {len(all_reviews)})")
 
-                    # Delay between countries
-                    await asyncio.sleep(1.5)
-
-                logger.info(f"Browser crawl complete: {len(all_reviews)} reviews collected from {len(countries_to_scrape)} countries")
-
             except Exception as e:
-                logger.exception(f"Error during browser crawl: {e}")
+                logger.error(f"Failed to scrape country {current_country}: {e}")
+                continue  # Don't fail entire operation - try next country
+
+            # Delay between countries
+            await asyncio.sleep(1.5)
+
+        logger.info(f"Browser crawl complete: {len(all_reviews)} reviews collected from {len(countries_to_scrape)} countries")
 
         return list(all_reviews.values())[:max_reviews]
 
@@ -280,27 +286,45 @@ class AppStoreBrowserCrawler:
                     const results = [];
                     const seenContent = new Set();
 
-                    // Strategy 1: Look for review cards by common class patterns
-                    const cardSelectors = [
+                    // Priority selectors - specific to review cards, try these first
+                    const prioritySelectors = [
                         '.we-customer-review',
                         '[class*="CustomerReview"]',
                         '[class*="customer-review"]',
+                    ];
+
+                    // Fallback selectors - less specific, use only if priority finds nothing
+                    const fallbackSelectors = [
                         '[class*="review-card"]',
                         '[class*="ReviewCard"]',
                         '.l-row[data-metrics-location*="review"]',
                         '[data-testid*="review"]',
                         // Svelte-based selectors (Apple uses Svelte)
                         '[class*="svelte"][class*="review"]',
-                        '.we-truncate',
+                        // Note: .we-truncate removed - too generic, matches non-review elements
                     ];
 
                     let reviewCards = [];
-                    for (const selector of cardSelectors) {
+
+                    // Try priority selectors first
+                    for (const selector of prioritySelectors) {
                         const cards = document.querySelectorAll(selector);
                         if (cards.length > 0) {
                             reviewCards = Array.from(cards);
-                            console.log(`Found ${cards.length} cards with selector: ${selector}`);
+                            console.log(`Found ${cards.length} cards with priority selector: ${selector}`);
                             break;
+                        }
+                    }
+
+                    // Only use fallback selectors if priority found nothing
+                    if (reviewCards.length === 0) {
+                        for (const selector of fallbackSelectors) {
+                            const cards = document.querySelectorAll(selector);
+                            if (cards.length > 0) {
+                                reviewCards = Array.from(cards);
+                                console.log(`Found ${cards.length} cards with fallback selector: ${selector}`);
+                                break;
+                            }
                         }
                     }
 

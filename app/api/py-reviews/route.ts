@@ -130,27 +130,50 @@ export async function POST(request: NextRequest) {
         let isRunning = true;
         let heartbeatCount = 0;
 
+        // Calculate estimated timing based on targets
+        // RSS phase: ~30-60s, Browser phase: ~60-180s depending on review count
+        const totalReviewTarget = enabledFilters.reduce((sum, f) => sum + f.target, 0);
+        const estimatedPagesPerFilter = Math.ceil(totalReviewTarget / enabledFilters.length / 10); // ~10 reviews per page
+        const estimatedSecondsPerFilter = Math.max(30, Math.min(120, totalReviewTarget / enabledFilters.length / 5)); // 5 reviews/sec estimate
+
         // Start heartbeat to keep connection alive and show progress
-        // NOTE: We don't send fake filter counts - only filterComplete events have real data
         const heartbeatInterval = setInterval(() => {
           if (!isRunning) {
             clearInterval(heartbeatInterval);
             return;
           }
           heartbeatCount++;
+          const elapsedSeconds = heartbeatCount * 2;
 
-          // Estimate which filter we're on based on time (each filter takes ~20-30s)
+          // Estimate which filter we're on based on elapsed time
           const estimatedFilterIndex = Math.min(
-            Math.floor(heartbeatCount / 15), // ~15 heartbeats per filter at 2s interval
+            Math.floor(elapsedSeconds / estimatedSecondsPerFilter),
             enabledFilters.length - 1
           );
+
+          // Estimate page within current filter
+          const timeInCurrentFilter = elapsedSeconds - (estimatedFilterIndex * estimatedSecondsPerFilter);
+          const filterProgress = Math.min(timeInCurrentFilter / estimatedSecondsPerFilter, 0.95); // Cap at 95% until complete
+          const estimatedPage = Math.max(1, Math.ceil(filterProgress * estimatedPagesPerFilter));
+
+          // Estimate reviews collected so far (rough approximation)
+          const completedFiltersReviews = estimatedFilterIndex * (totalReviewTarget / enabledFilters.length);
+          const currentFilterReviews = filterProgress * (enabledFilters[estimatedFilterIndex]?.target || 500);
+          const estimatedTotalReviews = Math.round(completedFiltersReviews + currentFilterReviews);
 
           sendEvent({
             type: 'heartbeat',
             filter: enabledFilters[estimatedFilterIndex]?.sort || 'mostRecent',
             filterIndex: estimatedFilterIndex,
-            elapsedSeconds: heartbeatCount * 2,
+            elapsedSeconds,
+            // Include estimated progress data
+            page: estimatedPage,
+            maxPages: estimatedPagesPerFilter,
+            estimatedReviews: estimatedTotalReviews,
+            filterReviewsEstimate: Math.round(currentFilterReviews),
             message: `Crawling ${enabledFilters[estimatedFilterIndex]?.sort || 'reviews'}...`,
+            // Phase indicator: RSS (~first 30s) or Browser (after)
+            phase: elapsedSeconds < 30 ? 'rss' : 'browser',
           });
         }, 2000);
 
@@ -163,9 +186,10 @@ export async function POST(request: NextRequest) {
           });
 
           // Call the Python crawler - it handles all sort types internally
-          // 5 minute timeout for the crawl request (browser scraping can be slow)
+          // 9 minute timeout for the crawl request (browser scraping can be slow)
+          // Must be > Python timeout (8 min browser + 2 min RSS = 10 min max)
           const abortController = new AbortController();
-          const timeoutId = setTimeout(() => abortController.abort(), 5 * 60 * 1000);
+          const timeoutId = setTimeout(() => abortController.abort(), 9 * 60 * 1000);
 
           let response: Response;
           try {
@@ -301,7 +325,7 @@ export async function POST(request: NextRequest) {
           let errorMessage = 'Unknown error';
           if (error instanceof Error) {
             if (error.name === 'AbortError') {
-              errorMessage = 'Review scraping timed out after 5 minutes. The crawl service may be slow or unresponsive. Try reducing the number of reviews or check crawl-service logs.';
+              errorMessage = 'Review scraping timed out after 9 minutes. The crawl service may be slow or unresponsive. Try reducing the number of reviews or check crawl-service logs.';
             } else {
               errorMessage = error.message;
             }

@@ -385,7 +385,7 @@ async def crawl_app_store_reviews(request: AppStoreReviewRequest):
         logger.info("Phase 1: RSS API scraping (limited to ~500 reviews per country)...")
         try:
             async with AppStoreCrawler() as crawler:
-                # Timeout RSS phase after 90 seconds
+                # Timeout RSS phase after 120 seconds
                 rss_reviews = await asyncio.wait_for(
                     crawler.crawl_reviews(
                         app_id=request.app_id,
@@ -394,10 +394,10 @@ async def crawl_app_store_reviews(request: AppStoreReviewRequest):
                         min_rating=request.min_rating,
                         max_rating=request.max_rating,
                     ),
-                    timeout=90.0  # 1.5 minute max for RSS phase
+                    timeout=120.0  # 2 minute max for RSS phase
                 )
         except asyncio.TimeoutError:
-            logger.warning("RSS API scraping timed out after 90 seconds")
+            logger.warning("RSS API scraping timed out after 120 seconds")
             rss_reviews = []
 
         # Add RSS reviews to collection using deterministic hash (not Python's randomized hash())
@@ -416,7 +416,7 @@ async def crawl_app_store_reviews(request: AppStoreReviewRequest):
 
             try:
                 async with AppStoreBrowserCrawler(headless=True) as crawler:
-                    # Timeout browser scraping after 5 minutes
+                    # Timeout browser scraping after 8 minutes (40s per country * 12 countries)
                     browser_reviews = await asyncio.wait_for(
                         crawler.crawl_reviews(
                             app_id=request.app_id,
@@ -426,11 +426,11 @@ async def crawl_app_store_reviews(request: AppStoreReviewRequest):
                             max_rating=request.max_rating,
                             multi_country=request.multi_country,
                         ),
-                        timeout=300.0  # 5 minutes max for browser phase
+                        timeout=480.0  # 8 minutes max for browser phase
                     )
                     logger.info(f"Browser scraping returned {len(browser_reviews)} reviews")
             except asyncio.TimeoutError:
-                logger.warning(f"Browser scraping timed out after 5 minutes, proceeding with {len(all_reviews)} reviews from RSS")
+                logger.warning(f"Browser scraping timed out after 8 minutes, proceeding with {len(all_reviews)} reviews from RSS")
                 browser_reviews = []
             except Exception as e:
                 logger.error(f"Browser scraping error: {e}")

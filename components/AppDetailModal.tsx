@@ -52,6 +52,7 @@ interface ScrapeProgress {
   isThrottled: boolean;
   throttleMessage?: string;
   elapsedSeconds?: number;
+  phase?: 'rss' | 'browser'; // Current scraping phase
 }
 
 // Filter descriptions
@@ -292,13 +293,13 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved, 
         break;
 
       case 'heartbeat':
-        // Heartbeat just keeps connection alive and shows which filter is active
-        // It does NOT update review counts - only filterComplete has real data
+        // Heartbeat keeps connection alive and provides estimated progress during scraping
+        // Uses time-based estimates until real data arrives from filterComplete/progress events
         setProgress(prev => {
           if (!prev) return prev;
           const updatedStatuses = prev.filterStatuses.map(s =>
             s.filter === event.filter
-              ? { ...s, status: 'active' as const }
+              ? { ...s, status: 'active' as const, count: (event.filterReviewsEstimate as number) || s.count }
               : s.status === 'active' && s.filter !== event.filter
                 ? { ...s, status: 'pending' as const }
                 : s
@@ -309,6 +310,11 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved, 
             currentFilterIndex: (event.filterIndex as number) ?? prev.currentFilterIndex,
             filterStatuses: updatedStatuses,
             elapsedSeconds: (event.elapsedSeconds as number) ?? prev.elapsedSeconds,
+            // Use estimated page/maxPages from heartbeat if we don't have real data yet
+            currentPage: (event.page as number) ?? prev.currentPage,
+            maxPages: (event.maxPages as number) ?? prev.maxPages,
+            uniqueReviews: (event.estimatedReviews as number) ?? prev.uniqueReviews,
+            phase: (event.phase as 'rss' | 'browser') ?? prev.phase,
           };
         });
         break;
@@ -715,11 +721,23 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved, 
   // Calculate overall progress percentage
   const getProgressPercentage = () => {
     if (!progress) return 0;
-    const completedFilters = progress.filterStatuses.filter(s => s.status === 'complete' || s.status === 'skipped').length;
     const totalFilters = progress.filterStatuses.length;
-    const filterProgress = completedFilters / totalFilters;
-    const pageProgress = progress.maxPages > 0 ? progress.currentPage / progress.maxPages : 0;
-    return Math.round((filterProgress + pageProgress / totalFilters) * 100);
+    if (totalFilters === 0) return 0;
+
+    // Count completed, skipped, and active filters
+    let completedWeight = 0;
+    for (const s of progress.filterStatuses) {
+      if (s.status === 'complete' || s.status === 'skipped') {
+        completedWeight += 1;
+      } else if (s.status === 'active') {
+        // For active filter, use page progress as partial completion
+        const pageProgress = progress.maxPages > 0 ? Math.min(progress.currentPage / progress.maxPages, 0.95) : 0.5;
+        completedWeight += pageProgress;
+      }
+      // pending filters contribute 0
+    }
+
+    return Math.round((completedWeight / totalFilters) * 100);
   };
 
   return (
@@ -1292,26 +1310,35 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved, 
                     <div>
                       <span className="text-gray-500 dark:text-gray-400">Page:</span>
                       <span className="ml-2 text-gray-900 dark:text-white font-medium">
-                        {progress.currentPage} of ~{progress.maxPages}
+                        ~{progress.currentPage} of ~{progress.maxPages}
                       </span>
                     </div>
                     <div>
                       <span className="text-gray-500 dark:text-gray-400">Reviews:</span>
                       <span className="ml-2 text-gray-900 dark:text-white font-medium">
                         {progress.uniqueReviews > 0
-                          ? `${progress.uniqueReviews.toLocaleString()} unique`
-                          : 'Collecting...'
+                          ? `~${progress.uniqueReviews.toLocaleString()} collected`
+                          : 'Starting...'
                         }
                       </span>
                     </div>
-                    <div>
+                    <div className="flex items-center gap-2">
                       <span className="text-gray-500 dark:text-gray-400">Elapsed:</span>
-                      <span className="ml-2 text-gray-900 dark:text-white font-medium">
+                      <span className="text-gray-900 dark:text-white font-medium">
                         {progress.elapsedSeconds
                           ? `${Math.floor(progress.elapsedSeconds / 60)}:${String(progress.elapsedSeconds % 60).padStart(2, '0')}`
                           : '0:00'
                         }
                       </span>
+                      {progress.phase && (
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${
+                          progress.phase === 'rss'
+                            ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                            : 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400'
+                        }`}>
+                          {progress.phase === 'rss' ? 'RSS API' : 'Browser'}
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -1347,14 +1374,16 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved, 
                           {FILTER_INFO[filterStatus.filter]?.label || filterStatus.filter}
                         </span>
                         <span className="text-gray-500">
-                          {filterStatus.count > 0
+                          {filterStatus.status === 'complete'
                             ? `${filterStatus.count.toLocaleString()} reviews`
                             : filterStatus.status === 'active'
-                              ? 'scraping...'
+                              ? filterStatus.count > 0
+                                ? `~${filterStatus.count.toLocaleString()} reviews`
+                                : 'scraping...'
                               : filterStatus.status === 'pending'
                                 ? 'pending'
-                                : filterStatus.status === 'complete'
-                                  ? '0 reviews'
+                                : filterStatus.status === 'skipped'
+                                  ? 'skipped'
                                   : ''
                           }
                         </span>
