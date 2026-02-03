@@ -163,23 +163,32 @@ class AppStoreBrowserCrawler:
                 async with self._managed_page() as browser_page:
                     page = browser_page.page
 
-                    # Try multiple URL patterns - Apple changes these
-                    url_patterns = [
-                        f"https://apps.apple.com/{current_country}/app/id{app_id}",
-                        f"https://apps.apple.com/{current_country}/app/app/id{app_id}",
-                    ]
+                    # Try to load the app page for this country
+                    url = f"https://apps.apple.com/{current_country}/app/id{app_id}"
 
                     page_loaded = False
-                    for url in url_patterns:
-                        try:
-                            logger.info(f"Trying URL: {url}")
-                            response = await page.goto(url, wait_until='domcontentloaded', timeout=30000)
-                            if response and response.status == 200:
+                    try:
+                        logger.info(f"Trying URL: {url}")
+                        response = await page.goto(url, wait_until='domcontentloaded', timeout=30000)
+
+                        if response:
+                            # Check for redirects - Apple may redirect to different country
+                            final_url = page.url
+                            if response.status == 200:
                                 page_loaded = True
-                                break
-                        except Exception as e:
-                            logger.debug(f"URL {url} failed: {e}")
-                            continue
+                                if final_url != url:
+                                    logger.info(f"Redirected to: {final_url}")
+                            elif response.status in (301, 302, 303, 307, 308):
+                                # Follow redirects - page might have loaded anyway
+                                page_loaded = True
+                                logger.info(f"Redirect {response.status} to: {final_url}")
+                            else:
+                                logger.warning(f"Page returned status {response.status} for {current_country}")
+                        else:
+                            logger.warning(f"No response received for {current_country}")
+
+                    except Exception as e:
+                        logger.warning(f"Failed to load page for {current_country}: {e}")
 
                     if not page_loaded:
                         logger.warning(f"Could not load page for country {current_country}")
@@ -289,228 +298,152 @@ class AppStoreBrowserCrawler:
         return None
 
     async def _extract_reviews(self, page: Page, country: str) -> List[dict]:
-        """Extract review data from the page using multiple selector strategies"""
+        """Extract review data from the page using updated selectors for Apple's Svelte-based DOM"""
         reviews = []
 
         try:
-            # Extract reviews using JavaScript with multiple selector strategies
+            # Extract reviews using JavaScript with updated selectors for Apple's new DOM structure
             reviews_data = await page.evaluate(r"""
                 () => {
                     const results = [];
                     const seenContent = new Set();
 
-                    // Priority selectors - specific to review cards, try these first
-                    const prioritySelectors = [
-                        '.we-customer-review',
-                        '[class*="CustomerReview"]',
-                        '[class*="customer-review"]',
-                    ];
+                    // Apple's current DOM structure (2024+):
+                    // <article aria-labelledby="review-XXXXX-title">
+                    //   <div class="header">
+                    //     <div class="title-and-rating-container">
+                    //       <h3 class="title">...</h3>
+                    //       <ol class="stars" aria-label="5 Stars">...</ol>
+                    //     </div>
+                    //     <div class="review-header">
+                    //       <time class="date" datetime="...">...</time>
+                    //       <p class="author">...</p>
+                    //     </div>
+                    //   </div>
+                    //   <div class="content">
+                    //     <p data-testid="truncate-text">REVIEW TEXT</p>
+                    //   </div>
+                    // </article>
 
-                    // Fallback selectors - less specific, use only if priority finds nothing
-                    const fallbackSelectors = [
-                        '[class*="review-card"]',
-                        '[class*="ReviewCard"]',
-                        '.l-row[data-metrics-location*="review"]',
-                        '[data-testid*="review"]',
-                        // Svelte-based selectors (Apple uses Svelte)
-                        '[class*="svelte"][class*="review"]',
-                        // Note: .we-truncate removed - too generic, matches non-review elements
-                    ];
+                    // Primary selector: article elements with review ID
+                    let reviewCards = Array.from(document.querySelectorAll('article[aria-labelledby^="review-"]'));
+                    console.log(`Found ${reviewCards.length} review cards with article[aria-labelledby^="review-"]`);
 
-                    let reviewCards = [];
-
-                    // Try priority selectors first
-                    for (const selector of prioritySelectors) {
-                        const cards = document.querySelectorAll(selector);
-                        if (cards.length > 0) {
-                            reviewCards = Array.from(cards);
-                            console.log(`Found ${cards.length} cards with priority selector: ${selector}`);
-                            break;
-                        }
-                    }
-
-                    // Only use fallback selectors if priority found nothing
+                    // Fallback: look for elements with review-header class and get parent article
                     if (reviewCards.length === 0) {
-                        for (const selector of fallbackSelectors) {
-                            const cards = document.querySelectorAll(selector);
-                            if (cards.length > 0) {
-                                reviewCards = Array.from(cards);
-                                console.log(`Found ${cards.length} cards with fallback selector: ${selector}`);
-                                break;
-                            }
-                        }
-                    }
-
-                    // Strategy 2: If no cards found, look for any element with star ratings nearby
-                    if (reviewCards.length === 0) {
-                        const starContainers = document.querySelectorAll('[aria-label*="star"], [aria-label*="Star"], figure[class*="star"]');
-                        starContainers.forEach(star => {
-                            // Get the parent container that likely holds the review
-                            let container = star.closest('div[class]');
-                            for (let i = 0; i < 5 && container; i++) {
-                                const text = container.textContent || '';
-                                if (text.length > 50 && text.length < 5000) {
-                                    reviewCards.push(container);
-                                    break;
-                                }
-                                container = container.parentElement;
+                        const reviewHeaders = document.querySelectorAll('.review-header');
+                        reviewHeaders.forEach(header => {
+                            const article = header.closest('article');
+                            if (article && !reviewCards.includes(article)) {
+                                reviewCards.push(article);
                             }
                         });
+                        console.log(`Found ${reviewCards.length} review cards via .review-header fallback`);
                     }
 
-                    // Strategy 3: Look for blockquote or review-like text patterns
+                    // Second fallback: look for ol.stars with aria-label and traverse up
                     if (reviewCards.length === 0) {
-                        const textBlocks = document.querySelectorAll('blockquote, [class*="content"], [class*="text"], p');
-                        textBlocks.forEach(block => {
-                            const text = block.textContent || '';
-                            // Reviews typically have 20-2000 chars
-                            if (text.length > 20 && text.length < 2000) {
-                                const parent = block.closest('div[class], article, section');
-                                if (parent && !reviewCards.includes(parent)) {
-                                    reviewCards.push(parent);
-                                }
+                        const starLists = document.querySelectorAll('ol.stars[aria-label*="Star"]');
+                        starLists.forEach(stars => {
+                            const article = stars.closest('article');
+                            if (article && !reviewCards.includes(article)) {
+                                reviewCards.push(article);
                             }
                         });
+                        console.log(`Found ${reviewCards.length} review cards via ol.stars fallback`);
                     }
 
-                    console.log(`Total potential review containers: ${reviewCards.length}`);
+                    console.log(`Total review cards to process: ${reviewCards.length}`);
 
-                    // Process each potential review card
+                    // Process each review card
                     reviewCards.forEach((card, index) => {
                         try {
-                            const cardText = card.textContent || '';
-
-                            // Skip if too short or too long
-                            if (cardText.length < 20 || cardText.length > 10000) return;
-
-                            // Extract author - look for common patterns
-                            let author = '';
-                            const authorSelectors = [
-                                '.we-customer-review__user',
-                                '[class*="author"]',
-                                '[class*="Author"]',
-                                '[class*="user"]',
-                                '[class*="name"]',
-                                'span[class*="svelte"]',
-                            ];
-                            for (const sel of authorSelectors) {
-                                const el = card.querySelector(sel);
-                                if (el) {
-                                    const text = el.textContent.trim();
-                                    if (text && text.length < 100 && !text.includes('\n')) {
-                                        author = text;
-                                        break;
-                                    }
-                                }
-                            }
-
-                            // Extract title
+                            // Extract title from h3.title or h3[id^="review-"]
                             let title = '';
-                            const titleSelectors = [
-                                '.we-customer-review__title',
-                                '[class*="title"]',
-                                '[class*="Title"]',
-                                'h3', 'h4',
-                            ];
-                            for (const sel of titleSelectors) {
-                                const el = card.querySelector(sel);
-                                if (el) {
-                                    const text = el.textContent.trim();
-                                    if (text && text.length < 200) {
-                                        title = text;
-                                        break;
-                                    }
-                                }
+                            const titleEl = card.querySelector('h3.title .multiline-clamp__text, h3[id^="review-"] .multiline-clamp__text, h3.title, h3[id^="review-"]');
+                            if (titleEl) {
+                                title = titleEl.textContent.trim();
                             }
 
-                            // Extract content/body
-                            let content = '';
-                            const contentSelectors = [
-                                '.we-customer-review__body',
-                                '[class*="body"]',
-                                '[class*="content"]',
-                                '[class*="text"]',
-                                'p',
-                                'blockquote',
-                            ];
-                            for (const sel of contentSelectors) {
-                                const el = card.querySelector(sel);
-                                if (el) {
-                                    const text = el.textContent.trim();
-                                    if (text && text.length > 10) {
-                                        content = text;
-                                        break;
-                                    }
-                                }
-                            }
-
-                            // If no specific content found, use card text minus author/title
-                            if (!content) {
-                                content = cardText.replace(author, '').replace(title, '').trim();
-                            }
-
-                            // Extract rating from aria-label or star count
+                            // Extract rating from ol.stars aria-label (e.g., "5 Stars")
                             let rating = 0;
-
-                            // Look for aria-label with star info
-                            const ariaEls = card.querySelectorAll('[aria-label]');
-                            ariaEls.forEach(el => {
-                                const label = el.getAttribute('aria-label') || '';
-                                const match = label.match(/(\d)\s*(?:out of 5\s*)?stars?/i);
+                            const starsEl = card.querySelector('ol.stars[aria-label]');
+                            if (starsEl) {
+                                const ariaLabel = starsEl.getAttribute('aria-label') || '';
+                                const match = ariaLabel.match(/(\d+)\s*Stars?/i);
                                 if (match) {
                                     rating = parseInt(match[1]);
                                 }
-                            });
+                            }
 
-                            // Alternative: count filled star elements
+                            // Fallback: count star li elements
                             if (rating === 0) {
-                                const stars = card.querySelectorAll('[class*="star"][class*="full"], [class*="star"][aria-hidden="false"], svg[class*="star"]');
-                                if (stars.length > 0 && stars.length <= 5) {
-                                    rating = stars.length;
+                                const starItems = card.querySelectorAll('ol.stars li.star');
+                                if (starItems.length > 0 && starItems.length <= 5) {
+                                    rating = starItems.length;
                                 }
                             }
 
-                            // Look for figure elements with star rating
-                            if (rating === 0) {
-                                const figures = card.querySelectorAll('figure[class*="star"], [role="img"][aria-label*="star"]');
-                                figures.forEach(fig => {
-                                    const label = fig.getAttribute('aria-label') || '';
-                                    const match = label.match(/(\d)/);
-                                    if (match) {
-                                        rating = parseInt(match[1]);
-                                    }
-                                });
-                            }
-
-                            // Extract date
+                            // Extract date from time.date element
                             let date = '';
                             let dateISO = '';
-                            const timeEl = card.querySelector('time');
+                            const timeEl = card.querySelector('time.date, time[datetime]');
                             if (timeEl) {
                                 date = timeEl.textContent.trim();
                                 dateISO = timeEl.getAttribute('datetime') || '';
                             }
 
-                            // Dedupe by content hash
-                            const contentKey = content.substring(0, 100);
-                            if (seenContent.has(contentKey)) return;
-
-                            // Must have content to be valid
-                            if (content && content.length > 10) {
-                                seenContent.add(contentKey);
-                                // Use null for missing/invalid ratings to avoid biasing analytics
-                                // (0 would pull down averages, 5 would pull up - null lets analytics filter them out)
-                                const validRating = (rating >= 1 && rating <= 5) ? rating : null;
-                                results.push({
-                                    id: `browser_${index}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                                    date: date,
-                                    dateISO: dateISO,
-                                    author: author || 'Anonymous',
-                                    content: content.substring(0, 5000),
-                                    rating: validRating,
-                                    title: title,
-                                });
+                            // Extract author from p.author
+                            let author = '';
+                            const authorEl = card.querySelector('p.author, .author');
+                            if (authorEl) {
+                                author = authorEl.textContent.trim();
                             }
+
+                            // Extract content from p[data-testid="truncate-text"] or div.content p
+                            let content = '';
+                            const contentEl = card.querySelector('p[data-testid="truncate-text"], div.content p.content, div.content p');
+                            if (contentEl) {
+                                content = contentEl.textContent.trim();
+                            }
+
+                            // Fallback: get text from div.content
+                            if (!content) {
+                                const contentDiv = card.querySelector('div.content');
+                                if (contentDiv) {
+                                    content = contentDiv.textContent.trim();
+                                }
+                            }
+
+                            // Skip if no meaningful content
+                            if (!content || content.length < 10) {
+                                console.log(`Skipping card ${index}: no content`);
+                                return;
+                            }
+
+                            // Dedupe by content
+                            const contentKey = content.substring(0, 100);
+                            if (seenContent.has(contentKey)) {
+                                console.log(`Skipping card ${index}: duplicate content`);
+                                return;
+                            }
+                            seenContent.add(contentKey);
+
+                            // Get review ID from aria-labelledby if available
+                            const ariaLabelledBy = card.getAttribute('aria-labelledby') || '';
+                            const reviewIdMatch = ariaLabelledBy.match(/review-(\d+)/);
+                            const reviewId = reviewIdMatch ? reviewIdMatch[1] : `browser_${index}_${Date.now()}`;
+
+                            const validRating = (rating >= 1 && rating <= 5) ? rating : null;
+                            results.push({
+                                id: reviewId,
+                                date: date,
+                                dateISO: dateISO,
+                                author: author || 'Anonymous',
+                                content: content.substring(0, 5000),
+                                rating: validRating,
+                                title: title,
+                            });
                         } catch (e) {
                             console.error('Error extracting review:', e);
                         }
