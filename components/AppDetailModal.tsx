@@ -205,6 +205,8 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved, 
     setIsScraping(true);
     setLoading(true);
     setError(null);
+    setReviews([]); // Reset reviews for fresh scrape (batches will accumulate)
+    setStats(null);
     setActiveTab('reviews');
 
     // Initialize progress
@@ -266,8 +268,13 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved, 
             try {
               const event = JSON.parse(line.slice(6));
               handleSSEEvent(event, enabledFilters);
-            } catch {
-              // Ignore parse errors
+            } catch (parseErr) {
+              // Log parse errors - these can indicate truncated large responses
+              console.error('SSE parse error:', parseErr, 'Line length:', line.length, 'Preview:', line.slice(0, 200));
+              // If this looks like a truncated complete event, show error to user
+              if (line.includes('"type":"complete"') && line.length > 10000) {
+                setError('Large response was truncated. Try scraping fewer reviews.');
+              }
             }
           }
         }
@@ -381,11 +388,34 @@ export default function AppDetailModal({ app, country, onClose, onProjectSaved, 
         );
         break;
 
+      case 'reviewBatch':
+        // Accumulate reviews from batches (prevents SSE truncation with large payloads)
+        setReviews(prev => [...prev, ...(event.reviews as Review[])]);
+        // Update progress to show batch progress
+        setProgress(prev => prev ? {
+          ...prev,
+          uniqueReviews: event.totalReviews as number,
+          currentPage: event.batchNumber as number,
+          maxPages: event.totalBatches as number,
+        } : prev);
+        break;
+
       case 'complete':
-        setReviews(event.reviews as Review[]);
+        // Reviews already received via batches, just set stats
+        // Only set reviews if batches weren't used (backwards compatibility)
+        if ((event.reviews as Review[])?.length > 0) {
+          setReviews(event.reviews as Review[]);
+        }
         setStats(event.stats as ReviewStats);
         setProgress(null);
         setJustScraped(true); // Trigger save to master DB
+        break;
+
+      case 'error':
+        // Handle error events from the backend
+        console.error('Scraping error from backend:', event.message);
+        setError(event.message as string || 'An error occurred during scraping');
+        setProgress(null);
         break;
     }
   }, []);

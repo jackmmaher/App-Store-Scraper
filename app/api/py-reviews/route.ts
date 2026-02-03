@@ -306,10 +306,29 @@ export async function POST(request: NextRequest) {
             ratingDistribution[key] = (ratingDistribution[key] || 0) + 1;
           }
 
-          // Send complete event with all reviews
+          // Send reviews in batches to avoid SSE truncation with large payloads
+          const BATCH_SIZE = 200;
+          const totalBatches = Math.ceil(formattedReviews.length / BATCH_SIZE);
+
+          console.log(`Sending ${formattedReviews.length} reviews in ${totalBatches} batches`);
+
+          for (let i = 0; i < formattedReviews.length; i += BATCH_SIZE) {
+            const batch = formattedReviews.slice(i, i + BATCH_SIZE);
+            const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+
+            sendEvent({
+              type: 'reviewBatch',
+              reviews: batch,
+              batchNumber,
+              totalBatches,
+              totalReviews: formattedReviews.length,
+            });
+          }
+
+          // Send complete event with just stats (reviews already sent in batches)
           sendEvent({
             type: 'complete',
-            reviews: formattedReviews,
+            reviews: [], // Reviews already sent via batches
             stats: {
               total: formattedReviews.length,
               average_rating: Math.round(avgRating * 10) / 10,
