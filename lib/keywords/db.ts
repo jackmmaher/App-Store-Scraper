@@ -1,7 +1,7 @@
 // Keyword Database Operations
 // CRUD operations for keywords, rankings, history, and jobs
 
-import { supabase } from '../supabase';
+import { supabase, escapeSearchString } from '../supabase';
 import {
   Keyword,
   KeywordRanking,
@@ -224,9 +224,9 @@ export async function searchKeywords(
     .select('*', { count: 'exact' })
     .eq('country', country);
 
-  // Text search
+  // Text search (escape wildcards to prevent injection)
   if (q) {
-    query = query.ilike('keyword', `%${q}%`);
+    query = query.ilike('keyword', `%${escapeSearchString(q)}%`);
   }
 
   // Score filters

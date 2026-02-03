@@ -1,7 +1,7 @@
 // Opportunity Database Operations
 // CRUD operations for opportunities, history, jobs, and daily runs
 
-import { supabase } from '../supabase';
+import { supabase, escapeSearchString } from '../supabase';
 import {
   Opportunity,
   OpportunityHistory,
@@ -139,9 +139,9 @@ export async function searchOpportunities(
     .select('*', { count: 'exact' })
     .eq('country', country);
 
-  // Text search
+  // Text search (escape wildcards to prevent injection)
   if (q) {
-    query = query.ilike('keyword', `%${q}%`);
+    query = query.ilike('keyword', `%${escapeSearchString(q)}%`);
   }
 
   // Category filter

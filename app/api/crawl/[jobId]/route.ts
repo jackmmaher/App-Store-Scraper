@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getCrawlOrchestrator } from '@/lib/crawl';
+import { constantTimeEqual } from '@/lib/security';
 
 // Check authentication
 async function checkAuth(request: NextRequest): Promise<boolean> {
@@ -16,7 +17,7 @@ async function checkAuth(request: NextRequest): Promise<boolean> {
   if (!authHeader) return false;
 
   const token = authHeader.replace('Bearer ', '');
-  return token === appPassword;
+  return constantTimeEqual(token, appPassword);
 }
 
 interface RouteParams {

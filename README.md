@@ -227,6 +227,11 @@ This will show only apps that have crossed the 200,000 review threshold, sorted 
 ├── components/             # React components
 ├── lib/                    # Utilities and types
 ├── public/                 # Static files and PWA manifest
+├── docs/                   # Documentation
 ├── appstore_scraper.py    # CLI version
 └── vercel.json            # Vercel configuration
 ```
+
+## Self-Hosting
+
+If deploying outside of Vercel, see [docs/SELF-HOSTING-SECURITY.md](docs/SELF-HOSTING-SECURITY.md) for security configuration.

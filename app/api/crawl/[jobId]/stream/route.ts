@@ -6,6 +6,7 @@
 
 import { NextRequest } from 'next/server';
 import { getCrawlOrchestrator } from '@/lib/crawl';
+import { constantTimeEqual } from '@/lib/security';
 
 interface RouteParams {
   params: Promise<{ jobId: string }>;
@@ -26,8 +27,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   const authHeader = request.headers.get('authorization');
   const appPassword = process.env.APP_PASSWORD;
 
-  if (appPassword && (!authHeader || authHeader.replace('Bearer ', '') !== appPassword)) {
-    return new Response('Unauthorized', { status: 401 });
+  if (appPassword) {
+    if (!authHeader) {
+      return new Response('Unauthorized', { status: 401 });
+    }
+    const token = authHeader.replace('Bearer ', '');
+    if (!constantTimeEqual(token, appPassword)) {
+      return new Response('Unauthorized', { status: 401 });
+    }
   }
 
   const orchestrator = getCrawlOrchestrator();
