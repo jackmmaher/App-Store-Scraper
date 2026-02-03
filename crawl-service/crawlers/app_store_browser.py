@@ -481,9 +481,75 @@ class AppStoreBrowserCrawler:
         return reviews
 
     async def _scroll_page(self, page: Page):
-        """Scroll down to load more reviews"""
+        """Scroll down to load more reviews - handles both modal and page scrolling"""
         try:
-            # Get current scroll position and document height
+            # First, try to find and scroll the reviews modal container
+            # Apple's "See All Reviews" opens a modal with its own scrollable container
+            modal_scrolled = await page.evaluate("""
+                () => {
+                    // Common modal/dialog selectors for Apple's App Store
+                    const modalSelectors = [
+                        // Dialog/modal containers
+                        '[role="dialog"]',
+                        '[role="dialog"] [class*="scroll"]',
+                        '[aria-modal="true"]',
+                        // Apple-specific modal content areas
+                        '.modal__content',
+                        '.we-modal__content',
+                        '[class*="modal"] [class*="content"]',
+                        '[class*="dialog"] [class*="content"]',
+                        // Scrollable containers within modals
+                        '[class*="review"] [class*="scroll"]',
+                        '[class*="reviews-list"]',
+                        // Generic scrollable containers that might contain reviews
+                        '[class*="infinite-scroll"]',
+                        '[class*="virtual-scroll"]',
+                    ];
+
+                    for (const selector of modalSelectors) {
+                        const containers = document.querySelectorAll(selector);
+                        for (const container of containers) {
+                            // Check if this container is scrollable
+                            const isScrollable = container.scrollHeight > container.clientHeight;
+                            const hasReviews = container.querySelector('article[aria-labelledby^="review-"]') !== null ||
+                                             container.querySelector('.review-header') !== null;
+
+                            if (isScrollable && (hasReviews || container.closest('[role="dialog"]'))) {
+                                // Scroll this container
+                                const scrollAmount = container.clientHeight * 0.8;
+                                container.scrollTop += scrollAmount;
+                                console.log(`Scrolled modal container: ${selector}, by ${scrollAmount}px`);
+                                return { scrolled: true, selector: selector, scrollTop: container.scrollTop };
+                            }
+                        }
+                    }
+
+                    // Also check for any scrollable parent of review articles
+                    const reviewArticle = document.querySelector('article[aria-labelledby^="review-"]');
+                    if (reviewArticle) {
+                        let parent = reviewArticle.parentElement;
+                        while (parent && parent !== document.body) {
+                            if (parent.scrollHeight > parent.clientHeight + 10) {
+                                const scrollAmount = parent.clientHeight * 0.8;
+                                parent.scrollTop += scrollAmount;
+                                console.log(`Scrolled review parent container, by ${scrollAmount}px`);
+                                return { scrolled: true, selector: 'review-parent', scrollTop: parent.scrollTop };
+                            }
+                            parent = parent.parentElement;
+                        }
+                    }
+
+                    return { scrolled: false };
+                }
+            """)
+
+            if modal_scrolled and modal_scrolled.get('scrolled'):
+                logger.debug(f"Scrolled modal container: {modal_scrolled.get('selector')}")
+                # Wait for lazy-loaded content in modal
+                await asyncio.sleep(0.8)
+                return
+
+            # Fallback: scroll the main page (for non-modal review pages)
             scroll_info = await page.evaluate("""
                 () => {
                     const scrollY = window.scrollY;

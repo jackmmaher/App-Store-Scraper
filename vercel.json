@@ -35,6 +35,9 @@
     },
     "app/api/reddit/validate-subreddits/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/projects/[id]/scrape-sessions/[sessionId]/route.ts": {
+      "maxDuration": 600
     }
   }
 }

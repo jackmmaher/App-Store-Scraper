@@ -221,7 +221,7 @@ async function startScrapeStream(session: ReviewScrapeSession): Promise<Response
 
         // Call the Python crawler
         const abortController = new AbortController();
-        const timeoutId = setTimeout(() => abortController.abort(), 5 * 60 * 1000);
+        const timeoutId = setTimeout(() => abortController.abort(), 11 * 60 * 1000);
 
         let response: Response;
         try {
