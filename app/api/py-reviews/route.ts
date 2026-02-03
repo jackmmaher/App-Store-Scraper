@@ -345,6 +345,9 @@ export async function POST(request: NextRequest) {
           if (error instanceof Error) {
             if (error.name === 'AbortError') {
               errorMessage = 'Review scraping timed out after 9 minutes. The crawl service may be slow or unresponsive. Try reducing the number of reviews or check crawl-service logs.';
+            } else if (error.message === 'fetch failed' || (error.cause && typeof error.cause === 'object')) {
+              // Connection dropped - service likely crashed
+              errorMessage = 'Connection to crawler service lost. The service may have crashed - check Python logs for errors. Common causes: Playwright not installed (run: playwright install chromium), out of memory, or service not running.';
             } else {
               errorMessage = error.message;
             }

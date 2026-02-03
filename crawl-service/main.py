@@ -317,6 +317,19 @@ class HealthResponse(BaseModel):
 async def lifespan(app: FastAPI):
     """Initialize and cleanup resources."""
     logger.info("Starting Crawl service...")
+
+    # Check Playwright installation at startup
+    try:
+        from playwright.async_api import async_playwright
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            await browser.close()
+        logger.info("Playwright browser check: OK")
+    except Exception as e:
+        logger.error(f"Playwright not properly installed: {e}")
+        logger.error("Run: playwright install chromium")
+        # Don't fail startup - RSS scraping can still work
+
     logger.info("Crawl service ready")
     yield
     logger.info("Shutting down Crawl service...")
@@ -398,6 +411,9 @@ async def crawl_app_store_reviews(request: AppStoreReviewRequest):
                 )
         except asyncio.TimeoutError:
             logger.warning("RSS API scraping timed out after 120 seconds")
+            rss_reviews = []
+        except Exception as e:
+            logger.error(f"RSS API scraping failed: {e}")
             rss_reviews = []
 
         # Add RSS reviews to collection using deterministic hash (not Python's randomized hash())

@@ -52,15 +52,26 @@ class AppStoreBrowserCrawler:
         self._page_lock = asyncio.Lock()  # Prevent race conditions when creating pages
 
     async def __aenter__(self):
-        self.playwright = await async_playwright().start()
-        self.browser = await self.playwright.chromium.launch(
-            headless=self.headless,
-            args=[
-                '--disable-blink-features=AutomationControlled',
-                '--disable-dev-shm-usage',
-                '--no-sandbox',
-            ]
-        )
+        try:
+            self.playwright = await async_playwright().start()
+            self.browser = await self.playwright.chromium.launch(
+                headless=self.headless,
+                args=[
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-dev-shm-usage',
+                    '--no-sandbox',
+                ]
+            )
+        except Exception as e:
+            logger.error(f"Failed to start browser: {e}")
+            # Clean up partial initialization
+            if self.playwright:
+                try:
+                    await self.playwright.stop()
+                except Exception:
+                    pass
+                self.playwright = None
+            raise RuntimeError(f"Browser initialization failed: {e}. Run 'playwright install chromium' if browsers are not installed.")
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
