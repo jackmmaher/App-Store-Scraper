@@ -297,10 +297,10 @@ export default function CrawlServiceStatus() {
                             </p>
                             <div className="relative">
                               <pre className="bg-gray-900 text-gray-100 text-xs p-3 rounded-lg overflow-x-auto">
-                                <code>cd crawl-service &amp;&amp; pip install -r requirements.txt &amp;&amp; playwright install chromium</code>
+                                <code>cd crawl-service; pip install -r requirements.txt; playwright install chromium</code>
                               </pre>
                               <button
-                                onClick={() => copyCommand('cd crawl-service && pip install -r requirements.txt && playwright install chromium', 'install')}
+                                onClick={() => copyCommand('cd crawl-service; pip install -r requirements.txt; playwright install chromium', 'install')}
                                 className="absolute top-2 right-2 p-1.5 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 transition-colors"
                                 title="Copy"
                               >
