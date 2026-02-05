@@ -997,7 +997,43 @@ enum CornerRadius {
 }
 \`\`\`
 
-Format your response in clean Markdown with proper headings and tables.`;
+Format your response in clean Markdown with proper headings and tables.
+
+### CRITICAL: Structured JSON Output Block
+
+After your complete markdown design system, you MUST include this exact JSON block at the very end, wrapped in a fenced code block tagged \`\`\`json:design-tokens. This will be machine-parsed for the export package.
+
+\`\`\`json:design-tokens
+{
+  "colors": {
+    "primary": { "light": "#HEXVAL", "dark": "#HEXVAL" },
+    "secondary": { "light": "#HEXVAL", "dark": "#HEXVAL" },
+    "accent": { "light": "#HEXVAL", "dark": "#HEXVAL" },
+    "background": { "light": "#HEXVAL", "dark": "#HEXVAL" },
+    "secondaryBackground": { "light": "#HEXVAL", "dark": "#HEXVAL" },
+    "text": { "light": "#HEXVAL", "dark": "#HEXVAL" },
+    "secondaryText": { "light": "#HEXVAL", "dark": "#HEXVAL" },
+    "success": { "light": "#HEXVAL", "dark": "#HEXVAL" },
+    "warning": { "light": "#HEXVAL", "dark": "#HEXVAL" },
+    "error": { "light": "#HEXVAL", "dark": "#HEXVAL" },
+    "info": { "light": "#HEXVAL", "dark": "#HEXVAL" }
+  },
+  "spacing": { "xs": 4, "sm": 8, "md": 16, "lg": 24, "xl": 32, "2xl": 48 },
+  "cornerRadius": { "sm": 4, "md": 8, "lg": 12, "xl": 16 },
+  "typography": {
+    "fontFamily": "SF Pro",
+    "scale": [
+      { "name": "largeTitle", "size": 34, "weight": "bold", "lineHeight": 41 },
+      { "name": "title1", "size": 28, "weight": "bold", "lineHeight": 34 },
+      { "name": "headline", "size": 17, "weight": "semibold", "lineHeight": 22 },
+      { "name": "body", "size": 17, "weight": "regular", "lineHeight": 22 },
+      { "name": "caption", "size": 12, "weight": "regular", "lineHeight": 16 }
+    ]
+  }
+}
+\`\`\`
+
+Fill in the ACTUAL values from your design system above. This JSON must match what you wrote in the markdown tables.`;
 }
 
 // Section 4: UI Wireframes Prompt
@@ -1116,7 +1152,34 @@ For each screen (#1 through #N), document:
    - Error states
    - Loading states
 
-Format your response in clean Markdown. Number all screens sequentially (#1, #2, etc.) for easy reference.`;
+Format your response in clean Markdown. Number all screens sequentially (#1, #2, etc.) for easy reference.
+
+### CRITICAL: Structured JSON Output Block
+
+After your complete markdown wireframes, you MUST include this exact JSON block at the very end, wrapped in a fenced code block tagged \`\`\`json:screens. This will be machine-parsed for the export package.
+
+\`\`\`json:screens
+{
+  "screens": [
+    {
+      "id": "screen-1",
+      "name": "Screen Name",
+      "type": "onboarding|auth|main|settings|paywall|other",
+      "purpose": "Brief purpose",
+      "elements": ["Element 1", "Element 2"],
+      "navigatesTo": ["screen-2", "screen-3"]
+    }
+  ],
+  "navigationStructure": {
+    "rootType": "tab|navigation_stack|sidebar",
+    "tabs": [
+      { "name": "Tab Name", "icon": "sf.symbol.name", "screenId": "screen-N" }
+    ]
+  }
+}
+\`\`\`
+
+Fill this with the ACTUAL screens and navigation from your wireframes above. Every numbered screen must appear in this JSON.`;
 }
 
 // Section 3: Tech Stack Prompt
@@ -1299,7 +1362,31 @@ struct MyApp: App {
 }
 \`\`\`
 
-Format your response in clean Markdown with proper tables and code blocks. Remember: NO third-party dependencies!`;
+Format your response in clean Markdown with proper tables and code blocks. Remember: NO third-party dependencies!
+
+### CRITICAL: Structured JSON Output Block
+
+After your complete markdown tech stack, you MUST include this exact JSON block at the very end, wrapped in a fenced code block tagged \`\`\`json:data-models. This will be machine-parsed for the export package.
+
+\`\`\`json:data-models
+{
+  "models": [
+    {
+      "name": "ModelName",
+      "properties": [
+        { "name": "id", "type": "UUID", "optional": false, "defaultValue": "UUID()" },
+        { "name": "title", "type": "String", "optional": false },
+        { "name": "createdAt", "type": "Date", "optional": false, "defaultValue": "Date()" }
+      ],
+      "relationships": [
+        { "name": "items", "type": "[Item]", "deleteRule": "cascade" }
+      ]
+    }
+  ]
+}
+\`\`\`
+
+Fill this with the ACTUAL SwiftData models from your tech stack above. Every @Model class must appear in this JSON.`;
 }
 
 // Section 4: PRD Prompt
@@ -1431,7 +1518,30 @@ Create a comprehensive PRD that synthesizes ALL the above information:
 - Technical specifications
 - Research data
 
-Format your response in clean Markdown with proper headings, tables, and bullet points.`;
+Format your response in clean Markdown with proper headings, tables, and bullet points.
+
+### CRITICAL: Structured JSON Output Block
+
+After your complete markdown PRD, you MUST include this exact JSON block at the very end, wrapped in a fenced code block tagged \`\`\`json:features. This will be machine-parsed for the export package.
+
+\`\`\`json:features
+{
+  "features": [
+    {
+      "name": "Feature Name",
+      "priority": "P0",
+      "phase": "mvp",
+      "userStory": "As a user, I want to...",
+      "acceptanceCriteria": [
+        "Given X, when Y, then Z",
+        "Given A, when B, then C"
+      ]
+    }
+  ]
+}
+\`\`\`
+
+Fill this with ALL features from your PRD above. Every feature from MVP, Phase 2, and Future must appear with its correct priority and phase.`;
 }
 
 // Section 6: Xcode Setup Prompt
@@ -1927,19 +2037,41 @@ Format your response in clean Markdown with proper headings and tables.`;
 }
 
 // Section 9: Build Manifest Prompt
+// Enhanced to reference specs/*.json files and include verify steps
 export function getBuildManifestPrompt(
   appName: string,
   paretoStrategy: string,
   uiWireframes: string,
   techStack: string
 ): string {
-  return `You are a senior iOS developer creating a BUILD MANIFEST - a sequential task list for building an app from scratch. This manifest will be fed to an AI assistant ONE TASK AT A TIME to ensure complete implementation with no skipped steps.
+  // Create a safe PascalCase version of the app name for Swift file paths
+  const safePascalName = appName.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+(.)/g, (_, c) => c.toUpperCase()).replace(/^\w/, c => c.toUpperCase());
+
+  return `You are a senior iOS developer creating a BUILD MANIFEST — a sequential task list for building an app from scratch. This manifest will be executed by Claude Code, which reads spec files and produces complete Swift source files.
 
 ## App: ${appName}
 
-## Source Documents
+## IMPORTANT: This manifest will be packaged alongside structured spec files
 
-You have access to three completed planning documents. Parse them carefully to extract EVERY feature, screen, model, and technical requirement.
+When this manifest is exported, it will live in a directory alongside:
+\`\`\`
+specs/
+  app-config.json       — Bundle ID, min iOS, entitlements, frameworks, permissions
+  design-tokens.json    — Colors (light/dark), spacing, radii, shadows, typography
+  data-models.json      — SwiftData @Model definitions with properties and relationships
+  screens.json          — Navigation graph + screen definitions
+  features.json         — Features with priority and acceptance criteria
+  pain-points.json      — User pain points to solve (from competitor research)
+  feature-matrix.json   — Competitive feature comparison
+${safePascalName}/
+  ${safePascalName}App.swift  — Pre-configured entry point (already generated)
+  Theme/DesignTokens.swift    — Design token constants (already generated)
+  Assets.xcassets/Colors/     — Color assets (already generated)
+\`\`\`
+
+**Your tasks should reference these spec files instead of inlining requirements.** For example, instead of listing every color, say "Read \`specs/design-tokens.json\` > colors".
+
+## Source Documents (for YOUR reference to generate tasks)
 
 ### 1. Pareto Strategy
 ${paretoStrategy}
@@ -1954,146 +2086,155 @@ ${techStack}
 
 ## Your Task
 
-Generate a BUILD_MANIFEST.md with 50-100 atomic tasks that, when completed in sequence, result in a fully functional app matching the specifications above.
+Generate a BUILD_MANIFEST.md with 50-100 atomic tasks that, when completed in sequence, result in a fully functional app.
 
 ## Rules
 
 1. **Atomic tasks**: Each task produces exactly ONE file or ONE small change
 2. **Sequential**: Tasks must be numbered and ordered by dependency
-3. **Specific file paths**: Every task specifies the exact file to create/modify
-4. **Reference sources**: Each task cites the wireframe #, feature, or tech spec it implements
-5. **Acceptance criteria**: Each task has clear "done when" criteria
-6. **No skipping**: A developer following this manifest sequentially will build the COMPLETE app
-7. **Native-Pure**: All code uses only Apple frameworks (StoreKit 2, SwiftData, CloudKit, etc.)
+3. **Specific file paths**: Every task specifies the exact file to create/modify (e.g., \`${safePascalName}/Views/HomeView.swift\`)
+4. **Reference spec files**: Each task says WHERE to find the requirements (e.g., "**Source:** \`specs/screens.json\` > screens[0]")
+5. **Verify step**: Each task has a verify command (e.g., "**Verify:** \`swift build 2>&1 | tail -5\`")
+6. **Acceptance criteria**: Each task has clear "done when" criteria
+7. **No skipping**: A developer following this manifest builds the COMPLETE app
+8. **Native-Pure**: Only Apple frameworks (StoreKit 2, SwiftData, CloudKit, etc.)
 
-## Output Format
+## Task Format (follow EXACTLY)
 
-\`\`\`markdown
+\`\`\`
+### Task N: [Title]
+**File:** \`${safePascalName}/[path/to/File].swift\`
+**Source:** \`specs/[file].json\` > [jsonpath description]
+**Action:** [What to create or modify]
+
+[Specific requirements — reference spec fields, not inline prose]
+
+**Done when:** [Acceptance criteria]
+**Verify:** \`swift build 2>&1 | tail -5\` (should show "Build complete!")
+\`\`\`
+
+## Output Structure
+
 # BUILD MANIFEST: ${appName}
 
-> **Instructions for AI Assistant**: Complete these tasks IN ORDER. Do not skip any task.
-> Each task should be completed fully before moving to the next.
-> When asked to implement a task, produce the complete file contents.
+> **For Claude Code**: Complete tasks IN ORDER. Each task produces one file.
+> Pre-generated files exist in \`${safePascalName}/\` — do NOT recreate them.
+> Read \`specs/*.json\` for requirements. Update \`PROGRESS.md\` after each task.
 
 ---
 
-## Phase 1: Project Setup (Tasks 1-10)
+## Phase 1: Project Foundation (Tasks 1-5)
+- Create Xcode project (if not using pre-generated skeleton)
+- Configure entitlements from \`specs/app-config.json\` > entitlements
+- Configure Info.plist permissions from \`specs/app-config.json\` > permissions
+- Verify pre-generated \`${safePascalName}App.swift\` and \`Theme/DesignTokens.swift\` exist
+- Verify Asset Catalog colors are present
 
-### Task 1: Create Xcode Project
-**Action:** Create new Xcode project
-**Settings:**
-- Product Name: ${appName}
-- Interface: SwiftUI
-- Language: Swift
-- Storage: SwiftData
-- Minimum iOS: 17.0
+**NOTE on Tasks 1-5:** The export package already provides:
+- \`${safePascalName}App.swift\` — app entry point with SwiftData model container
+- \`Theme/DesignTokens.swift\` — all design tokens as Swift constants
+- \`Assets.xcassets/Colors/\` — color assets for light/dark mode
 
-**Done when:** Fresh Xcode project opens and builds successfully
-
----
-
-### Task 2: Configure Info.plist Permissions
-**File:** \`Info.plist\`
-**Reference:** Tech Stack Section 3 (Hardware APIs)
-**Add keys:**
-- NSCameraUsageDescription: "[reason from tech stack]"
-- [other permissions identified in tech stack]
-
-**Done when:** All required permission keys added with user-facing descriptions
+Skip recreating these. Start coding from Task 6.
 
 ---
 
-### Task 3: Create App Entry Point
-**File:** \`${appName}App.swift\`
-**Reference:** Tech Stack Section 6 (CloudKit Sync)
-**Code requirements:**
-- Configure SwiftData ModelContainer
-- Set up CloudKit sync if specified
-- Register all models from Tech Stack
+## Phase 2: Data Models (Tasks 6-XX)
 
-**Done when:** App launches with SwiftData configured
+For EACH model in \`specs/data-models.json\` > models[], create:
+**File:** \`${safePascalName}/Models/[Name].swift\`
+**Source:** \`specs/data-models.json\` > models[i]
 
----
-
-## Phase 2: Data Models (Tasks 11-XX)
-
-### Task 11: Create [Model Name] Model
-**File:** \`Models/[Name].swift\`
-**Reference:** Tech Stack Section 5 (Data Models)
-**Properties:**
-- [list each property with type]
-- [relationships]
-
-**Done when:** Model compiles, can be used with SwiftData
+Create @Model class with:
+- All properties from the spec (name, type, optional, defaultValue)
+- All relationships from the spec (name, type, deleteRule)
+- Proper init()
 
 ---
 
-## Phase 3: Core Views (Tasks XX-XX)
+## Phase 3: Navigation & Tab Structure (Tasks XX-XX)
 
-### Task XX: Create [Screen Name] View
-**File:** \`Views/[Name]View.swift\`
-**Reference:** Wireframe #[N]
-**Elements:**
-- [list UI elements from wireframe]
-**Navigation:**
-- [where does each action go]
-**State:**
-- [what @State/@Observable needed]
+**Source:** \`specs/screens.json\` > navigationStructure
 
-**Done when:** Screen matches wireframe specification, navigation works
+Create the root navigation container (TabView or NavigationStack) based on the spec.
+Then create placeholder views for each tab.
 
 ---
 
-## Phase 4: Features (Tasks XX-XX)
+## Phase 4: Screen Implementation (Tasks XX-XX)
 
-[Continue for all features from Pareto Strategy]
+For EACH screen in \`specs/screens.json\` > screens[], create:
+**File:** \`${safePascalName}/Views/[ScreenName]View.swift\`
+**Source:** \`specs/screens.json\` > screens[i]
 
----
-
-## Phase 5: StoreKit & Paywall (Tasks XX-XX)
-
-### Task XX: Configure StoreKit
-**File:** \`Store/StoreManager.swift\`
-**Reference:** Pareto Strategy Section 4 (Monetization)
-**Requirements:**
-- Product IDs for each tier
-- SubscriptionStoreView implementation
-- Purchase handling
+Implement:
+- All elements listed in the screen spec
+- Navigation to screens listed in navigatesTo[]
+- Use DesignTokens for ALL colors and spacing
+- Reference \`specs/features.json\` for acceptance criteria
 
 ---
 
-## Phase 6: Polish & Launch Prep (Tasks XX-XX)
+## Phase 5: Business Logic & Services (Tasks XX-XX)
 
-### Task XX: Add App Icons
-**File:** \`Assets.xcassets/AppIcon.appiconset\`
-**Sizes needed:** [list all required sizes]
+For features with complexity, create service files:
+**Source:** \`specs/features.json\` > features[] (P0 and P1 only)
+
+---
+
+## Phase 6: StoreKit & Paywall (Tasks XX-XX)
+
+**Source:** \`specs/app-config.json\` > entitlements (look for in-app-payments)
+**Source:** \`specs/features.json\` > features where name contains "paywall" or "subscription"
+
+Create:
+- \`Services/StoreManager.swift\` — StoreKit 2 product loading + purchasing
+- \`Views/PaywallView.swift\` — SubscriptionStoreView implementation
+
+---
+
+## Phase 7: Polish & Launch Prep (Tasks XX-XX)
+
+- Empty states for all list views
+- Error handling for all network calls
+- Loading states
+- Accessibility labels
+- App icon placeholder
 
 ---
 
 # Completion Checklist
 
-At the end, verify ALL of the following from the source documents:
+Verify ALL of the following:
 
-## From Pareto Strategy:
-- [ ] Core value proposition implemented
-- [ ] All P0 features working
-- [ ] All P1 features working
-- [ ] Onboarding flow complete
-- [ ] Monetization/paywall working
+## From specs/features.json:
+- [ ] Every P0 feature is implemented and functional
+- [ ] Every P1 feature is implemented
+- [ ] Each feature's acceptance criteria is met
 
-## From Wireframes:
-- [ ] Screen #1 implemented
-- [ ] Screen #2 implemented
-[... list ALL screens]
+## From specs/screens.json:
+- [ ] Every screen in the spec is implemented
+- [ ] Navigation graph matches navigatesTo[] fields
+- [ ] Tab structure matches navigationStructure
 
-## From Tech Stack:
-- [ ] All required frameworks imported
-- [ ] All data models created
-- [ ] CloudKit sync working (if specified)
-- [ ] All permissions configured
-\`\`\`
+## From specs/data-models.json:
+- [ ] Every model is created as @Model class
+- [ ] All relationships are defined
+- [ ] Models are registered in ModelContainer
 
-Generate the complete BUILD_MANIFEST.md following this format. Extract EVERY screen from wireframes, EVERY model from tech stack, EVERY feature from pareto strategy. Miss nothing.`;
+## From specs/app-config.json:
+- [ ] All permissions configured in Info.plist
+- [ ] All entitlements configured
+- [ ] Minimum iOS version matches spec
+
+## Build Verification:
+- [ ] \`swift build\` succeeds with zero errors
+- [ ] All views render in Xcode Preview
+- [ ] App launches in Simulator
+
+---
+
+Generate the COMPLETE manifest. Extract every screen from wireframes, every model from tech stack, every feature from strategy. Reference spec files throughout. Miss nothing.`;
 }
 
 /**

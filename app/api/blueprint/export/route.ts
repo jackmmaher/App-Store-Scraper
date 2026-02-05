@@ -3,11 +3,66 @@ import { isAuthenticated } from '@/lib/auth';
 import { getBlueprint, getProject, getBlueprintAttachments } from '@/lib/supabase';
 import { extractAppNameFromIdentity } from '@/lib/blueprint-prompts';
 import JSZip from 'jszip';
+import { extractDesignTokens, extractDataModels, extractScreens, extractFeatures, extractAppConfig } from '@/lib/export/spec-generators';
+import { generateDesignTokensSwift, generateAppEntrySwift } from '@/lib/export/swift-templates';
+import { generateColorAssets } from '@/lib/export/asset-catalog-generator';
+import { generateClaudeMd } from '@/lib/export/claude-md-generator';
+import { generateProgressMd } from '@/lib/export/progress-generator';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// GET /api/blueprint/export?id=xxx - Download ZIP with markdown files + BUILD_MANIFEST
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Remove special chars and convert to lowercase-kebab for directory/file names. */
+function toSafeName(name: string): string {
+  return name.replace(/[^a-z0-9]/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').toLowerCase();
+}
+
+/** Convert app name to PascalCase for valid Swift identifier. */
+function toPascalCase(name: string): string {
+  return name
+    .replace(/[^a-zA-Z0-9\s]/g, '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join('');
+}
+
+/** Extract the first paragraph from PRD content as a summary. */
+function extractPrdSummary(prdContent: string | null): string {
+  if (!prdContent) return '';
+  // Skip headings and blank lines, grab the first real paragraph
+  const lines = prdContent.split('\n');
+  const paragraphLines: string[] = [];
+  let started = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    // Skip headings
+    if (trimmed.startsWith('#')) continue;
+    // Skip empty lines before content starts
+    if (!started && !trimmed) continue;
+    // Break on empty line after content
+    if (started && !trimmed) break;
+    // Skip markdown separators
+    if (/^[-=*]{3,}$/.test(trimmed)) continue;
+    // Skip bold labels like **App Name:** etc.
+    if (/^\*\*[^*]+:\*\*/.test(trimmed) && !started) continue;
+
+    started = true;
+    paragraphLines.push(trimmed);
+  }
+
+  return paragraphLines.join(' ').slice(0, 500);
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/blueprint/export?id=xxx
+// ---------------------------------------------------------------------------
+
 export async function GET(request: NextRequest) {
   const authed = await isAuthenticated();
   if (!authed) {
@@ -20,196 +75,178 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Fetch blueprint
+    // 1. Fetch blueprint and project
     const blueprint = await getBlueprint(blueprintId);
     if (!blueprint) {
       return NextResponse.json({ error: 'Blueprint not found' }, { status: 404 });
     }
 
-    // Fetch project for context
     const project = await getProject(blueprint.project_id);
 
-    // Use the chosen app name from identity (the user's app), NOT the competitor app
+    // 2. Extract app name
     const chosenAppName = blueprint.app_identity
       ? extractAppNameFromIdentity(blueprint.app_identity)
       : null;
     const appName = chosenAppName || 'My App';
-    const safeName = appName.replace(/[^a-z0-9]/gi, '-').toLowerCase();
+    const safeName = toSafeName(appName);
+    const safePascalName = toPascalCase(appName) || 'MyApp';
 
-    // Create ZIP
+    // 3. Generate specs from markdown (with fallback defaults)
+    let designTokens;
+    try {
+      designTokens = extractDesignTokens(blueprint.design_system || '');
+    } catch {
+      designTokens = extractDesignTokens('');
+    }
+
+    let dataModels;
+    try {
+      dataModels = extractDataModels(blueprint.tech_stack || '');
+    } catch {
+      dataModels = extractDataModels('');
+    }
+
+    let screens;
+    try {
+      screens = extractScreens(blueprint.ui_wireframes || '', blueprint.tech_stack || '');
+    } catch {
+      screens = extractScreens('', '');
+    }
+
+    let features;
+    try {
+      features = extractFeatures(blueprint.prd_content || '');
+    } catch {
+      features = extractFeatures('');
+    }
+
+    let appConfig;
+    try {
+      appConfig = extractAppConfig(appName, blueprint.tech_stack || '', blueprint.xcode_setup, blueprint.app_identity || '');
+    } catch {
+      appConfig = extractAppConfig(appName, '', null, '');
+    }
+
+    // 4. Generate Swift files
+    const designTokensSwift = generateDesignTokensSwift(designTokens, appName);
+    const appEntrySwift = generateAppEntrySwift(appName, appConfig, dataModels);
+    const colorAssets = generateColorAssets(designTokens);
+
+    // 5. Generate CLAUDE.md
+    const prdSummary = extractPrdSummary(blueprint.prd_content);
+    const claudeMd = generateClaudeMd(appName, prdSummary, appConfig, features.features.length, screens.screens.length);
+
+    // 6. Generate PROGRESS.md
+    const progressMd = generateProgressMd(blueprint.build_manifest || '', appName);
+
+    // 7. Build ZIP
     const zip = new JSZip();
+    const rootDir = `${safeName}-blueprint`;
 
-    // Add section files (only if content exists)
-    // Section 1: Strategy
+    // ── CLAUDE.md at root ─────────────────────────────────────────────────
+    zip.file(`${rootDir}/CLAUDE.md`, claudeMd);
+
+    // ── BUILD_MANIFEST.md ─────────────────────────────────────────────────
+    const manifestHeader = `# ${appName} - BUILD MANIFEST\n\n> **Instructions for AI Assistant**: Complete these tasks IN ORDER. Do not skip any task.\n> Each task should be completed fully before moving to the next.\n> Update PROGRESS.md after completing each task.\n\n---\n\n`;
+    const manifestContent = blueprint.build_manifest
+      ? manifestHeader + blueprint.build_manifest
+      : `# ${appName} - BUILD MANIFEST\n\n*Not yet generated - generate from the Blueprint tab in App Store Scraper.*\n`;
+    zip.file(`${rootDir}/BUILD_MANIFEST.md`, manifestContent);
+
+    // ── PROGRESS.md ───────────────────────────────────────────────────────
+    zip.file(`${rootDir}/PROGRESS.md`, progressMd);
+
+    // ── specs/*.json ──────────────────────────────────────────────────────
+    zip.file(`${rootDir}/specs/app-config.json`, JSON.stringify(appConfig, null, 2));
+    zip.file(`${rootDir}/specs/design-tokens.json`, JSON.stringify(designTokens, null, 2));
+
+    // Typography subset for convenience
+    const typographySubset = {
+      fontFamily: designTokens.typography.fontFamily,
+      scale: designTokens.typography.scale,
+    };
+    zip.file(`${rootDir}/specs/typography.json`, JSON.stringify(typographySubset, null, 2));
+
+    zip.file(`${rootDir}/specs/data-models.json`, JSON.stringify(dataModels, null, 2));
+    zip.file(`${rootDir}/specs/screens.json`, JSON.stringify(screens, null, 2));
+    zip.file(`${rootDir}/specs/features.json`, JSON.stringify(features, null, 2));
+
+    // Pain points & feature matrix from project data if available
+    const painPointRegistry = project?.pain_point_registry as { painPoints?: unknown[]; featureMatrix?: unknown } | null | undefined;
+    zip.file(
+      `${rootDir}/specs/pain-points.json`,
+      JSON.stringify(
+        painPointRegistry?.painPoints || [],
+        null,
+        2
+      )
+    );
+    zip.file(
+      `${rootDir}/specs/feature-matrix.json`,
+      JSON.stringify(
+        painPointRegistry?.featureMatrix || { features: [], competitors: [] },
+        null,
+        2
+      )
+    );
+
+    // ── blueprint/ markdown files ─────────────────────────────────────────
     if (blueprint.pareto_strategy) {
-      const header = `# ${appName} - Strategy\n\nGenerated: ${blueprint.pareto_generated_at || 'Unknown'}\n\n---\n\n`;
-      zip.file('1-strategy.md', header + blueprint.pareto_strategy);
-    } else {
-      zip.file('1-strategy.md', '# Strategy\n\n*Not yet generated*');
+      zip.file(`${rootDir}/blueprint/01-strategy.md`, blueprint.pareto_strategy);
     }
-
-    // Section 2: App Identity
     if (blueprint.app_identity) {
-      const header = `# ${appName} - App Identity\n\nGenerated: ${blueprint.app_identity_generated_at || 'Unknown'}\n\n---\n\n`;
-      zip.file('2-identity.md', header + blueprint.app_identity);
-    } else {
-      zip.file('2-identity.md', '# App Identity\n\n*Not yet generated*');
+      zip.file(`${rootDir}/blueprint/02-identity.md`, blueprint.app_identity);
     }
-
-    // Section 3: Design System
     if (blueprint.design_system) {
-      const header = `# ${appName} - Design System\n\nGenerated: ${blueprint.design_system_generated_at || 'Unknown'}\n\n---\n\n`;
-      zip.file('3-design-system.md', header + blueprint.design_system);
-    } else {
-      zip.file('3-design-system.md', '# Design System\n\n*Not yet generated*');
+      zip.file(`${rootDir}/blueprint/03-design-system.md`, blueprint.design_system);
     }
-
-    // Section 4: Wireframes
     if (blueprint.ui_wireframes) {
-      const header = `# ${appName} - UI Wireframes\n\nGenerated: ${blueprint.ui_wireframes_generated_at || 'Unknown'}\n\n---\n\n`;
-      zip.file('4-wireframes.md', header + blueprint.ui_wireframes);
-    } else {
-      zip.file('4-wireframes.md', '# UI Wireframes\n\n*Not yet generated*');
+      zip.file(`${rootDir}/blueprint/04-wireframes.md`, blueprint.ui_wireframes);
     }
-
-    // Section 5: Tech Stack
-    if (blueprint.tech_stack) {
-      const header = `# ${appName} - Tech Stack\n\nGenerated: ${blueprint.tech_stack_generated_at || 'Unknown'}\n\n---\n\n`;
-      zip.file('5-techstack.md', header + blueprint.tech_stack);
-    } else {
-      zip.file('5-techstack.md', '# Tech Stack\n\n*Not yet generated*');
-    }
-
-    // Section 6: Xcode Setup
-    if (blueprint.xcode_setup) {
-      const header = `# ${appName} - Xcode Setup\n\nGenerated: ${blueprint.xcode_setup_generated_at || 'Unknown'}\n\n---\n\n`;
-      zip.file('6-xcode-setup.md', header + blueprint.xcode_setup);
-    } else {
-      zip.file('6-xcode-setup.md', '# Xcode Setup\n\n*Not yet generated*');
-    }
-
-    // Section 7: PRD
     if (blueprint.prd_content) {
-      const header = `# ${appName} - Product Requirements Document\n\nGenerated: ${blueprint.prd_generated_at || 'Unknown'}\n\n---\n\n`;
-      zip.file('7-prd.md', header + blueprint.prd_content);
-    } else {
-      zip.file('7-prd.md', '# PRD\n\n*Not yet generated*');
+      zip.file(`${rootDir}/blueprint/05-prd.md`, blueprint.prd_content);
     }
-
-    // Section 8: ASO
     if (blueprint.aso_content) {
-      const header = `# ${appName} - App Store Optimization\n\nGenerated: ${blueprint.aso_generated_at || 'Unknown'}\n\n---\n\n`;
-      zip.file('8-aso.md', header + blueprint.aso_content);
-    } else {
-      zip.file('8-aso.md', '# ASO\n\n*Not yet generated*');
+      zip.file(`${rootDir}/blueprint/06-aso.md`, blueprint.aso_content);
     }
 
-    // Section 9: BUILD_MANIFEST
-    if (blueprint.build_manifest) {
-      const header = `# ${appName} - BUILD MANIFEST\n\nGenerated: ${blueprint.build_manifest_generated_at || 'Unknown'}\n\n> **Instructions for AI Assistant**: Complete these tasks IN ORDER. Do not skip any task.\n> Each task should be completed fully before moving to the next.\n\n---\n\n`;
-      zip.file('9-build-manifest.md', header + blueprint.build_manifest);
-    } else {
-      zip.file('9-build-manifest.md', '# BUILD MANIFEST\n\n*Not yet generated - generate from the Blueprint tab*');
+    // ── Swift source skeleton ─────────────────────────────────────────────
+    const swiftDir = `${rootDir}/${safePascalName}`;
+
+    // App entry point
+    zip.file(`${swiftDir}/${safePascalName}App.swift`, appEntrySwift);
+
+    // Design tokens theme file
+    zip.file(`${swiftDir}/Theme/DesignTokens.swift`, designTokensSwift);
+
+    // Asset catalog color sets
+    for (const asset of colorAssets) {
+      zip.file(`${swiftDir}/Assets.xcassets/${asset.path}`, asset.contents);
     }
 
-    // Add a combined document
-    const combined = [
-      `# ${appName} - Complete Blueprint`,
-      ``,
-      `Generated: ${new Date().toISOString()}`,
-      ``,
-      `---`,
-      ``,
-      `## Table of Contents`,
-      `1. [Strategy](#1-strategy)`,
-      `2. [App Identity](#2-app-identity)`,
-      `3. [Design System](#3-design-system)`,
-      `4. [UI Wireframes](#4-ui-wireframes)`,
-      `5. [Tech Stack](#5-tech-stack)`,
-      `6. [Xcode Setup](#6-xcode-setup)`,
-      `7. [PRD](#7-product-requirements-document)`,
-      `8. [ASO](#8-app-store-optimization)`,
-      `9. [BUILD MANIFEST](#9-build-manifest)`,
-      ``,
-      `---`,
-      ``,
-      `# 1. Strategy`,
-      ``,
-      blueprint.pareto_strategy || '*Not yet generated*',
-      ``,
-      `---`,
-      ``,
-      `# 2. App Identity`,
-      ``,
-      blueprint.app_identity || '*Not yet generated*',
-      ``,
-      `---`,
-      ``,
-      `# 3. Design System`,
-      ``,
-      blueprint.design_system || '*Not yet generated*',
-      ``,
-      `---`,
-      ``,
-      `# 4. UI Wireframes`,
-      ``,
-      blueprint.ui_wireframes || '*Not yet generated*',
-      ``,
-      `---`,
-      ``,
-      `# 5. Tech Stack`,
-      ``,
-      blueprint.tech_stack || '*Not yet generated*',
-      ``,
-      `---`,
-      ``,
-      `# 6. Xcode Setup`,
-      ``,
-      blueprint.xcode_setup || '*Not yet generated*',
-      ``,
-      `---`,
-      ``,
-      `# 7. Product Requirements Document`,
-      ``,
-      blueprint.prd_content || '*Not yet generated*',
-      ``,
-      `---`,
-      ``,
-      `# 8. App Store Optimization`,
-      ``,
-      blueprint.aso_content || '*Not yet generated*',
-      ``,
-      `---`,
-      ``,
-      `# 9. BUILD MANIFEST`,
-      ``,
-      blueprint.build_manifest || '*Not yet generated - generate from the Blueprint tab*',
-    ].join('\n');
+    // Empty directories with .gitkeep
+    zip.file(`${swiftDir}/Views/.gitkeep`, '');
+    zip.file(`${swiftDir}/Models/.gitkeep`, '');
+    zip.file(`${swiftDir}/Services/.gitkeep`, '');
 
-    zip.file('0-complete-blueprint.md', combined);
-
-    // Fetch and include attachments (icons, wireframe images, etc.)
+    // ── Assets from storage (existing attachments) ────────────────────────
     const attachments = await getBlueprintAttachments(blueprintId);
     if (attachments.length > 0) {
-      const assetsFolder = zip.folder('assets');
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 
       for (const attachment of attachments) {
         try {
-          // Build the public URL for the attachment
           const publicUrl = `${supabaseUrl}/storage/v1/object/public/blueprint-attachments/${attachment.storage_path}`;
-
-          // Fetch the file
           const response = await fetch(publicUrl);
           if (response.ok) {
             const arrayBuffer = await response.arrayBuffer();
 
-            // Determine folder based on section
+            // Organize by section
             const sectionFolder = attachment.section === 'identity' ? 'icons' : attachment.section;
-            const folder = assetsFolder?.folder(sectionFolder);
-
-            // Add to ZIP with original filename
-            folder?.file(attachment.file_name, arrayBuffer);
+            zip.file(
+              `${rootDir}/assets/${sectionFolder}/${attachment.file_name}`,
+              arrayBuffer
+            );
 
             console.log(`[Export] Added attachment: ${sectionFolder}/${attachment.file_name}`);
           } else {
@@ -221,10 +258,9 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Generate ZIP as blob
+    // ── Generate ZIP ──────────────────────────────────────────────────────
     const zipBlob = await zip.generateAsync({ type: 'blob' });
 
-    // Return as download
     return new Response(zipBlob, {
       headers: {
         'Content-Type': 'application/zip',

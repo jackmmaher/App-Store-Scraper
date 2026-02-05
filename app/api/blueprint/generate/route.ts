@@ -16,6 +16,7 @@ import {
   type LinkedCompetitor,
 } from '@/lib/supabase';
 import { getBlueprintPrompt, getBlueprintPromptWithEnrichment, getBuildManifestPrompt, getAppIdentityCandidatesPrompt, getAppIdentityPrompt, extractAppNameFromIdentity } from '@/lib/blueprint-prompts';
+import { extractStructuredSpecs } from '@/lib/export/json-extractor';
 import { getColorPalettesForDesignSystem, type ColorPalette } from '@/lib/crawl';
 import { RedditAnalysisResult } from '@/lib/reddit/types';
 
@@ -500,6 +501,31 @@ export async function POST(request: NextRequest) {
           // Save completed content
           clearHeartbeat();
           await updateBlueprintSection(blueprintId, section, fullContent, 'completed');
+
+          // Extract structured specs from tagged JSON blocks (design-tokens, data-models, screens, features)
+          const specSections = ['design_system', 'tech_stack', 'wireframes', 'prd'];
+          if (specSections.includes(section)) {
+            try {
+              const existingSpecs = (blueprint.structured_specs as Record<string, unknown>) || {};
+              const updatedSpecs = extractStructuredSpecs(section, fullContent, existingSpecs);
+
+              // Save structured specs to the blueprint (structured_specs jsonb column)
+              const { createClient } = await import('@supabase/supabase-js');
+              const adminClient = createClient(
+                process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                process.env.SUPABASE_SERVICE_KEY!
+              );
+              await adminClient
+                .from('project_blueprints')
+                .update({ structured_specs: updatedSpecs })
+                .eq('id', blueprintId);
+
+              console.log(`[Generate] Extracted structured specs from ${section}`);
+            } catch (specError) {
+              console.error(`[Generate] Failed to extract structured specs from ${section}:`, specError);
+              // Non-fatal — the export will fall back to markdown parsing
+            }
+          }
 
           sendEvent('complete', { content: fullContent });
         } catch (error) {

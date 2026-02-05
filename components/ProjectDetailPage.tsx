@@ -13,6 +13,8 @@ import OriginalIdeaBrief from './project/OriginalIdeaBrief';
 import CompetitorApps from './project/CompetitorApps';
 import RedditDeepDiveSection from './project/RedditDeepDiveSection';
 import AppDetailModal from './AppDetailModal';
+import PainPointsPanel from './project/PainPointsPanel';
+import FeatureMatrixPanel from './project/FeatureMatrixPanel';
 import type { AppProject, Review, LinkedCompetitor, AppIdeaRecommendationData, AppResult } from '@/lib/supabase';
 import { saveAppAnalysis, getMasterApp } from '@/lib/supabase';
 import { useKeywordRanking } from '@/hooks/useKeywordRanking';
@@ -31,7 +33,7 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
   const [project, setProject] = useState<AppProject | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'analysis' | 'reviews' | 'notes' | 'keywords' | 'blueprint'>('reviews');
+  const [activeTab, setActiveTab] = useState<'analysis' | 'reviews' | 'notes' | 'keywords' | 'blueprint' | 'pain-points'>('reviews');
   const [notes, setNotes] = useState('');
   const [savingNotes, setSavingNotes] = useState(false);
   const [reAnalyzing, setReAnalyzing] = useState(false);
@@ -622,6 +624,16 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
               }`}
             >
               Keywords
+            </button>
+            <button
+              onClick={() => setActiveTab('pain-points')}
+              className={`px-3 sm:px-6 py-3 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
+                activeTab === 'pain-points'
+                  ? 'text-blue-600 border-b-2 border-blue-600'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Pain Points
             </button>
             <button
               onClick={() => setActiveTab('blueprint')}
@@ -1216,6 +1228,14 @@ export default function ProjectDetailPage({ projectId }: ProjectDetailPageProps)
                     </p>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* Pain Points & Feature Matrix Tab */}
+            {activeTab === 'pain-points' && (
+              <div className="space-y-8">
+                <PainPointsPanel projectId={projectId} />
+                <FeatureMatrixPanel projectId={projectId} />
               </div>
             )}
 

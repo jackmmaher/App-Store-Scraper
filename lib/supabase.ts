@@ -1016,6 +1016,10 @@ export interface AppProject {
   app_idea_session_id?: string;
   app_idea_recommendation?: AppIdeaRecommendationData;
   linked_competitors?: LinkedCompetitor[];
+  // Batch analysis results (all reviews processed, not sampled)
+  batch_analysis?: Record<string, unknown> | null;
+  // Unified pain point registry (review + Reddit sources)
+  pain_point_registry?: Record<string, unknown> | null;
 }
 
 export interface CreateProjectInput {
@@ -1074,6 +1078,8 @@ export async function updateProject(
     review_stats: ReviewStats;
     ai_analysis: string;
     notes: string;
+    batch_analysis: Record<string, unknown>;
+    pain_point_registry: Record<string, unknown>;
   }>
 ): Promise<AppProject | null> {
   const updateData: Record<string, unknown> = { ...updates };
@@ -1099,6 +1105,28 @@ export async function updateProject(
   }
 
   return data;
+}
+
+// Update project batch analysis results
+export async function updateProjectBatchAnalysis(
+  projectId: string,
+  batchAnalysis: Record<string, unknown>
+): Promise<boolean> {
+  const result = await updateProject(projectId, {
+    batch_analysis: batchAnalysis,
+  });
+  return result !== null;
+}
+
+// Update project pain point registry
+export async function updateProjectPainPointRegistry(
+  projectId: string,
+  registry: Record<string, unknown>
+): Promise<boolean> {
+  const result = await updateProject(projectId, {
+    pain_point_registry: registry,
+  });
+  return result !== null;
 }
 
 // Update project reviews (convenience wrapper)
@@ -2011,6 +2039,9 @@ export interface ProjectBlueprint {
   // Notes snapshot - captured when blueprint generation starts
   notes_snapshot: string | null;
   notes_snapshot_at: string | null;
+
+  // Structured specs extracted from generated sections (design tokens, data models, screens, features)
+  structured_specs: Record<string, unknown> | null;
 
   created_at: string;
   updated_at: string;
