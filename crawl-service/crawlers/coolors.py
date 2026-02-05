@@ -192,7 +192,12 @@ class CoolorsCrawler:
             List of ColorPalette objects
         """
         palettes = []
-        page = await self._create_page()
+        page = None
+        try:
+            page = await self._create_page()
+        except Exception as e:
+            logger.error(f"Browser error during palette crawl: {e}")
+            return []
 
         try:
             logger.info("Navigating to Coolors trending palettes...")
@@ -244,7 +249,11 @@ class CoolorsCrawler:
         except Exception as e:
             logger.exception(f"Error crawling Coolors: {e}")
         finally:
-            await page.context.close()
+            if page:
+                try:
+                    await page.context.close()
+                except Exception:
+                    pass
 
         return palettes[:max_palettes]
 

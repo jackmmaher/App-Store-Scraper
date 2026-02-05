@@ -138,6 +138,7 @@ class AppStoreBrowserCrawler:
         When multi_country=True, scrapes from multiple country stores to maximize review count.
         """
         all_reviews = {}
+        reviews_lock = asyncio.Lock()
 
         # Determine which countries to scrape - use more countries for better coverage
         # Always include the requested country first, then add high-volume countries
@@ -206,26 +207,40 @@ class AppStoreBrowserCrawler:
 
                     # Try to click "See All Reviews" link if present
                     try:
-                        see_all_selectors = [
-                            'a:has-text("See All")',
-                            'a[href*="see-all=reviews"]',
-                            'button:has-text("See All")',
-                            '.we-truncate__button',
-                            'a:has-text("Ratings and Reviews")',
-                        ]
-                        for selector in see_all_selectors:
+                        # Try proper Playwright locator API first (more resilient than CSS pseudo-selectors)
+                        see_all_clicked = False
+                        for link_text in ['See All', 'Ratings and Reviews']:
                             try:
-                                link = page.locator(selector).first
-                                if await link.is_visible(timeout=2000):
-                                    await link.click()
+                                see_all = page.locator('a', has_text=link_text).first
+                                if await see_all.is_visible(timeout=2000):
+                                    await see_all.click(timeout=5000)
                                     await asyncio.sleep(2)
-                                    logger.info(f"Clicked 'See All' link for {current_country}")
+                                    logger.info(f"Clicked '{link_text}' link for {current_country}")
+                                    see_all_clicked = True
                                     break
                             except (PlaywrightTimeout, Exception) as e:
-                                logger.debug(f"Selector {selector} failed: {e}")
+                                logger.debug(f"Link text '{link_text}' failed: {e}")
                                 continue
+
+                        # Fallback: try CSS selectors
+                        if not see_all_clicked:
+                            fallback_selectors = [
+                                'a[href*="see-all=reviews"]',
+                                '.we-truncate__button',
+                            ]
+                            for selector in fallback_selectors:
+                                try:
+                                    link = page.locator(selector).first
+                                    if await link.is_visible(timeout=2000):
+                                        await link.click()
+                                        await asyncio.sleep(2)
+                                        logger.info(f"Clicked fallback selector for {current_country}")
+                                        break
+                                except (PlaywrightTimeout, Exception) as e:
+                                    logger.debug(f"Fallback selector {selector} failed: {e}")
+                                    continue
                     except Exception as e:
-                        logger.debug(f"No 'See All' link found: {e}")
+                        logger.warning(f"Could not find 'See All' button: {e}")
 
                     # Extract reviews with multiple scroll attempts
                     total_new_this_country = 0
@@ -243,17 +258,18 @@ class AppStoreBrowserCrawler:
                             content_key = f"{review.get('author', '')}:{review.get('content', '')[:100]}"
                             review_id = hashlib.sha256(content_key.encode()).hexdigest()[:16]
 
-                            if review_id in all_reviews:
-                                continue
+                            async with reviews_lock:
+                                if review_id in all_reviews:
+                                    continue
 
-                            rating = review.get('rating', 0)
-                            if min_rating and rating < min_rating:
-                                continue
-                            if max_rating and rating > max_rating:
-                                continue
+                                rating = review.get('rating', 0)
+                                if min_rating and rating < min_rating:
+                                    continue
+                                if max_rating and rating > max_rating:
+                                    continue
 
-                            all_reviews[review_id] = review
-                            new_count += 1
+                                all_reviews[review_id] = review
+                                new_count += 1
 
                         total_new_this_country += new_count
 
@@ -309,34 +325,34 @@ class AppStoreBrowserCrawler:
         reviews = []
 
         try:
-            # Extract reviews using JavaScript with updated selectors for Apple's new DOM structure
+            # Extract reviews using JavaScript with multi-strategy selectors for Apple's Svelte-based DOM
             reviews_data = await page.evaluate(r"""
                 () => {
                     const results = [];
                     const seenContent = new Set();
 
-                    // Apple's current DOM structure (2024+):
-                    // <article aria-labelledby="review-XXXXX-title">
-                    //   <div class="header">
-                    //     <div class="title-and-rating-container">
-                    //       <h3 class="title">...</h3>
-                    //       <ol class="stars" aria-label="5 Stars">...</ol>
-                    //     </div>
-                    //     <div class="review-header">
-                    //       <time class="date" datetime="...">...</time>
-                    //       <p class="author">...</p>
-                    //     </div>
-                    //   </div>
-                    //   <div class="content">
-                    //     <p data-testid="truncate-text">REVIEW TEXT</p>
-                    //   </div>
-                    // </article>
 
-                    // Primary selector: article elements with review ID
-                    let reviewCards = Array.from(document.querySelectorAll('article[aria-labelledby^="review-"]'));
-                    console.log(`Found ${reviewCards.length} review cards with article[aria-labelledby^="review-"]`);
+                    // Strategy 1: Modern Apple DOM - review containers by common patterns
+                    let reviewCards = Array.from(document.querySelectorAll('[class*="review"], [class*="Review"], [data-test*="review"]'));
+                    reviewCards = reviewCards.filter(el => el.textContent.length > 50 && el.querySelector('*'));
 
-                    // Fallback: look for elements with review-header class and get parent article
+                    // Strategy 2: Original selectors - article elements with review ID
+                    if (reviewCards.length === 0) {
+                        reviewCards = Array.from(document.querySelectorAll('article[aria-labelledby^="review-"]'));
+                    }
+
+                    // Strategy 3: Star rating elements - traverse up
+                    if (reviewCards.length === 0) {
+                        const starEls = document.querySelectorAll('[aria-label*="Star"], [aria-label*="star"], figure[role="img"]');
+                        const seen = new Set();
+                        starEls.forEach(star => {
+                            let parent = star.closest('article, section, [class*="review"]');
+                            if (!parent) { parent = star.parentElement; for (let i=0;i<5&&parent;i++){if(parent.textContent.length>80)break;parent=parent.parentElement;} }
+                            if (parent && !seen.has(parent) && parent.textContent.length > 50) { seen.add(parent); reviewCards.push(parent); }
+                        });
+                    }
+
+                    // Strategy 4: elements with review-header class
                     if (reviewCards.length === 0) {
                         const reviewHeaders = document.querySelectorAll('.review-header');
                         reviewHeaders.forEach(header => {
@@ -345,10 +361,10 @@ class AppStoreBrowserCrawler:
                                 reviewCards.push(article);
                             }
                         });
-                        console.log(`Found ${reviewCards.length} review cards via .review-header fallback`);
+                        console.log('Strategy 4: Found ' + reviewCards.length + ' review cards via .review-header');
                     }
 
-                    // Second fallback: look for ol.stars with aria-label and traverse up
+                    // Strategy 5: ol.stars with aria-label and traverse up
                     if (reviewCards.length === 0) {
                         const starLists = document.querySelectorAll('ol.stars[aria-label*="Star"]');
                         starLists.forEach(stars => {
@@ -357,24 +373,26 @@ class AppStoreBrowserCrawler:
                                 reviewCards.push(article);
                             }
                         });
-                        console.log(`Found ${reviewCards.length} review cards via ol.stars fallback`);
+                        console.log('Strategy 5: Found ' + reviewCards.length + ' review cards via ol.stars');
                     }
 
-                    console.log(`Total review cards to process: ${reviewCards.length}`);
+                    if (reviewCards.length === 0) { console.log('WARNING: No review cards found with any strategy'); }
+                    console.log('Total cards: ' + reviewCards.length);
 
                     // Process each review card
                     reviewCards.forEach((card, index) => {
                         try {
-                            // Extract title from h3.title or h3[id^="review-"]
+                            // Extract title - try multiple selectors
                             let title = '';
-                            const titleEl = card.querySelector('h3.title .multiline-clamp__text, h3[id^="review-"] .multiline-clamp__text, h3.title, h3[id^="review-"]');
-                            if (titleEl) {
-                                title = titleEl.textContent.trim();
+                            const titleSels = ['h3.title .multiline-clamp__text', 'h3[id^="review-"] .multiline-clamp__text', 'h3.title', 'h3[id^="review-"]', '[class*="title"] h3', 'h3'];
+                            for (const sel of titleSels) {
+                                const el = card.querySelector(sel);
+                                if (el && el.textContent.trim().length > 0) { title = el.textContent.trim(); break; }
                             }
 
-                            // Extract rating from ol.stars aria-label (e.g., "5 Stars")
+                            // Extract rating - try multiple approaches
                             let rating = 0;
-                            const starsEl = card.querySelector('ol.stars[aria-label]');
+                            const starsEl = card.querySelector('ol.stars[aria-label], [aria-label*="Star"], [aria-label*="star"]');
                             if (starsEl) {
                                 const ariaLabel = starsEl.getAttribute('aria-label') || '';
                                 const match = ariaLabel.match(/(\d+)\s*Stars?/i);
@@ -383,57 +401,62 @@ class AppStoreBrowserCrawler:
                                 }
                             }
 
-                            // Fallback: count star li elements
+                            // Approach 2: figure with aria-label
                             if (rating === 0) {
-                                const starItems = card.querySelectorAll('ol.stars li.star');
+                                const figureEl = card.querySelector('figure[aria-label*="star" i], figure[role="img"][aria-label]');
+                                if (figureEl) {
+                                    const al = figureEl.getAttribute('aria-label') || '';
+                                    const m = al.match(/(\d+)/);
+                                    if (m) rating = parseInt(m[1]);
+                                }
+                            }
+
+                            // Approach 3: Count filled star elements
+                            if (rating === 0) {
+                                const starItems = card.querySelectorAll('ol.stars li.star, [class*="star-filled"], [class*="StarFilled"]');
                                 if (starItems.length > 0 && starItems.length <= 5) {
                                     rating = starItems.length;
                                 }
                             }
 
-                            // Extract date from time.date element
+                            // Extract date - try multiple selectors
                             let date = '';
                             let dateISO = '';
-                            const timeEl = card.querySelector('time.date, time[datetime]');
+                            const timeEl = card.querySelector('time.date, time[datetime], [class*="date"] time, time');
                             if (timeEl) {
                                 date = timeEl.textContent.trim();
                                 dateISO = timeEl.getAttribute('datetime') || '';
                             }
 
-                            // Extract author from p.author
+                            // Extract author - try multiple selectors
                             let author = '';
-                            const authorEl = card.querySelector('p.author, .author');
-                            if (authorEl) {
-                                author = authorEl.textContent.trim();
+                            const authorSels = ['p.author', '.author', '[class*="author"]', '[class*="Author"]'];
+                            for (const sel of authorSels) {
+                                const el = card.querySelector(sel);
+                                if (el && el.textContent.trim().length > 0) { author = el.textContent.trim(); break; }
                             }
 
-                            // Extract content from p[data-testid="truncate-text"] or div.content p
+                            // Extract content - try multiple selectors
                             let content = '';
-                            const contentEl = card.querySelector('p[data-testid="truncate-text"], div.content p.content, div.content p');
+                            const contentEl = card.querySelector('p[data-testid="truncate-text"], div.content p.content, div.content p, [class*="content"] p, [class*="body"] p');
                             if (contentEl) {
                                 content = contentEl.textContent.trim();
                             }
 
-                            // Fallback: get text from div.content
+                            // Fallback: get text from content div
                             if (!content) {
-                                const contentDiv = card.querySelector('div.content');
+                                const contentDiv = card.querySelector('div.content, [class*="content"], [class*="body"]');
                                 if (contentDiv) {
                                     content = contentDiv.textContent.trim();
                                 }
                             }
 
                             // Skip if no meaningful content
-                            if (!content || content.length < 10) {
-                                console.log(`Skipping card ${index}: no content`);
-                                return;
-                            }
+                            if (!content || content.length < 10) return;
 
                             // Dedupe by content
                             const contentKey = content.substring(0, 100);
-                            if (seenContent.has(contentKey)) {
-                                console.log(`Skipping card ${index}: duplicate content`);
-                                return;
-                            }
+                            if (seenContent.has(contentKey)) return;
                             seenContent.add(contentKey);
 
                             // Get review ID from aria-labelledby if available
@@ -456,7 +479,7 @@ class AppStoreBrowserCrawler:
                         }
                     });
 
-                    console.log(`Extracted ${results.length} valid reviews`);
+                    console.log('Extracted ' + results.length + ' valid reviews');
                     return results;
                 }
             """)

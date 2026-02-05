@@ -46,6 +46,13 @@ CREATE TABLE blueprint_attachments (
 
 CREATE INDEX idx_attachments_blueprint ON blueprint_attachments(blueprint_id);
 
+
+-- Auto-update updated_at on project_blueprints
+CREATE TRIGGER trigger_update_app_projects_updated_at_on_projects
+  BEFORE UPDATE ON project_blueprints
+  FOR EACH ROW
+  EXECUTE FUNCTION update_app_projects_updated_at();
+
 -- Enable RLS
 ALTER TABLE project_blueprints ENABLE ROW LEVEL SECURITY;
 ALTER TABLE blueprint_attachments ENABLE ROW LEVEL SECURITY;

@@ -79,7 +79,11 @@ CREATE TABLE gap_analysis_chat_messages (
 CREATE INDEX idx_gap_chat_session ON gap_analysis_chat_messages(session_id);
 CREATE INDEX idx_gap_chat_created_at ON gap_analysis_chat_messages(created_at);
 
--- Disable Row Level Security (single-user app with app-level auth)
-ALTER TABLE gap_analysis_sessions DISABLE ROW LEVEL SECURITY;
-ALTER TABLE gap_analysis_apps DISABLE ROW LEVEL SECURITY;
-ALTER TABLE gap_analysis_chat_messages DISABLE ROW LEVEL SECURITY;
+-- Enable Row Level Security with allow-all policies for consistency
+ALTER TABLE gap_analysis_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE gap_analysis_apps ENABLE ROW LEVEL SECURITY;
+ALTER TABLE gap_analysis_chat_messages ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow all access to gap_analysis_sessions" ON gap_analysis_sessions FOR ALL USING (true);
+CREATE POLICY "Allow all access to gap_analysis_apps" ON gap_analysis_apps FOR ALL USING (true);
+CREATE POLICY "Allow all access to gap_analysis_chat_messages" ON gap_analysis_chat_messages FOR ALL USING (true);

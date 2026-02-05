@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 type ServiceStatus = 'checking' | 'connected' | 'disconnected';
 type StartStatus = 'idle' | 'starting' | 'success' | 'error';
@@ -30,6 +30,12 @@ export default function CrawlServiceStatus() {
   const [showManualSetup, setShowManualSetup] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [isLocal, setIsLocal] = useState(true);
+  const statusRef = useRef(status);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
 
   useEffect(() => {
     setIsLocal(isRunningLocally());
@@ -71,17 +77,13 @@ export default function CrawlServiceStatus() {
 
       if (response.ok) {
         setStartStatus('success');
-        // Poll for connection
+        // Poll for connection using ref to avoid stale closure
         let attempts = 0;
         const pollInterval = setInterval(async () => {
           attempts++;
           await checkStatus();
-          if (status === 'connected' || attempts >= 10) {
+          if (statusRef.current === 'connected' || attempts >= 10) {
             clearInterval(pollInterval);
-            if (attempts >= 10 && status !== 'connected') {
-              // Final check
-              await checkStatus();
-            }
           }
         }, 1000);
       } else {

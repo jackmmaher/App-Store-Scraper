@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS keyword_rankings (
     has_keyword_in_title BOOLEAN DEFAULT FALSE,
     app_name TEXT,
     app_review_count INTEGER,
-    app_rating NUMERIC(2,1),
+    app_rating NUMERIC(3,2),
     app_icon_url TEXT,
     scraped_at TIMESTAMPTZ DEFAULT NOW(),
 

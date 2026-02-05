@@ -58,6 +58,14 @@ from crawlers.uicolors import (
     format_color_system_for_prompt,
 )
 
+# Supabase client for async review saving
+try:
+    from supabase import create_client, Client
+    SUPABASE_AVAILABLE = True
+except ImportError:
+    SUPABASE_AVAILABLE = False
+    logger.warning("Supabase package not installed - async review saving will be disabled")
+
 # Configure logging
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -269,6 +277,16 @@ class FontPairsRequest(BaseModel):
 class ColorSpectrumRequest(BaseModel):
     primary_hex: str  # Primary color hex (with or without #)
     include_complementary: bool = False
+
+
+class AppStoreReviewAsyncRequest(BaseModel):
+    """Request model for async review scraping with Supabase callback."""
+    session_id: str
+    app_id: str
+    country: str = "us"
+    max_reviews: int = Field(default=1000, ge=1, le=10000)
+    supabase_url: str
+    supabase_key: str
 
 
 class RedditDeepDiveRequest(BaseModel):
@@ -508,6 +526,182 @@ async def crawl_app_store_reviews(request: AppStoreReviewRequest):
     except Exception as e:
         logger.exception(f"Error crawling reviews for {request.app_id}")
         raise HTTPException(status_code=500, detail=f"Failed to crawl reviews: {str(e)}")
+
+
+@app.post("/crawl/app-store/reviews-async")
+async def crawl_app_store_reviews_async(
+    request: AppStoreReviewAsyncRequest,
+    background_tasks: BackgroundTasks
+):
+    """
+    Start async App Store review scraping with Supabase callback.
+
+    Fire-and-forget endpoint that immediately returns and runs scraping in background.
+    Updates Supabase directly when done (completed/failed).
+    """
+    logger.info(f"Starting async review scrape for session {request.session_id}, app {request.app_id}")
+    background_tasks.add_task(run_scrape_and_update_supabase, request)
+    return {"status": "started", "session_id": request.session_id}
+
+
+async def run_scrape_and_update_supabase(request: AppStoreReviewAsyncRequest):
+    """Background task to scrape reviews and update Supabase with results."""
+    if not SUPABASE_AVAILABLE:
+        logger.error("Supabase package not available for async review saving")
+        return {"error": "Supabase not available"}
+
+    logger.info(f"Background scrape starting for session {request.session_id}")
+
+    # Initialize Supabase client
+    supabase: Client = create_client(request.supabase_url, request.supabase_key)
+
+    try:
+        # Update status to in_progress
+        supabase.table("review_scrape_sessions").update({
+            "status": "in_progress",
+            "started_at": datetime.utcnow().isoformat(),
+            "progress": {"message": "Starting scrape..."},
+        }).eq("id", request.session_id).execute()
+
+        all_reviews = {}
+
+        # Phase 1: RSS API scraping
+        logger.info(f"[{request.session_id}] Phase 1: RSS API scraping...")
+        try:
+            async with AppStoreCrawler() as crawler:
+                rss_reviews = await asyncio.wait_for(
+                    crawler.crawl_reviews(
+                        app_id=request.app_id,
+                        country=request.country,
+                        max_reviews=min(request.max_reviews, 2000),
+                    ),
+                    timeout=120.0
+                )
+        except asyncio.TimeoutError:
+            logger.warning(f"[{request.session_id}] RSS API timed out")
+            rss_reviews = []
+        except Exception as e:
+            logger.error(f"[{request.session_id}] RSS API error: {e}")
+            rss_reviews = []
+
+        # Add RSS reviews to collection
+        for review in rss_reviews:
+            if not isinstance(review, dict):
+                continue
+            content_key = f"{review.get('author', '')}:{review.get('content', '')[:100]}"
+            review_id = hashlib.sha256(content_key.encode()).hexdigest()[:16]
+            review['source'] = 'rss_api'
+            all_reviews[review_id] = review
+
+        logger.info(f"[{request.session_id}] RSS phase complete: {len(all_reviews)} reviews")
+
+        # Phase 2: Browser scraping if needed
+        if len(all_reviews) < request.max_reviews:
+            remaining = request.max_reviews - len(all_reviews)
+            logger.info(f"[{request.session_id}] Phase 2: Browser scraping for {remaining} more...")
+
+            try:
+                async with AppStoreBrowserCrawler(headless=True) as crawler:
+                    browser_reviews = await asyncio.wait_for(
+                        crawler.crawl_reviews(
+                            app_id=request.app_id,
+                            country=request.country,
+                            max_reviews=remaining,
+                            multi_country=True,
+                        ),
+                        timeout=480.0
+                    )
+            except asyncio.TimeoutError:
+                logger.warning(f"[{request.session_id}] Browser scraping timed out")
+                browser_reviews = []
+            except Exception as e:
+                logger.error(f"[{request.session_id}] Browser scraping error: {e}")
+                browser_reviews = []
+
+            # Add browser reviews
+            for review in browser_reviews:
+                if not isinstance(review, dict):
+                    continue
+                content_key = f"{review.get('author', '')}:{review.get('content', '')[:100]}"
+                review_id = hashlib.sha256(content_key.encode()).hexdigest()[:16]
+                if review_id not in all_reviews:
+                    review['source'] = 'browser'
+                    all_reviews[review_id] = review
+
+            logger.info(f"[{request.session_id}] Browser phase complete: {len(all_reviews)} total reviews")
+
+        # Format reviews for Supabase
+        reviews = list(all_reviews.values())[:request.max_reviews]
+        reviews = [r for r in reviews if isinstance(r, dict)]
+
+        formatted_reviews = []
+        for r in reviews:
+            raw_rating = r.get('rating')
+            rating = None
+            if raw_rating is not None:
+                try:
+                    num_rating = float(raw_rating)
+                    if 1 <= num_rating <= 5:
+                        rating = int(num_rating)
+                except (ValueError, TypeError):
+                    pass
+
+            author = str(r.get('author', 'Anonymous'))
+            content = str(r.get('content', r.get('text', '')))
+            content_key = f"{author}:{content[:100]}"
+            review_id = f"review-{hashlib.sha256(content_key.encode()).hexdigest()[:16]}"
+
+            formatted_reviews.append({
+                "id": review_id,
+                "author": author,
+                "rating": rating,
+                "title": str(r.get('title', '')),
+                "content": content,
+                "version": str(r.get('version', 'Unknown')),
+                "vote_count": int(r.get('vote_count', r.get('helpful_count', 0)) or 0),
+                "vote_sum": int(r.get('vote_sum', 0) or 0),
+                "country": str(r.get('country', request.country)),
+                "sort_source": str(r.get('sort_source', 'mostRecent')),
+                "date": str(r.get('date', r.get('dateISO', ''))),
+            })
+
+        # Calculate stats
+        valid_ratings = [r['rating'] for r in formatted_reviews if r['rating'] is not None]
+        avg_rating = sum(valid_ratings) / len(valid_ratings) if valid_ratings else 0
+
+        rating_distribution = {'1': 0, '2': 0, '3': 0, '4': 0, '5': 0, 'null': 0}
+        for r in formatted_reviews:
+            key = str(r['rating']) if r['rating'] is not None else 'null'
+            rating_distribution[key] = rating_distribution.get(key, 0) + 1
+
+        stats = {
+            "total": len(formatted_reviews),
+            "average_rating": round(avg_rating, 1),
+            "rating_distribution": rating_distribution,
+            "countries_scraped": [request.country],
+        }
+
+        # Update Supabase with results
+        supabase.table("review_scrape_sessions").update({
+            "status": "completed",
+            "reviews_collected": len(formatted_reviews),
+            "reviews": formatted_reviews,
+            "stats": stats,
+            "completed_at": datetime.utcnow().isoformat(),
+            "progress": {"message": "Completed"},
+        }).eq("id", request.session_id).execute()
+
+        logger.info(f"[{request.session_id}] Scrape completed: {len(formatted_reviews)} reviews")
+
+    except Exception as e:
+        logger.exception(f"[{request.session_id}] Scrape failed: {e}")
+        try:
+            supabase.table("review_scrape_sessions").update({
+                "status": "failed",
+                "progress": {"message": str(e)},
+            }).eq("id", request.session_id).execute()
+        except Exception as update_error:
+            logger.error(f"[{request.session_id}] Failed to update status: {update_error}")
 
 
 @app.post("/crawl/app-store/whats-new")
@@ -850,7 +1044,9 @@ async def generate_spectrum(request: ColorSpectrumRequest):
 
     try:
         # Validate hex color format (must be 6 valid hex characters)
-        hex_color = request.primary_hex.lstrip('#')
+        hex_color = request.primary_hex
+        if hex_color.startswith('#'):
+            hex_color = hex_color[1:]
         if not re.match(r'^[0-9A-Fa-f]{6}$', hex_color):
             raise HTTPException(status_code=400, detail="Invalid hex color. Must be 6 hex characters (0-9, A-F)")
 
@@ -892,6 +1088,7 @@ async def root():
         "endpoints": [
             "/health",
             "/crawl/app-store/reviews",
+            "/crawl/app-store/reviews-async",
             "/crawl/app-store/whats-new",
             "/crawl/app-store/privacy",
             "/crawl/reddit",

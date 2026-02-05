@@ -95,6 +95,20 @@ export default function SavedSearchView({ searchId }: Props) {
               </svg>
               <span className="text-red-700 dark:text-red-400">{error || 'Search not found'}</span>
             </div>
+            <div className="mt-4 flex gap-3">
+              <button
+                onClick={() => window.history.back()}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+              >
+                Go Back
+              </button>
+              <button
+                onClick={() => window.location.reload()}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+              >
+                Retry
+              </button>
+            </div>
           </div>
         </div>
       </div>

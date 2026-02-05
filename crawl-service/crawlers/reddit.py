@@ -200,7 +200,7 @@ class RedditCrawler(BaseCrawler):
             search_url = f"https://www.reddit.com/search.json?q={encoded_keyword}&sort={sort}&t={time_filter}&limit=25"
 
             try:
-                data = await self.fetch_json(search_url, extra_headers=self.REDDIT_HEADERS)
+                data = await self._fetch_with_rate_limit(search_url)
                 if not data:
                     continue
 
@@ -270,7 +270,7 @@ class RedditCrawler(BaseCrawler):
         url = f"https://www.reddit.com/r/{subreddit}/comments/{post_id}.json?limit={max_comments}"
 
         try:
-            data = await self.fetch_json(url, extra_headers=self.REDDIT_HEADERS)
+            data = await self._fetch_with_rate_limit(url)
             if not data or len(data) < 2:
                 return []
 
@@ -541,8 +541,11 @@ class RedditCrawler(BaseCrawler):
 
             comments_data = data[1].get("data", {}).get("children", [])
 
-            def extract_comments(children: List[dict], depth: int = 0) -> List[dict]:
+            def extract_comments(children: List[dict], depth: int = 0, max_depth: int = 3) -> List[dict]:
                 """Recursively extract comments with nested replies"""
+                if depth >= max_depth:
+                    return []
+
                 comments = []
 
                 for child in children:

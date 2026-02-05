@@ -169,7 +169,7 @@ export async function POST(request: NextRequest) {
 
     // Fetch from iTunes API
     const lookupUrl = `https://itunes.apple.com/lookup?id=${finalAppId}&country=${finalCountry}`;
-    const response = await fetch(lookupUrl);
+    const response = await fetch(lookupUrl, { signal: AbortSignal.timeout(10000) });
 
     if (!response.ok) {
       return NextResponse.json(

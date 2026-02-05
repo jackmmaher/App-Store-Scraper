@@ -59,7 +59,7 @@ export default function SearchPage() {
 
       // Auto-save to master apps database
       if (data.length > 0) {
-        saveToAppsDatabase(data, searchParams.country, searchParams.category);
+        await saveToAppsDatabase(data, searchParams.country, searchParams.category);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');

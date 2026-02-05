@@ -28,3 +28,7 @@ CREATE INDEX IF NOT EXISTS idx_app_projects_app_idea_session_id ON app_projects(
 COMMENT ON COLUMN app_projects.project_type IS 'Type of project: competitor_research (analyzing existing app) or original_idea (new app from App Idea Finder)';
 COMMENT ON COLUMN app_projects.app_idea_session_id IS 'Link to the app_idea_sessions table for original_idea projects';
 COMMENT ON COLUMN app_projects.app_idea_recommendation IS 'Full recommendation JSON from App Idea Finder for original_idea projects';
+
+-- Ensure competitor_research projects always have an app_store_id
+ALTER TABLE app_projects ADD CONSTRAINT check_project_type_requires_app_store_id
+  CHECK (project_type != 'competitor_research' OR app_store_id IS NOT NULL);

@@ -48,8 +48,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       let attempts = 0;
       const maxAttempts = 300; // 5 minutes at 1 second intervals
 
-      const sendEvent = (event: string, data: string) => {
-        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${data}\n\n`));
+      const sendEvent = (event: string, data: unknown) => {
+        const dataStr = typeof data === "string" ? data : JSON.stringify(data);
+        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${dataStr}\n\n`));
       };
 
       const poll = async () => {

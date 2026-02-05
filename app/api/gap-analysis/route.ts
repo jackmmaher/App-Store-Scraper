@@ -433,7 +433,7 @@ async function handleAnalyze(sessionId: string, request: NextRequest) {
 
     const topCountries = Object.entries(app.country_ranks)
       .filter(([, rank]) => rank !== null && rank <= 10)
-      .sort(([, a], [, b]) => (a || 999) - (b || 999))
+      .sort(([, a], [, b]) => (Number(a) || 999) - (Number(b) || 999))
       .map(([country, rank]) => `${COUNTRY_CODES[country] || country} (#${rank})`)
       .join(', ');
 

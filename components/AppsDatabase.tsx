@@ -31,16 +31,23 @@ export default function AppsDatabase() {
   });
 
   const [selectedApp, setSelectedApp] = useState<MasterApp | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Fetch metadata (categories, countries, stats)
   useEffect(() => {
     fetch('/api/apps/meta')
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error('Failed to load metadata');
+        return res.json();
+      })
       .then((data) => {
         setMeta(data);
         setTotalApps(data.stats?.totalApps || 0);
       })
-      .catch(console.error);
+      .catch((err) => {
+        console.error('Error loading metadata:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load metadata');
+      });
   }, []);
 
   // Fetch apps with filters
@@ -62,11 +69,14 @@ export default function AppsDatabase() {
       if (filters.offset) params.set('offset', filters.offset.toString());
 
       const res = await fetch(`/api/apps?${params.toString()}`);
+      if (!res.ok) throw new Error('Failed to fetch apps');
       const data = await res.json();
       setApps(data.apps || []);
       setFilteredCount(data.total || 0);
-    } catch (error) {
-      console.error('Error fetching apps:', error);
+      setError(null);
+    } catch (err) {
+      console.error('Error fetching apps:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch apps');
     } finally {
       setLoading(false);
     }

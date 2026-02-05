@@ -68,11 +68,12 @@ export async function POST(request: NextRequest) {
       );
 
       // Automatically add top ranking apps to the master database
-      // This runs async but we don't wait for it to complete
-      const appIds = scores.top_10_apps.map(app => app.id);
-      batchAddAppsFromiTunes(appIds, country).catch(err => {
+      const appIds = scores.top_10_apps.map((app: { id: string }) => app.id);
+      try {
+        await batchAddAppsFromiTunes(appIds, country);
+      } catch (err) {
         console.error('Error auto-adding apps to database:', err);
-      });
+      }
     }
 
     return NextResponse.json({

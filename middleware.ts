@@ -1,3 +1,6 @@
+// TODO: Migrate to Next.js 16 proxy convention when it is stable
+// See: https://nextjs.org/docs/app/building-your-application/routing/middleware
+
 /**
  * Next.js Middleware for Security
  *

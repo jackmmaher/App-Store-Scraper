@@ -107,7 +107,7 @@ export default function ChatPanel({ project, projectId, onClose }: ChatPanelProp
   const handleInsertAnalysis = () => {
     const analysis = insertAnalysis();
     if (analysis) {
-      setInput(`Based on the AI analysis, `);
+      setInput(`Based on the AI analysis: ${analysis.slice(0, 500)}\n\nMy question: `);
       inputRef.current?.focus();
     }
   };

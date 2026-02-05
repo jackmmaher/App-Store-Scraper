@@ -34,6 +34,15 @@ export default function ScrapeSessionHistory({ projectId, onSessionsChange }: Sc
     fetchSessions();
   }, [fetchSessions]);
 
+  // Poll for updates when sessions are in_progress
+  useEffect(() => {
+    const hasInProgress = sessions.some(s => s.status === 'in_progress');
+    if (!hasInProgress) return;
+
+    const interval = setInterval(fetchSessions, 5000);
+    return () => clearInterval(interval);
+  }, [sessions, fetchSessions]);
+
   const handleDelete = async (sessionId: string) => {
     if (!confirm('Delete this scrape session?')) return;
 

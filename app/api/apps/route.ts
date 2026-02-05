@@ -23,8 +23,8 @@ export async function GET(request: NextRequest) {
   const MAX_LIMIT = 500; // Prevent resource exhaustion
   const MAX_OFFSET = 100000; // Reasonable pagination limit
 
-  const requestedLimit = searchParams.get('limit') ? parseInt(searchParams.get('limit')!) : 50;
-  const requestedOffset = searchParams.get('offset') ? parseInt(searchParams.get('offset')!) : 0;
+  const requestedLimit = searchParams.get('limit') ? parseInt(searchParams.get('limit')!, 10) : 50;
+  const requestedOffset = searchParams.get('offset') ? parseInt(searchParams.get('offset')!, 10) : 0;
 
   const filters: AppFilters = {
     minReviews: searchParams.get('minReviews') ? parseInt(searchParams.get('minReviews')!) : undefined,

@@ -21,15 +21,16 @@ export const maxDuration = 300; // 5 minutes
 // GET /api/cron/process-keyword-jobs - Process pending keyword jobs
 // Should be called by cron every 5 minutes
 export async function GET(request: NextRequest) {
-  // Verify cron secret (if configured)
+  // Verify cron secret
   const cronSecret = process.env.CRON_SECRET;
   const authHeader = request.headers.get('Authorization');
 
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    // Also allow internal calls without auth in development
+  if (!cronSecret) {
     if (process.env.NODE_ENV !== 'development') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ error: 'CRON_SECRET not configured' }, { status: 500 });
     }
+  } else if (authHeader !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;

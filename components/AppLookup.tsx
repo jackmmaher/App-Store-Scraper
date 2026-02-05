@@ -56,7 +56,7 @@ export default function AppLookup() {
       setCountry(data.country);
 
       // Auto-save to master database
-      saveToAppsDatabase(data.app, data.country);
+      await saveToAppsDatabase(data.app, data.country);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {

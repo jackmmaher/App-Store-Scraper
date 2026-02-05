@@ -32,6 +32,7 @@ export default function ProjectsSidebar({
 }: ProjectsSidebarProps) {
   const [projects, setProjects] = useState<Record<string, AppProject[]>>({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -50,8 +51,9 @@ export default function ProjectsSidebar({
         // Auto-expand categories with projects
         setExpandedCategories(new Set(Object.keys(data.projects)));
       }
-    } catch (error) {
-      console.error('Error fetching projects:', error);
+    } catch (err) {
+      console.error('Error fetching projects:', err);
+      setError('Failed to load projects');
     } finally {
       setLoading(false);
     }

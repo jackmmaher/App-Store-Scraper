@@ -30,7 +30,7 @@ async function getKeywordsFromApp(
 ): Promise<DiscoveredKeyword[]> {
   try {
     const lookupUrl = `https://itunes.apple.com/lookup?id=${appId}&country=${country}`;
-    const response = await fetch(lookupUrl);
+    const response = await fetch(lookupUrl, { signal: AbortSignal.timeout(10000) });
 
     if (!response.ok) {
       throw new Error(`iTunes lookup failed: ${response.status}`);

@@ -10,10 +10,10 @@ import { constantTimeEqual } from '@/lib/security';
 
 // Check authentication
 async function checkAuth(request: NextRequest): Promise<boolean> {
-  const authHeader = request.headers.get('authorization');
   const appPassword = process.env.APP_PASSWORD;
+  if (!appPassword) return false; // Deny if not configured
 
-  if (!appPassword) return true;
+  const authHeader = request.headers.get('authorization');
   if (!authHeader) return false;
 
   const token = authHeader.replace('Bearer ', '');

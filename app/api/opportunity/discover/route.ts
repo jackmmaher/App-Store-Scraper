@@ -22,7 +22,7 @@ async function searchITunesForKeywords(
 ): Promise<string[]> {
   try {
     const url = `${ITUNES_SEARCH_URL}?term=${encodeURIComponent(seed)}&country=${country}&entity=software&limit=50`;
-    const response = await fetch(url);
+    const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
     if (!response.ok) return [];
 
     const data = await response.json();

@@ -7,7 +7,7 @@ Inspired by uicolors.app but implemented locally for speed and reliability.
 
 import logging
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -173,7 +173,7 @@ def generate_semantic_colors(primary_hex: str) -> Dict[str, str]:
     }
 
 
-def generate_color_system(primary_hex: str) -> Dict[str, any]:
+def generate_color_system(primary_hex: str) -> Dict[str, Any]:
     """
     Generate a complete color system from a primary color.
 

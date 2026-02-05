@@ -25,8 +25,14 @@ export async function GET(request: NextRequest) {
       max_difficulty: searchParams.get('max_difficulty') ? Number(searchParams.get('max_difficulty')) : undefined,
       min_opportunity: searchParams.get('min_opportunity') ? Number(searchParams.get('min_opportunity')) : undefined,
       discovered_via: searchParams.get('discovered_via') as DiscoveryMethod | undefined,
-      page: searchParams.get('page') ? Number(searchParams.get('page')) : 1,
-      limit: searchParams.get('limit') ? Math.min(Number(searchParams.get('limit')), 100) : 50,
+      page: (() => {
+        const rawPage = searchParams.get('page') ? Number(searchParams.get('page')) : 1;
+        return Number.isNaN(rawPage) || rawPage < 1 ? 1 : rawPage;
+      })(),
+      limit: (() => {
+        const rawLimit = searchParams.get('limit') ? Number(searchParams.get('limit')) : 50;
+        return Number.isNaN(rawLimit) || rawLimit < 1 ? 50 : Math.min(rawLimit, 100);
+      })(),
     };
 
     // Validate sort parameter

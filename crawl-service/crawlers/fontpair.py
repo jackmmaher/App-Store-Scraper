@@ -103,8 +103,11 @@ async def scrape_fontpair() -> List[FontPairing]:
 
                     # Look for patterns like "Font1 + Font2", "Font1 & Font2", "Font1 / Font2"
                     # Also try "Font1 with Font2" pattern
+                    # Limit input to prevent ReDoS
+                    if len(text) > 500:
+                        text = text[:500]
                     pair_match = re.search(
-                        r'([A-Z][a-zA-Z\s]+?)\s*(?:[+&/]|with|and|\|)\s*([A-Z][a-zA-Z\s]+)',
+                        r'([A-Z][a-zA-Z\s]{1,50}?)\s*(?:[+&/]|with|and|\|)\s*([A-Z][a-zA-Z\s]{1,50})',
                         text, re.IGNORECASE
                     )
 
@@ -369,7 +372,14 @@ def save_pairings_to_cache(pairings: List[FontPairing], accumulate: bool = True)
             json.dump(cache, f, indent=2)
             temp_path = f.name
 
-        os.replace(temp_path, FONTPAIR_CACHE_FILE)  # Atomic on most systems
+        try:
+            os.replace(temp_path, FONTPAIR_CACHE_FILE)
+        except OSError as e:
+            logger.warning(f"Failed to update cache file: {e}")
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
         logger.info(f"Saved {len(all_pairings)} font pairings to cache")
 
     except Exception as e:

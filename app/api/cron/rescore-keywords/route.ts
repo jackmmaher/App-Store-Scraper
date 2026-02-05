@@ -6,14 +6,16 @@ export const runtime = 'nodejs';
 // GET /api/cron/rescore-keywords - Queue stale keywords for rescoring
 // Should be called by cron daily at 4 AM
 export async function GET(request: NextRequest) {
-  // Verify cron secret (if configured)
+  // Verify cron secret
   const cronSecret = process.env.CRON_SECRET;
   const authHeader = request.headers.get('Authorization');
 
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  if (!cronSecret) {
     if (process.env.NODE_ENV !== 'development') {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ error: 'CRON_SECRET not configured' }, { status: 500 });
     }
+  } else if (authHeader !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {

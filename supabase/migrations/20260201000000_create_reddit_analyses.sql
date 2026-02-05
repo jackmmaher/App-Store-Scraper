@@ -3,7 +3,7 @@
 
 -- Reddit analyses table - stores analysis results for a competitor
 CREATE TABLE IF NOT EXISTS reddit_analyses (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   competitor_id TEXT NOT NULL,  -- app_store_id string (e.g., "com.app.example"), NOT UUID
   search_config JSONB NOT NULL,
   unmet_needs JSONB NOT NULL DEFAULT '[]',
@@ -21,7 +21,7 @@ CREATE INDEX IF NOT EXISTS idx_reddit_analyses_competitor_id ON reddit_analyses(
 
 -- Solution annotations for unmet needs
 CREATE TABLE IF NOT EXISTS unmet_need_solutions (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   reddit_analysis_id UUID REFERENCES reddit_analyses(id) ON DELETE CASCADE,
   need_id TEXT NOT NULL,
   solution_notes TEXT,

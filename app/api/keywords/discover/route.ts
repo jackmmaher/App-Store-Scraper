@@ -211,9 +211,11 @@ export async function POST(request: NextRequest) {
 
             // Batch add all discovered apps to the master database
             if (allAppIds.size > 0) {
-              batchAddAppsFromiTunes(Array.from(allAppIds), country).catch(err => {
+              try {
+                await batchAddAppsFromiTunes(Array.from(allAppIds), country);
+              } catch (err) {
                 console.error('Error batch adding apps to database:', err);
-              });
+              }
             }
           }
 
